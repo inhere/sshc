@@ -16,26 +16,15 @@ LDFLAGS := -s -w \
 	-X main.GitCommit=$(GIT_HASH) \
 	-X 'main.BuildDate=$(BUILD_TIME)'
 
-.PHONY: all build backend clean help latest web
+.PHONY: all build backend clean help latest
 
 DIST_DIR := dist
-WEBUI_DIST := internal/webui/dist
 # 注：值会经 `echo "description: $(DESCRIPTION)"` 写入 latest.yaml，避免 `;`/`:`/引号等
 # shell/YAML 元字符（否则 recipe 展开后会被截断成多条命令）。
 DESCRIPTION := simple ssh host manage and command runner.
 
 ## all: build (default)
 all: build
-
-## web: build the web console (pnpm) and embed into internal/webui/dist (then `make build` to bake into the binary)
-web:
-	@command -v pnpm >/dev/null 2>&1 || corepack enable pnpm
-	pnpm -C web install --frozen-lockfile || pnpm -C web install
-	pnpm -C web build
-	@echo "📁 Embedding web/dist -> $(WEBUI_DIST)"
-	@find $(WEBUI_DIST) -mindepth 1 ! -name placeholder.html ! -name .gitignore -delete
-	@cp -r web/dist/. $(WEBUI_DIST)/
-	@echo "✅ web console embedded; run 'make build' to bake into the binary"
 
 ## build: build Go binary (current platform)
 build:
@@ -47,23 +36,18 @@ build:
 	@echo "✅ Binary: $(DIST_DIR)/$(BINARY) ($$(du -sh $(DIST_DIR)/$(BINARY) | cut -f1))"
 
 ## install: install Go binary to $GOPATH/bin
-install: web build
-	@cp $(DIST_DIR)/$(BINARY) $(GOPATH)/bin/$(BINARY)
-	@echo "✅ Installed to $(GOPATH)/bin/$(BINARY)"
-
-## install-fast: fast install Go binary to $GOPATH/bin, without build web
-install-fast: build
+install: build
 	@cp $(DIST_DIR)/$(BINARY) $(GOPATH)/bin/$(BINARY)
 	@echo "✅ Installed to $(GOPATH)/bin/$(BINARY)"
 
 ## run: build and run with current directory
-run: web build
+run: build
 	./$(DIST_DIR)/$(BINARY)
 
 # ─── Cross Compilation ────────────────────────────────────────────────────────
 
 ## build-all: cross-compile for all platforms
-build-all: clean-dist dump-info web build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows latest-yaml
+build-all: clean-dist dump-info build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows latest-yaml
 	ls -lh $(DIST_DIR)
 
 ## dump-info: dump build info

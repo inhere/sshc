@@ -1,3 +1,4 @@
 /sshc
 *.exe
 /tmp/
+/dist/
