@@ -1,7 +1,9 @@
 package command
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -435,6 +437,87 @@ func TestRunPassesRemoteScriptDir(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotOpts.RemoteScriptPath, "/opt/app/tmp/sshc-run-") {
 		t.Fatalf("remote script = %q", gotOpts.RemoteScriptPath)
+	}
+}
+
+func TestRunPrintsScriptFailureContext(t *testing.T) {
+	withTempConfig(t)
+	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		return []byte("permission denied\n"), errors.New("exit status 126")
+	}))
+
+	app := newTestApp()
+	var out bytes.Buffer
+	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
+		if c.Name == "run" {
+			c.SetOutput(&out)
+		}
+		return true
+	}
+	err := app.RunWithArgs([]string{"run", "--script", scriptPath, "--sudo-user", "app", "devhost"})
+	if err == nil {
+		t.Fatal("expected run error")
+	}
+	output := out.String()
+	for _, want := range []string{
+		"permission denied",
+		"sshc: local_script=" + scriptPath,
+		"sshc: remote_script=/tmp/sshc-run-",
+		"sshc: sudo_user=app",
+		"sshc: use --keep-remote-script to inspect the uploaded script",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output %q does not contain %q", output, want)
+		}
+	}
+}
+
+func TestRunDoesNotPrintScriptFailureContextForCommandFailure(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		return []byte("failed\n"), errors.New("exit status 1")
+	}))
+
+	app := newTestApp()
+	var out bytes.Buffer
+	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
+		if c.Name == "run" {
+			c.SetOutput(&out)
+		}
+		return true
+	}
+	err := app.RunWithArgs([]string{"run", "devhost", "--", "hostname"})
+	if err == nil {
+		t.Fatal("expected run error")
+	}
+	if strings.Contains(out.String(), "sshc: local_script=") {
+		t.Fatalf("unexpected script failure context: %q", out.String())
 	}
 }
 

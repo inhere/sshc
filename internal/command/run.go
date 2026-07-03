@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"sshc/internal/core"
@@ -62,6 +63,9 @@ func NewRunCmd() *capp.Cmd {
 		})
 		if len(out) > 0 {
 			fmt.Fprint(c.Output(), string(out))
+		}
+		if err != nil {
+			writeRunScriptFailureContext(c.Output(), runOptions)
 		}
 		if err == nil && logErr != nil {
 			return logErr
@@ -165,4 +169,22 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 		RemoteScriptDir:  remoteScriptDir,
 		KeepRemoteScript: flags.KeepRemoteScript,
 	}, nil
+}
+
+func writeRunScriptFailureContext(out io.Writer, opts core.RunOptions) {
+	if strings.TrimSpace(opts.ScriptPath) == "" {
+		return
+	}
+	fmt.Fprintf(out, "sshc: local_script=%s\n", opts.ScriptPath)
+	if strings.TrimSpace(opts.RemoteScriptPath) != "" {
+		fmt.Fprintf(out, "sshc: remote_script=%s\n", opts.RemoteScriptPath)
+	}
+	if strings.TrimSpace(opts.SudoUser) != "" {
+		fmt.Fprintf(out, "sshc: sudo_user=%s\n", opts.SudoUser)
+	} else if opts.Sudo {
+		fmt.Fprintln(out, "sshc: sudo=true")
+	}
+	if !opts.KeepRemoteScript {
+		fmt.Fprintln(out, "sshc: use --keep-remote-script to inspect the uploaded script")
+	}
 }
