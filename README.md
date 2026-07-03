@@ -16,6 +16,8 @@ Run a remote command by IP or saved name:
 ```bash
 sshc run 192.168.1.10 -- uptime
 sshc run dev -- docker ps
+sshc run dev --timeout 30s --env APP_ENV=prod --env DEBUG=1 -- printenv APP_ENV
+sshc run dev --env-file ./remote.env -- env
 ```
 
 Upload a file or directory:

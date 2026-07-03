@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAddAndList(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRunUsesSavedHost(t *testing.T) {
 
 	var gotHost Host
 	var gotCommand string
-	runRemote = func(host Host, command string) ([]byte, error) {
+	runRemote = func(host Host, command string, opts RunOptions) ([]byte, error) {
 		gotHost = host
 		gotCommand = command
 		return []byte("ok\n"), nil
@@ -74,6 +75,53 @@ func TestRunUsesSavedHost(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Fatalf("log line %q does not contain %q", line, want)
 		}
+	}
+}
+
+func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
+	withTempConfig(t)
+	envFile := filepath.Join(t.TempDir(), "run.env")
+	if err := os.WriteFile(envFile, []byte("FOO=file\nBAR=bar\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{Hosts: []Host{{
+		Name:     "dev",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := saveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	oldRun := runRemote
+	t.Cleanup(func() { runRemote = oldRun })
+
+	var gotOpts RunOptions
+	runRemote = func(host Host, command string, opts RunOptions) ([]byte, error) {
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}
+
+	app := newApp()
+	err := app.RunWithArgs([]string{
+		"run",
+		"--timeout", "3s",
+		"--env-file", envFile,
+		"--env", "FOO=inline",
+		"--env", "BAZ=baz",
+		"dev",
+		"--", "printenv", "FOO",
+	})
+	if err != nil {
+		t.Fatalf("run host: %v", err)
+	}
+	if gotOpts.Timeout != 3*time.Second {
+		t.Fatalf("timeout = %s", gotOpts.Timeout)
+	}
+	if gotOpts.Env["FOO"] != "inline" || gotOpts.Env["BAR"] != "bar" || gotOpts.Env["BAZ"] != "baz" {
+		t.Fatalf("env = %#v", gotOpts.Env)
 	}
 }
 
@@ -160,6 +208,53 @@ func TestRemoteFilePath(t *testing.T) {
 	for _, tt := range tests {
 		if got := remoteFilePath(tt.local, tt.remote); got != tt.want {
 			t.Fatalf("remoteFilePath(%q, %q) = %q, want %q", tt.local, tt.remote, got, tt.want)
+		}
+	}
+}
+
+func TestParseTimeout(t *testing.T) {
+	tests := []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: "", want: 0},
+		{value: "5", want: 5 * time.Second},
+		{value: "1500ms", want: 1500 * time.Millisecond},
+		{value: "2m", want: 2 * time.Minute},
+	}
+	for _, tt := range tests {
+		got, err := parseTimeout(tt.value)
+		if err != nil {
+			t.Fatalf("parseTimeout(%q): %v", tt.value, err)
+		}
+		if got != tt.want {
+			t.Fatalf("parseTimeout(%q) = %s, want %s", tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "run.env")
+	content := []byte("# comment\nexport FOO=file\nBAR=\"bar value\"\nEMPTY=\n")
+	if err := os.WriteFile(envFile, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := loadRunEnv([]string{envFile}, []string{"FOO=inline", "QUOTE=a'b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["FOO"] != "inline" || env["BAR"] != "bar value" || env["EMPTY"] != "" || env["QUOTE"] != "a'b" {
+		t.Fatalf("env = %#v", env)
+	}
+
+	command, err := buildRemoteCommand("echo ok", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"BAR='bar value'", "EMPTY=''", "FOO='inline'", `QUOTE='a'\''b'`, "echo ok"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("command %q does not contain %q", command, want)
 		}
 	}
 }

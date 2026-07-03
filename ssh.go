@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path"
@@ -13,14 +14,24 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func executeRemote(host Host, command string) ([]byte, error) {
+func executeRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	client, err := newSSHClient(host)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
 
-	return client.Run(command)
+	remoteCommand, err := buildRemoteCommand(command, opts.Env)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Timeout <= 0 {
+		return client.Run(remoteCommand)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	defer cancel()
+	return client.RunContext(ctx, remoteCommand)
 }
 
 func uploadRemote(host Host, localPath, remotePath string) error {

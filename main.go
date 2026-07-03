@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
 )
 
@@ -79,6 +81,7 @@ func newAddCmd() *capp.Cmd {
 }
 
 func newRunCmd() *capp.Cmd {
+	opts := &runFlagOptions{}
 	cmd := capp.NewCmd("run", "run a remote command", func(c *capp.Cmd) error {
 		target := strings.TrimSpace(c.Arg("target").String())
 		command := strings.TrimSpace(strings.Join(c.Arg("command").Strings(), " "))
@@ -95,8 +98,13 @@ func newRunCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
+		runOptions, err := buildRunOptions(*opts)
+		if err != nil {
+			return err
+		}
+
 		startedAt := now()
-		out, err := runRemote(host, command)
+		out, err := runRemote(host, command, runOptions)
 		logErr := appendRunLog(host, RunLogRecord{
 			Target:     target,
 			Command:    command,
@@ -115,10 +123,36 @@ func newRunCmd() *capp.Cmd {
 		return err
 	})
 	cmd.OnAdd = func(c *capp.Cmd) {
+		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
+		c.Var(&opts.Env, "env", "environment variable k=v, repeatable")
+		c.Var(&opts.EnvFiles, "env-file", "load environment variables from file, repeatable")
 		c.AddArg("target", "host ip or name", true)
 		c.AddArg("command", "remote command after --", true, nil, true)
 	}
 	return cmd
+}
+
+type runFlagOptions struct {
+	Timeout  string
+	Env      cflag.Strings
+	EnvFiles cflag.Strings
+}
+
+type RunOptions struct {
+	Timeout time.Duration
+	Env     map[string]string
+}
+
+func buildRunOptions(flags runFlagOptions) (RunOptions, error) {
+	timeout, err := parseTimeout(flags.Timeout)
+	if err != nil {
+		return RunOptions{}, err
+	}
+	env, err := loadRunEnv(flags.EnvFiles.Strings(), flags.Env.Strings())
+	if err != nil {
+		return RunOptions{}, err
+	}
+	return RunOptions{Timeout: timeout, Env: env}, nil
 }
 
 var scpOpts = struct {
