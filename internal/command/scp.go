@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"sshc/internal/core"
 
@@ -43,10 +44,12 @@ func NewUploadCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
-		if err := scpUpload(host, localPath, remotePath); err != nil {
+		result, err := scpUpload(host, localPath, remotePath)
+		if err != nil {
 			return err
 		}
 		fmt.Fprintf(c.Output(), "uploaded %s to %s:%s\n", localPath, core.HostLogName(host), remotePath)
+		fmt.Fprintf(c.Output(), "size=%d files=%d dirs=%d elapsed=%s\n", result.Bytes, result.Files, result.Directories, formatElapsed(result.Elapsed))
 		return nil
 	})
 	cmd.Aliases = []string{"upload"}
@@ -69,4 +72,11 @@ Path rules:
 		c.AddArg("target", "host ip or name", true)
 	}
 	return cmd
+}
+
+func formatElapsed(value time.Duration) string {
+	if value < 0 {
+		value = 0
+	}
+	return value.Round(time.Millisecond).String()
 }

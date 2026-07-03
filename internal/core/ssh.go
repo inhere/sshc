@@ -33,6 +33,13 @@ type RunOptions struct {
 	KeepRemoteScript bool
 }
 
+type TransferResult struct {
+	Bytes       int64
+	Files       int
+	Directories int
+	Elapsed     time.Duration
+}
+
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	client, err := newSSHClient(host)
 	if err != nil {
@@ -148,7 +155,8 @@ func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error
 	if err := mkdirRemoteParent(sftpClient, remotePath); err != nil {
 		return err
 	}
-	return uploadFileWithSFTP(sftpClient, localPath, remotePath)
+	_, err = uploadFileWithSFTP(sftpClient, localPath, remotePath)
+	return err
 }
 
 func scriptExecuteCommand(remotePath string) string {
@@ -163,33 +171,44 @@ func NewRemoteScriptPath(value time.Time) string {
 	return fmt.Sprintf("/tmp/sshc-run-%d-%x.sh", value.UnixNano(), suffix[:])
 }
 
-func UploadRemote(host Host, localPath, remotePath string) error {
+func UploadRemote(host Host, localPath, remotePath string) (result TransferResult, err error) {
+	started := time.Now()
+	defer func() {
+		result.Elapsed = time.Since(started)
+	}()
+
 	client, err := newSSHClient(host)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer client.Close()
 
 	info, err := os.Stat(localPath)
 	if err != nil {
-		return err
+		return result, err
 	}
 	sftpClient, err := client.NewSftp()
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer sftpClient.Close()
 
 	if !info.IsDir() {
 		remoteFile := RemoteFilePath(localPath, remotePath)
 		if err := mkdirRemoteParent(sftpClient, remoteFile); err != nil {
-			return err
+			return result, err
 		}
-		return uploadFileWithSFTP(sftpClient, localPath, remoteFile)
+		bytes, err := uploadFileWithSFTP(sftpClient, localPath, remoteFile)
+		if err != nil {
+			return result, err
+		}
+		result.Bytes += bytes
+		result.Files++
+		return result, nil
 	}
 
 	root := filepath.Clean(localPath)
-	return filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -203,35 +222,54 @@ func UploadRemote(host Host, localPath, remotePath string) error {
 			remoteCurrent = JoinRemotePath(remotePath, filepath.ToSlash(rel))
 		}
 		if entry.IsDir() {
+			result.Directories++
 			return sftpClient.MkdirAll(remoteCurrent)
 		}
 
 		if err := mkdirRemoteParent(sftpClient, remoteCurrent); err != nil {
 			return err
 		}
-		return uploadFileWithSFTP(sftpClient, current, remoteCurrent)
+		bytes, err := uploadFileWithSFTP(sftpClient, current, remoteCurrent)
+		if err != nil {
+			return err
+		}
+		result.Bytes += bytes
+		result.Files++
+		return nil
 	})
+	return result, err
 }
 
-func FetchRemote(host Host, remotePath, localPath string) error {
+func FetchRemote(host Host, remotePath, localPath string) (result TransferResult, err error) {
+	started := time.Now()
+	defer func() {
+		result.Elapsed = time.Since(started)
+	}()
+
 	client, err := newSSHClient(host)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer client.Close()
 
 	sftpClient, err := client.NewSftp()
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer sftpClient.Close()
 
 	info, err := sftpClient.Stat(remotePath)
 	if err != nil {
-		return err
+		return result, err
 	}
 	if !info.IsDir() {
-		return downloadFileWithSFTP(sftpClient, remotePath, LocalFilePath(remotePath, localPath))
+		bytes, err := downloadFileWithSFTP(sftpClient, remotePath, LocalFilePath(remotePath, localPath))
+		if err != nil {
+			return result, err
+		}
+		result.Bytes += bytes
+		result.Files++
+		return result, nil
 	}
 
 	root := strings.TrimRight(remotePath, "/")
@@ -239,7 +277,7 @@ func FetchRemote(host Host, remotePath, localPath string) error {
 	walker := sftpClient.Walk(root)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
-			return err
+			return result, err
 		}
 
 		remoteCurrent := walker.Path()
@@ -248,16 +286,20 @@ func FetchRemote(host Host, remotePath, localPath string) error {
 			localCurrent = filepath.Join(localRoot, filepath.FromSlash(rel))
 		}
 		if walker.Stat().IsDir() {
+			result.Directories++
 			if err := os.MkdirAll(localCurrent, 0700); err != nil {
-				return err
+				return result, err
 			}
 			continue
 		}
-		if err := downloadFileWithSFTP(sftpClient, remoteCurrent, localCurrent); err != nil {
-			return err
+		bytes, err := downloadFileWithSFTP(sftpClient, remoteCurrent, localCurrent)
+		if err != nil {
+			return result, err
 		}
+		result.Bytes += bytes
+		result.Files++
 	}
-	return nil
+	return result, nil
 }
 
 func newSSHClient(host Host) (*goph.Client, error) {
@@ -286,41 +328,39 @@ func mkdirRemoteParent(client *sftp.Client, remotePath string) error {
 	return client.MkdirAll(parent)
 }
 
-func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string) error {
+func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string) (int64, error) {
 	localFile, err := os.Open(localPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer localFile.Close()
 
 	remoteFile, err := client.Create(remotePath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer remoteFile.Close()
 
-	_, err = io.Copy(remoteFile, localFile)
-	return err
+	return io.Copy(remoteFile, localFile)
 }
 
-func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) error {
+func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (int64, error) {
 	remoteFile, err := client.Open(remotePath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer remoteFile.Close()
 
 	if err := os.MkdirAll(filepath.Dir(localPath), 0700); err != nil {
-		return err
+		return 0, err
 	}
 	localFile, err := os.Create(localPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer localFile.Close()
 
-	_, err = io.Copy(localFile, remoteFile)
-	return err
+	return io.Copy(localFile, remoteFile)
 }
 
 func LocalFilePath(remotePath, localPath string) string {

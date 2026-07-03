@@ -354,11 +354,11 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	var gotHost core.Host
 	var gotLocal string
 	var gotRemote string
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) error {
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) (core.TransferResult, error) {
 		gotHost = host
 		gotLocal = localPath
 		gotRemote = remotePath
-		return nil
+		return core.TransferResult{Bytes: 123, Files: 1, Directories: 0, Elapsed: 1500 * time.Millisecond}, nil
 	}))
 
 	app := newTestApp()
@@ -375,15 +375,24 @@ func TestSCPUsesSavedHost(t *testing.T) {
 
 func TestSCPRequiresSavedHost(t *testing.T) {
 	withTempConfig(t)
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) error {
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) (core.TransferResult, error) {
 		t.Fatal("upload should not be called")
-		return nil
+		return core.TransferResult{}, nil
 	}))
 
 	app := newTestApp()
 	err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "missing"})
 	if err == nil || !strings.Contains(err.Error(), `host "missing" not found`) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestFormatElapsedRoundsToMilliseconds(t *testing.T) {
+	if got := formatElapsed(1500*time.Millisecond + 499*time.Microsecond); got != "1.5s" {
+		t.Fatalf("elapsed = %q, want 1.5s", got)
+	}
+	if got := formatElapsed(-time.Second); got != "0s" {
+		t.Fatalf("elapsed = %q, want 0s", got)
 	}
 }
 
@@ -403,11 +412,11 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	var gotHost core.Host
 	var gotRemote string
 	var gotLocal string
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) error {
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
 		gotHost = host
 		gotRemote = remotePath
 		gotLocal = localPath
-		return nil
+		return core.TransferResult{Bytes: 456, Files: 2, Directories: 1, Elapsed: 2 * time.Second}, nil
 	}))
 
 	app := newTestApp()
@@ -435,7 +444,9 @@ func TestDownloadAlias(t *testing.T) {
 		t.Fatalf("save store: %v", err)
 	}
 
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) error { return nil }))
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
+		return core.TransferResult{}, nil
+	}))
 
 	app := newTestApp()
 	if err := app.RunWithArgs([]string{"dl", "-r", "/tmp/remote.txt", "-l", "local.txt", "devhost"}); err != nil {
@@ -445,9 +456,9 @@ func TestDownloadAlias(t *testing.T) {
 
 func TestDownloadRequiresSavedHost(t *testing.T) {
 	withTempConfig(t)
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) error {
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
 		t.Fatal("download should not be called")
-		return nil
+		return core.TransferResult{}, nil
 	}))
 
 	app := newTestApp()

@@ -43,10 +43,12 @@ func NewDownloadCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
-		if err := downloadRemote(host, remotePath, localPath); err != nil {
+		result, err := downloadRemote(host, remotePath, localPath)
+		if err != nil {
 			return err
 		}
 		fmt.Fprintf(c.Output(), "downloaded %s:%s to %s\n", core.HostLogName(host), remotePath, localPath)
+		fmt.Fprintf(c.Output(), "size=%d files=%d dirs=%d elapsed=%s\n", result.Bytes, result.Files, result.Directories, formatElapsed(result.Elapsed))
 		return nil
 	})
 	cmd.Aliases = []string{"dl"}
