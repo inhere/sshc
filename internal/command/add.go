@@ -87,7 +87,8 @@ Notes:
   - --from-clipboard accepts key=value lines or one line: ip,user,password,name,port.
   - Adding the same name or IP updates the saved host.
   - Hosts are stored in ~/.config/sshc/hosts.json by default.
-  - Passwords are currently stored in plain text. Keep the config file private.
+  - Passwords are encrypted before saving to hosts.json.
+  - The local encryption key is stored at ~/.config/sshc/key.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.BoolVar(&addOpts.Interactive, "interactive", false, "interactive host entry;;I")

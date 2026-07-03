@@ -13,6 +13,7 @@ remote operations where a full automation platform would be too heavy.
 
 - Manage SSH hosts in `~/.config/sshc/hosts.json`
 - Read simple host entries from `~/.ssh/config`
+- Encrypt saved passwords before writing `hosts.json`
 - Run remote commands by saved host name, IP, or unique partial match
 - Execute local shell scripts on remote hosts
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
@@ -25,7 +26,7 @@ remote operations where a full automation platform would be too heavy.
 
 ### Download a release
 
-1. **Recommanded** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
+1. **Recommended** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
 2. Install by Golang: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. Download the archive for your platform from GitHub Releases, extract it, and put the `sshc` binary on your `PATH`.
 
@@ -261,7 +262,9 @@ the same.
 
 ## Security Notes
 
-- `hosts.json` stores passwords in plain text. Keep the file private.
+- Saved passwords are encrypted before being written to `hosts.json`.
+- The local encryption key is stored at `~/.config/sshc/key`; keep both files private.
+- Legacy plaintext `password` fields are still readable for compatibility.
 - Prefer SSH keys over passwords when possible.
 - If both password and `--key` are provided, key authentication is tried first.
 - Current host key verification is permissive and does not enforce

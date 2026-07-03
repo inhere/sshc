@@ -8,7 +8,7 @@
   - [x] 新增参数支持 --timeout 远端超时设置; --kill-after 超时后强制清理延迟; --env k=v 可以多次设置; --env-file 从文件加载ENV
 - add 命令
   - [x] -I, --interactive 交互录入信息(引入 github.com/gookit/cliui 包)
-  - [ ] add pwd 加密，已补 docs/password-encryption-design.md 设计边界
+  - [x] add pwd 加密，默认写入 password_enc，兼容读取旧 password 明文
   - [x] add 支持从clipboard 读取指定格式的 ip,user,pwd
   - [x] 支持 keypath file
   - [x] 新增备注字段 --remark; 新增 --group 配置 server group，默认 "default"

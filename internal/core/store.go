@@ -22,14 +22,15 @@ const (
 var userHomeDir = os.UserHomeDir
 
 type Host struct {
-	Name     string `json:"name"`
-	IP       string `json:"ip"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	KeyPath  string `json:"key_path,omitempty"`
-	Remark   string `json:"remark,omitempty"`
-	Group    string `json:"group,omitempty"`
-	Port     int    `json:"port"`
+	Name        string `json:"name"`
+	IP          string `json:"ip"`
+	User        string `json:"user"`
+	Password    string `json:"password,omitempty"`
+	PasswordEnc string `json:"password_enc,omitempty"`
+	KeyPath     string `json:"key_path,omitempty"`
+	Remark      string `json:"remark,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Port        int    `json:"port"`
 }
 
 type Store struct {
@@ -126,7 +127,7 @@ func validateHost(host Host) error {
 	if strings.TrimSpace(host.User) == "" {
 		return errors.New("user is required")
 	}
-	if host.Password == "" && strings.TrimSpace(host.KeyPath) == "" {
+	if host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
 		return errors.New("password or key_path is required")
 	}
 	if host.Port < 1 || host.Port > 65535 {
@@ -165,6 +166,9 @@ func LoadStore() (*Store, error) {
 
 	var store Store
 	if err := json.Unmarshal(data, &store); err != nil {
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if err := decryptStorePasswords(&store); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 	return &store, nil
@@ -319,7 +323,11 @@ func SaveStore(store *Store) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(store, "", "  ")
+	saveStore, err := encryptStorePasswords(*store)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(saveStore, "", "  ")
 	if err != nil {
 		return err
 	}

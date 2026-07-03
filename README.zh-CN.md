@@ -10,6 +10,7 @@
 
 - 在 `~/.config/sshc/hosts.json` 中管理 SSH 主机
 - 从 `~/.ssh/config` 读取简单主机配置
+- 保存主机密码前会先加密，避免明文写入 `hosts.json`
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
 - 将本地 shell 脚本上传到远端执行
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
@@ -22,7 +23,7 @@
 
 ### 下载 Release
 
-1. **Recommanded** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
+1. **Recommended** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
 2. 通过 Golang 安装: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. 从 GitHub Releases 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
 
@@ -243,7 +244,9 @@ SSHC_CONFIG=/path/to/hosts.json sshc list
 
 ## 安全说明
 
-- `hosts.json` 会以明文保存密码，请保护好该文件权限。
+- 保存的密码会先加密再写入 `hosts.json`。
+- 本地加密密钥保存在 `~/.config/sshc/key`，请同时保护好 key 文件和 hosts 文件。
+- 旧版本中的明文 `password` 字段仍可读取，用于兼容已有配置。
 - 尽量优先使用 SSH key，而不是密码。
 - 如果同时提供密码和 `--key`，会优先尝试 key 认证。
 - 当前 host key 校验是宽松模式，不强制校验 `known_hosts`。高安全要求环境不建议
