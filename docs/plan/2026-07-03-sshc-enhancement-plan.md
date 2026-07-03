@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-03 | Codex | 根据 `tmp/sshc-enh.md` 整理增强范围与实施顺序 |
 | v0.2 | 2026-07-03 | Codex | 对照 `docs/TODO.md` 补充可并入计划的主机匹配、add、scp、login/connect 项 |
 | v0.3 | 2026-07-03 | Codex | 补充分阶段 Git 提交要求，避免完整实现后一次性大提交 |
+| v0.4 | 2026-07-03 | Codex | 提交策略统一为 Conventional Commits 前缀格式 |
 
 ## 背景
 
@@ -56,21 +57,32 @@
 实施时按“可独立验证、可独立回滚”的粒度提交：
 
 - 每个子阶段完成后立即运行对应测试和构建。
-- 每个子阶段独立提交，提交信息描述该阶段的行为变化。
+- 每个子阶段独立提交，提交信息使用 Conventional Commits 前缀并描述该阶段的行为变化。
 - 不把纯文档、命令面、核心实现、测试修复混在一个大提交里，除非变动非常小且无法合理拆分。
 - 如果一个阶段中途发现设计需要调整，先更新计划文档并提交，再继续实现。
 - 阶段收口时更新 `docs/TODO.md` 的完成状态并单独或随该阶段最后一个提交提交。
 
+提交前缀约定：
+
+| 前缀 | 使用场景 |
+| --- | --- |
+| `feat:` | 新增用户可见能力、命令参数、命令行为 |
+| `fix:` | 修复错误行为、兼容性问题或回归 |
+| `docs:` | 仅文档、README、help 文案、计划/TODO 更新 |
+| `test:` | 仅测试覆盖、测试 fixture、测试辅助函数 |
+| `refactor:` | 不改变行为的结构调整、包拆分、内部重命名 |
+| `chore:` | 构建、依赖、仓库维护、无业务行为变化的杂项 |
+
 建议提交模板：
 
 ```text
-Add partial host target matching
-Add run script execution mode
-Add run cwd support
-Wrap run timeout on remote host
-Add sudo options for run command
-Add transfer sha256 verification
-Add sshc deploy examples
+feat: add partial host target matching
+feat: add run script execution mode
+feat: add run cwd support
+feat: wrap run timeout on remote host
+feat: add sudo options for run command
+feat: add transfer sha256 verification
+docs: add sshc deploy examples
 ```
 
 ## TODO 纳入判断
@@ -158,10 +170,10 @@ sshc run dev -- hostname
 
 阶段提交：
 
-- P1.1 提交：target 非完整匹配，仅包含 `Store` 匹配逻辑、命令层接入和测试。
-- P1.2 提交：`run --script` 和 `--keep-remote-script`，包含脚本上传、执行、清理和日志字段。
-- P1.3 提交：`run --cwd`，让普通命令和脚本模式都支持工作目录。
-- P1.4 提交：help/README/TODO 更新，如前面提交已包含足够文档可省略。
+- P1.1 提交：`feat: add partial host target matching`，仅包含 `Store` 匹配逻辑、命令层接入和测试。
+- P1.2 提交：`feat: add run script execution mode`，包含脚本上传、执行、清理和日志字段。
+- P1.3 提交：`feat: add run cwd support`，让普通命令和脚本模式都支持工作目录。
+- P1.4 提交：`docs: update run help for script and cwd`，help/README/TODO 更新，如前面提交已包含足够文档可省略。
 
 ### P2: 远端 timeout 清理长进程
 
@@ -210,9 +222,9 @@ timeout -> sudo/user -> cwd -> env -> command/script
 
 阶段提交：
 
-- P2.1 提交：`--kill-after` 参数解析和 RunOptions 扩展。
-- P2.2 提交：远端 `timeout` 包装和客户端保护 timeout。
-- P2.3 提交：help/README/TODO 更新。
+- P2.1 提交：`feat: add run kill-after option`，包含参数解析和 RunOptions 扩展。
+- P2.2 提交：`feat: wrap run timeout on remote host`，包含远端 `timeout` 包装和客户端保护 timeout。
+- P2.3 提交：`docs: update run timeout help`，help/README/TODO 更新。
 
 ### P3: sudo 和执行用户切换
 
@@ -248,8 +260,8 @@ sshc run devhost --sudo-user ylpy --cwd /opt/ylpy/app -- python -m app
 
 阶段提交：
 
-- P3.1 提交：`--sudo` / `--sudo-user` 参数、校验和远端命令包装。
-- P3.2 提交：组合场景测试和 help/README/TODO 更新。
+- P3.1 提交：`feat: add sudo options for run command`，包含 `--sudo` / `--sudo-user` 参数、校验和远端命令包装。
+- P3.2 提交：`docs: document run sudo options`，包含组合场景测试和 help/README/TODO 更新；如果只有测试补强则使用 `test: cover run sudo option combinations`。
 
 ### P4: scp/download 传输增强和 sha256 校验
 
@@ -308,11 +320,11 @@ sha256.ok=true
 
 阶段提交：
 
-- P4.1 提交：上传/下载 size、elapsed 统计输出。
-- P4.2 提交：文件级 `--sha256` 校验。
-- P4.3 提交：scp 目录上传 `--remove-dir`。
-- P4.4 提交：scp 本地 glob 多文件上传。
-- P4.5 提交：help/README/TODO 更新。
+- P4.1 提交：`feat: show transfer size and elapsed time`，上传/下载 size、elapsed 统计输出。
+- P4.2 提交：`feat: add transfer sha256 verification`，文件级 `--sha256` 校验。
+- P4.3 提交：`feat: add scp remove-dir option`，scp 目录上传 `--remove-dir`。
+- P4.4 提交：`feat: support scp local glob uploads`，scp 本地 glob 多文件上传。
+- P4.5 提交：`docs: update transfer help and TODO`，help/README/TODO 更新。
 
 ### P5: 部署示例文档
 
@@ -357,8 +369,8 @@ sshc download -r /var/log/ylpy/cv-http.log -l tmp/cv-http.log devhost
 
 阶段提交：
 
-- P5.1 提交：新增 `docs/deploy-examples.md`。
-- P5.2 提交：README 和 LongHelp 链接/提示更新。
+- P5.1 提交：`docs: add sshc deploy examples`，新增 `docs/deploy-examples.md`。
+- P5.2 提交：`docs: link deploy examples from README and help`，README 和 LongHelp 链接/提示更新。
 
 ### P6: add 和主机配置增强
 
@@ -410,12 +422,12 @@ sshc list --group testing
 
 阶段提交：
 
-- P6.1 提交：`remark` / `group` / `key_path` 配置模型、保存读取和 list 展示。
-- P6.2 提交：key path SSH 认证接入。
-- P6.3 提交：`add -I` 交互录入。
-- P6.4 提交：clipboard 导入固定格式。
-- P6.5 提交：`~/.ssh/config` 读取。
-- P6.6 提交：password 加密方案文档或实现；若进入实现，必须单独提交，不和其他 add 能力混入。
+- P6.1 提交：`feat: extend host config fields`，包含 `remark` / `group` / `key_path` 配置模型、保存读取和 list 展示。
+- P6.2 提交：`feat: add key path ssh authentication`，key path SSH 认证接入。
+- P6.3 提交：`feat: add interactive host entry`，`add -I` 交互录入。
+- P6.4 提交：`feat: add clipboard host import`，clipboard 导入固定格式。
+- P6.5 提交：`feat: load hosts from ssh config`，`~/.ssh/config` 读取。
+- P6.6 提交：`docs: design password encryption` 或 `feat: encrypt stored host passwords`；若进入实现，必须单独提交，不和其他 add 能力混入。
 
 ### P7: login/connect 交互式连接
 
@@ -455,9 +467,9 @@ sshc login devhost --record
 
 阶段提交：
 
-- P7.1 提交：PTY 连接基础能力和 `login/connect` 命令。
-- P7.2 提交：终端状态恢复、resize、Ctrl+C 等行为完善。
-- P7.3 提交：连接日志和文档更新。
+- P7.1 提交：`feat: add interactive ssh login command`，PTY 连接基础能力和 `login/connect` 命令。
+- P7.2 提交：`fix: restore terminal state after login`，终端状态恢复、resize、Ctrl+C 等行为完善；如果不是修复而是首次补全行为，可使用 `feat: handle terminal resize in login`。
+- P7.3 提交：`docs: document login command behavior`，连接日志和文档更新。
 
 ## 暂缓项
 
@@ -506,17 +518,17 @@ sshc run devhost --json -- systemctl is-active app
 
 ## 建议实施顺序
 
-1. P1.1: target 非完整匹配，验证后提交。
-2. P1.2: `run --script`、`--keep-remote-script`，验证后提交。
-3. P1.3: `run --cwd`，验证后提交。
-4. P2.1-P2.2: 远端 `timeout` 包装、`--kill-after`，按子阶段提交。
-5. P3.1-P3.2: `--sudo`、`--sudo-user`，按子阶段提交。
-6. P4.1-P4.2: `scp/download --sha256`、size、elapsed 输出，按子阶段提交。
-7. P4.3-P4.4: scp `--remove-dir`、本地 glob 多文件上传，按子阶段提交。
-8. P5.1-P5.2: 部署示例文档和 README/help 链接，按子阶段提交。
-9. P6.1-P6.2: `remark` / `group` / `key_path` 与 key 认证，按子阶段提交。
-10. P6.3-P6.6: `add -I`、clipboard、password 加密、`~/.ssh/config`，逐项提交。
-11. P7.1-P7.3: `login/connect`，按子阶段提交。
+1. P1.1: target 非完整匹配，验证后用 `feat:` 提交。
+2. P1.2: `run --script`、`--keep-remote-script`，验证后用 `feat:` 提交。
+3. P1.3: `run --cwd`，验证后用 `feat:` 提交。
+4. P2.1-P2.2: 远端 `timeout` 包装、`--kill-after`，按子阶段用 `feat:` 提交。
+5. P3.1-P3.2: `--sudo`、`--sudo-user`，实现用 `feat:`，文档用 `docs:`，测试补强用 `test:`。
+6. P4.1-P4.2: `scp/download --sha256`、size、elapsed 输出，按子阶段用 `feat:` 提交。
+7. P4.3-P4.4: scp `--remove-dir`、本地 glob 多文件上传，按子阶段用 `feat:` 提交。
+8. P5.1-P5.2: 部署示例文档和 README/help 链接，用 `docs:` 提交。
+9. P6.1-P6.2: `remark` / `group` / `key_path` 与 key 认证，按子阶段用 `feat:` 提交。
+10. P6.3-P6.6: `add -I`、clipboard、password 加密、`~/.ssh/config`，逐项用 `feat:` 或 `docs:` 提交。
+11. P7.1-P7.3: `login/connect`，新增行为用 `feat:`，终端恢复修复用 `fix:`，文档用 `docs:`。
 12. 暂缓项按后续使用反馈再排期。
 
 ## 待确认事项
