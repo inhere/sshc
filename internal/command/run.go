@@ -75,6 +75,8 @@ Examples:
   sshc run 192.168.1.10 -- docker ps
   sshc run devhost --script ./deploy.sh
   sshc run devhost --cwd /opt/app -- python -m app
+  sshc run devhost --sudo -- apt-get update
+  sshc run devhost --sudo-user app --cwd /opt/app -- whoami
   sshc run devhost --timeout 30s --kill-after 5s -- systemctl status nginx
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
@@ -88,6 +90,8 @@ Options:
   -e/--env can be repeated. Later values override env-file values.
   --env-file/--efile loads a single env file with KEY=value lines.
   --cwd runs the command or script from the given remote directory.
+  --sudo runs the command with sudo.
+  --sudo-user runs the command as a user via sudo.
   --script uploads a local shell script to /tmp and runs it with bash.
   --keep-remote-script keeps the uploaded script for debugging.
 
@@ -100,6 +104,7 @@ Env file format:
 Notes:
   - Remote commands must be placed after --.
   - Remote timeout requires the remote host to provide the timeout command.
+  - Sudo options require passwordless sudo or a root SSH user.
   - Use --script instead of command after -- for multi-line deployment scripts.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
