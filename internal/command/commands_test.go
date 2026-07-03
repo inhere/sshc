@@ -158,6 +158,7 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	err := app.RunWithArgs([]string{
 		"run",
 		"--timeout", "3s",
+		"--kill-after", "5",
 		"--efile", envFile,
 		"-e", "FOO=inline",
 		"-e", "BAZ=baz",
@@ -169,6 +170,9 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	}
 	if gotOpts.Timeout != 3*time.Second {
 		t.Fatalf("timeout = %s", gotOpts.Timeout)
+	}
+	if gotOpts.KillAfter != 5*time.Second {
+		t.Fatalf("kill after = %s", gotOpts.KillAfter)
 	}
 	if gotOpts.Env["FOO"] != "inline" || gotOpts.Env["BAR"] != "bar" || gotOpts.Env["BAZ"] != "baz" {
 		t.Fatalf("env = %#v", gotOpts.Env)

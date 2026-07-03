@@ -83,6 +83,7 @@ Examples:
 Options:
   --timeout accepts Go duration values like 500ms, 30s, 2m.
   --timeout also accepts bare seconds, for example 5 means 5s.
+  --kill-after accepts the same duration format as --timeout.
   -e/--env can be repeated. Later values override env-file values.
   --env-file/--efile loads a single env file with KEY=value lines.
   --cwd runs the command or script from the given remote directory.
@@ -103,6 +104,7 @@ Notes:
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
+		c.StringVar(&opts.KillAfter, "kill-after", "", "force kill delay after timeout, eg: 30s or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
 		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
 		c.StringVar(&opts.CWD, "cwd", "", "remote working directory")
@@ -116,6 +118,7 @@ Notes:
 
 type runFlagOptions struct {
 	Timeout          string
+	KillAfter        string
 	Env              cflag.Strings
 	EnvFile          string
 	CWD              string
@@ -128,12 +131,17 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 	if err != nil {
 		return core.RunOptions{}, err
 	}
+	killAfter, err := core.ParseTimeout(flags.KillAfter)
+	if err != nil {
+		return core.RunOptions{}, err
+	}
 	env, err := core.LoadRunEnv(flags.EnvFile, flags.Env.Strings())
 	if err != nil {
 		return core.RunOptions{}, err
 	}
 	return core.RunOptions{
 		Timeout:          timeout,
+		KillAfter:        killAfter,
 		Env:              env,
 		CWD:              strings.TrimSpace(flags.CWD),
 		ScriptPath:       strings.TrimSpace(flags.Script),

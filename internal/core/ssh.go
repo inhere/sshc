@@ -18,6 +18,7 @@ import (
 
 type RunOptions struct {
 	Timeout          time.Duration
+	KillAfter        time.Duration
 	Env              map[string]string
 	CWD              string
 	ScriptPath       string
