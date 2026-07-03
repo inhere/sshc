@@ -57,6 +57,12 @@ sshc log devhost --match uptime
 sshc log devhost --tail 50
 ```
 
+Deployment examples:
+
+```text
+docs/deploy-examples.md
+```
+
 ## Config
 
 The default config file is:

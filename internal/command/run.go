@@ -106,6 +106,7 @@ Notes:
   - Remote timeout requires the remote host to provide the timeout command.
   - Sudo options require passwordless sudo or a root SSH user.
   - Use --script instead of command after -- for multi-line deployment scripts.
+  - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
 `)
