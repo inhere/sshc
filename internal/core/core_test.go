@@ -264,6 +264,41 @@ func TestValidateRemoteRemoveDirPath(t *testing.T) {
 	}
 }
 
+func TestExpandLocalGlob(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.jar")
+	fileB := filepath.Join(dir, "b.jar")
+	if err := os.WriteFile(fileB, []byte("b"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fileA, []byte("a"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := expandLocalGlob(filepath.Join(dir, "*.jar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{fileA, fileB}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("matches = %#v, want %#v", got, want)
+	}
+}
+
+func TestExpandLocalGlobRejectsEmptyAndDirectories(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := expandLocalGlob(filepath.Join(dir, "*.jar")); err == nil {
+		t.Fatal("expected empty glob error")
+	}
+	subdir := filepath.Join(dir, "sub.jar")
+	if err := os.Mkdir(subdir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := expandLocalGlob(filepath.Join(dir, "*.jar")); err == nil || !strings.Contains(err.Error(), "matched directory") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestUploadRemoteRejectsRemoveDirForFileBeforeConnect(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "data.txt")
 	if err := os.WriteFile(file, []byte("hello"), 0600); err != nil {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -187,6 +188,10 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 		result.Elapsed = time.Since(started)
 	}()
 
+	if isLocalGlob(localPath) {
+		return uploadRemoteGlob(host, localPath, remotePath, opts, started)
+	}
+
 	info, err := os.Stat(localPath)
 	if err != nil {
 		return result, err
@@ -279,6 +284,49 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 		return nil
 	})
 	return result, err
+}
+
+func uploadRemoteGlob(host Host, pattern, remotePath string, opts TransferOptions, started time.Time) (result TransferResult, err error) {
+	defer func() {
+		result.Elapsed = time.Since(started)
+	}()
+	if opts.SHA256 {
+		return result, fmt.Errorf("--sha256 is only supported for single file transfers")
+	}
+	if opts.RemoveDir {
+		return result, fmt.Errorf("--remove-dir is only supported for directory uploads")
+	}
+
+	matches, err := expandLocalGlob(pattern)
+	if err != nil {
+		return result, err
+	}
+
+	client, err := newSSHClient(host)
+	if err != nil {
+		return result, err
+	}
+	defer client.Close()
+
+	sftpClient, err := client.NewSftp()
+	if err != nil {
+		return result, err
+	}
+	defer sftpClient.Close()
+
+	if err := sftpClient.MkdirAll(remotePath); err != nil {
+		return result, err
+	}
+	for _, localFile := range matches {
+		remoteFile := JoinRemotePath(remotePath, filepath.Base(localFile))
+		bytes, err := uploadFileWithSFTP(sftpClient, localFile, remoteFile)
+		if err != nil {
+			return result, err
+		}
+		result.Bytes += bytes
+		result.Files++
+	}
+	return result, nil
 }
 
 func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) (result TransferResult, err error) {
@@ -463,6 +511,33 @@ func JoinRemotePath(base, elem string) string {
 		return path.Clean(base + elem)
 	}
 	return path.Join(base, elem)
+}
+
+func isLocalGlob(localPath string) bool {
+	return strings.ContainsAny(localPath, "*?[")
+}
+
+func expandLocalGlob(pattern string) ([]string, error) {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("local glob %q matched no files", pattern)
+	}
+	sort.Strings(matches)
+	files := make([]string, 0, len(matches))
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("local glob %q matched directory %q; only files are supported", pattern, match)
+		}
+		files = append(files, match)
+	}
+	return files, nil
 }
 
 func fileSHA256(filePath string) (string, error) {
