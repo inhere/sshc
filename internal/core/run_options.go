@@ -104,8 +104,12 @@ func trimEnvValue(value string) string {
 }
 
 func BuildRemoteCommand(command string, env map[string]string) (string, error) {
+	return BuildRemoteCommandWithCWD(command, env, "")
+}
+
+func BuildRemoteCommandWithCWD(command string, env map[string]string, cwd string) (string, error) {
 	if len(env) == 0 {
-		return command, nil
+		return withRemoteCWD(command, cwd), nil
 	}
 	keys := make([]string, 0, len(env))
 	for key := range env {
@@ -121,7 +125,15 @@ func BuildRemoteCommand(command string, env map[string]string) (string, error) {
 		parts = append(parts, key+"="+shellQuote(env[key]))
 	}
 	parts = append(parts, command)
-	return strings.Join(parts, " "), nil
+	return withRemoteCWD(strings.Join(parts, " "), cwd), nil
+}
+
+func withRemoteCWD(command, cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return command
+	}
+	return "cd " + shellQuote(cwd) + " && " + command
 }
 
 func shellQuote(value string) string {

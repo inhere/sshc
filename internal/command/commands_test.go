@@ -175,6 +175,42 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	}
 }
 
+func TestRunPassesCWDOption(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotOpts core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--cwd", "/opt/app", "devhost", "--", "pwd"}); err != nil {
+		t.Fatalf("run host: %v", err)
+	}
+	if gotOpts.CWD != "/opt/app" {
+		t.Fatalf("cwd = %q, want /opt/app", gotOpts.CWD)
+	}
+
+	lines, err := core.ReadRunLogs("devhost", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], `"cwd":"/opt/app"`) {
+		t.Fatalf("logs = %#v", lines)
+	}
+}
+
 func TestRunPassesScriptOptions(t *testing.T) {
 	withTempConfig(t)
 	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")

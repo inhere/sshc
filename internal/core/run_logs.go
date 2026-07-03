@@ -28,6 +28,7 @@ type RunLogRecord struct {
 	DurationMS       int64
 	Output           string
 	Error            string
+	CWD              string
 	Script           string
 	RemoteScript     string
 	KeepRemoteScript bool
@@ -77,6 +78,9 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 	}
 	if rec.Error != "" {
 		attrs = append(attrs, slog.String("error", rec.Error))
+	}
+	if rec.CWD != "" {
+		attrs = append(attrs, slog.String("cwd", rec.CWD))
 	}
 	if rec.Script != "" {
 		attrs = append(attrs,

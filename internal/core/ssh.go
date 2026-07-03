@@ -19,6 +19,7 @@ import (
 type RunOptions struct {
 	Timeout          time.Duration
 	Env              map[string]string
+	CWD              string
 	ScriptPath       string
 	RemoteScriptPath string
 	KeepRemoteScript bool
@@ -35,7 +36,7 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 		return executeRemoteScript(client, opts)
 	}
 
-	remoteCommand, err := BuildRemoteCommand(command, opts.Env)
+	remoteCommand, err := BuildRemoteCommandWithCWD(command, opts.Env, opts.CWD)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 	if _, err := client.Run("chmod 700 " + shellQuote(remoteScriptPath)); err != nil {
 		return nil, err
 	}
-	remoteCommand, err := BuildRemoteCommand(scriptExecuteCommand(remoteScriptPath), opts.Env)
+	remoteCommand, err := BuildRemoteCommandWithCWD(scriptExecuteCommand(remoteScriptPath), opts.Env, opts.CWD)
 	if err != nil {
 		return nil, err
 	}

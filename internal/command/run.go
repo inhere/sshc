@@ -55,6 +55,7 @@ func NewRunCmd() *capp.Cmd {
 			DurationMS:       core.SinceMS(startedAt),
 			Output:           string(out),
 			Error:            core.ErrorString(err),
+			CWD:              runOptions.CWD,
 			Script:           runOptions.ScriptPath,
 			RemoteScript:     runOptions.RemoteScriptPath,
 			KeepRemoteScript: runOptions.KeepRemoteScript,
@@ -73,6 +74,7 @@ Examples:
   sshc run devhost -- uptime
   sshc run 192.168.1.10 -- docker ps
   sshc run devhost --script ./deploy.sh
+  sshc run devhost --cwd /opt/app -- python -m app
   sshc run devhost --timeout 30s -- systemctl status nginx
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
@@ -83,6 +85,7 @@ Options:
   --timeout also accepts bare seconds, for example 5 means 5s.
   -e/--env can be repeated. Later values override env-file values.
   --env-file/--efile loads a single env file with KEY=value lines.
+  --cwd runs the command or script from the given remote directory.
   --script uploads a local shell script to /tmp and runs it with bash.
   --keep-remote-script keeps the uploaded script for debugging.
 
@@ -102,6 +105,7 @@ Notes:
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
 		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
+		c.StringVar(&opts.CWD, "cwd", "", "remote working directory")
 		c.StringVar(&opts.Script, "script", "", "local shell script to upload and run")
 		c.BoolVar(&opts.KeepRemoteScript, "keep-remote-script", false, "keep uploaded remote script")
 		c.AddArg("target", "host ip or name", true)
@@ -114,6 +118,7 @@ type runFlagOptions struct {
 	Timeout          string
 	Env              cflag.Strings
 	EnvFile          string
+	CWD              string
 	Script           string
 	KeepRemoteScript bool
 }
@@ -130,6 +135,7 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 	return core.RunOptions{
 		Timeout:          timeout,
 		Env:              env,
+		CWD:              strings.TrimSpace(flags.CWD),
 		ScriptPath:       strings.TrimSpace(flags.Script),
 		KeepRemoteScript: flags.KeepRemoteScript,
 	}, nil

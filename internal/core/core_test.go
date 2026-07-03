@@ -88,6 +88,17 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 	}
 }
 
+func TestBuildRemoteCommandWithCWD(t *testing.T) {
+	command, err := BuildRemoteCommandWithCWD("python -m app", map[string]string{"APP_ENV": "prod"}, "/opt/my app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "cd '/opt/my app' && APP_ENV='prod' python -m app"
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+}
+
 func TestScriptExecuteCommandQuotesPath(t *testing.T) {
 	command := scriptExecuteCommand("/tmp/sshc run/a'b.sh")
 	want := `bash '/tmp/sshc run/a'\''b.sh'`
