@@ -12,6 +12,7 @@ import (
 
 const (
 	DefaultSSHPort = 22
+	DefaultGroup   = "default"
 	ConfigEnvKey   = "SSHC_CONFIG"
 )
 
@@ -22,6 +23,9 @@ type Host struct {
 	IP       string `json:"ip"`
 	User     string `json:"user"`
 	Password string `json:"password"`
+	KeyPath  string `json:"key_path,omitempty"`
+	Remark   string `json:"remark,omitempty"`
+	Group    string `json:"group,omitempty"`
 	Port     int    `json:"port"`
 }
 
@@ -81,7 +85,12 @@ func (s Store) MatchHosts(target string) []Host {
 
 	var matches []Host
 	for _, host := range s.Hosts {
-		text := strings.ToLower(strings.TrimSpace(host.Name) + " " + strings.TrimSpace(host.IP))
+		text := strings.ToLower(strings.Join([]string{
+			strings.TrimSpace(host.Name),
+			strings.TrimSpace(host.IP),
+			strings.TrimSpace(host.Remark),
+			strings.TrimSpace(HostGroupName(host)),
+		}, " "))
 		if matchAllParts(text, parts) {
 			matches = append(matches, host)
 		}
@@ -126,6 +135,13 @@ func validateHost(host Host) error {
 		}
 	}
 	return nil
+}
+
+func HostGroupName(host Host) string {
+	if strings.TrimSpace(host.Group) != "" {
+		return strings.TrimSpace(host.Group)
+	}
+	return DefaultGroup
 }
 
 func LoadStore() (*Store, error) {

@@ -356,6 +356,21 @@ func TestStoreResolveHostMatchesUniqueParts(t *testing.T) {
 	}
 }
 
+func TestStoreResolveHostMatchesRemarkAndGroup(t *testing.T) {
+	store := Store{Hosts: []Host{
+		{Name: "web-a", IP: "10.0.0.8", User: "root", Password: "one", Remark: "gpu runner", Group: "testing", Port: 22},
+		{Name: "web-b", IP: "10.0.0.9", User: "root", Password: "two", Remark: "api server", Group: "prod", Port: 22},
+	}}
+
+	host, ok, err := store.ResolveHost("testing gpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || host.Name != "web-a" {
+		t.Fatalf("host = %+v, ok = %v", host, ok)
+	}
+}
+
 func TestStoreResolveHostRejectsMultiplePartialMatches(t *testing.T) {
 	store := Store{Hosts: []Host{
 		{Name: "testing-web", IP: "10.0.0.8", User: "root", Password: "one", Port: 22},

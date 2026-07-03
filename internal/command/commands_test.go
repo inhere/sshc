@@ -17,7 +17,16 @@ func TestAddAndList(t *testing.T) {
 	withTempConfig(t)
 
 	app := newTestApp()
-	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "-p", "secret", "--name", "devhost"})
+	err := app.RunWithArgs([]string{
+		"add",
+		"--ip", "10.0.0.8",
+		"-u", "root",
+		"-p", "secret",
+		"--name", "devhost",
+		"--key", "~/.ssh/id_rsa",
+		"--remark", "testing host",
+		"--group", "testing",
+	})
 	if err != nil {
 		t.Fatalf("add host: %v", err)
 	}
@@ -28,6 +37,9 @@ func TestAddAndList(t *testing.T) {
 	}
 	if store.Hosts[0].Name != "devhost" || store.Hosts[0].IP != "10.0.0.8" || store.Hosts[0].User != "root" {
 		t.Fatalf("unexpected host: %+v", store.Hosts[0])
+	}
+	if store.Hosts[0].KeyPath != "~/.ssh/id_rsa" || store.Hosts[0].Remark != "testing host" || store.Hosts[0].Group != "testing" {
+		t.Fatalf("unexpected host metadata: %+v", store.Hosts[0])
 	}
 }
 
