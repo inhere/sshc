@@ -71,6 +71,17 @@ func newAddCmd() *capp.Cmd {
 		fmt.Fprintf(c.Output(), "saved %s (%s:%d)\n", host.Name, host.IP, host.Port)
 		return nil
 	})
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc add --ip 192.168.1.10 -u root -p password
+  sshc add --ip 192.168.1.10 --name dev -u root -p password --port 2222
+
+Notes:
+  - If --name is empty, the IP is used as the host name.
+  - Adding the same name or IP updates the saved host.
+  - Hosts are stored in ~/.config/sshc/hosts.json by default.
+  - Passwords are currently stored in plain text. Keep the config file private.
+`)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&addOpts.IP, "ip", "", "ssh host ip or hostname;true")
 		c.StringVar(&addOpts.Name, "name", "", "host alias")
@@ -124,6 +135,31 @@ func newRunCmd() *capp.Cmd {
 		return err
 	})
 	cmd.Aliases = []string{"exec"}
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc run dev -- uptime
+  sshc run 192.168.1.10 -- docker ps
+  sshc run dev --timeout 30s -- systemctl status nginx
+  sshc run dev -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
+  sshc run dev --efile ./remote.env -- env
+
+Options:
+  --timeout accepts Go duration values like 500ms, 30s, 2m.
+  --timeout also accepts bare seconds, for example 5 means 5s.
+  -e/--env can be repeated. Later values override env-file values.
+  --env-file/--efile loads a single env file with KEY=value lines.
+
+Env file format:
+  # comments and blank lines are ignored
+  APP_ENV=prod
+  export DEBUG=1
+  NAME="hello world"
+
+Notes:
+  - Remote commands must be placed after --.
+  - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
+  - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
+`)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
@@ -190,6 +226,19 @@ func newSCPCmd() *capp.Cmd {
 		return nil
 	})
 	cmd.Aliases = []string{"upload"}
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc scp -l ./local-file.txt -r /tmp/remote-file.txt dev
+  sshc scp -l ./local-dir -r /tmp/remote-dir dev
+  sshc upload -l ./dist -r /opt/app/dist dev
+
+Path rules:
+  - -l/--local can be a file or directory.
+  - -r/--remote is the remote destination path.
+  - File upload creates remote parent directories when needed.
+  - If remote path ends with / for file upload, the local file name is appended.
+  - Directory upload recursively creates directories and files under the remote path.
+`)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
 		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
@@ -231,6 +280,19 @@ func newDownloadCmd() *capp.Cmd {
 		return nil
 	})
 	cmd.Aliases = []string{"dl"}
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc download -r /tmp/remote-file.txt -l ./local-file.txt dev
+  sshc download -r /tmp/remote-file.txt -l ./downloads/ dev
+  sshc dl -r /tmp/remote-dir -l ./local-dir dev
+
+Path rules:
+  - -r/--remote can be a remote file or directory.
+  - -l/--local is the local destination path.
+  - If local path exists as a directory, the remote base name is appended.
+  - If local path ends with / or \, the remote base name is appended.
+  - Directory download recursively creates local directories and files.
+`)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&downloadOpts.LocalPath, "local", "", "local destination path;true;l")
 		c.StringVar(&downloadOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
@@ -240,7 +302,7 @@ func newDownloadCmd() *capp.Cmd {
 }
 
 func newListCmd() *capp.Cmd {
-	return capp.NewCmd("list", "list saved ssh hosts", func(c *capp.Cmd) error {
+	cmd := capp.NewCmd("list", "list saved ssh hosts", func(c *capp.Cmd) error {
 		store, err := loadStore()
 		if err != nil {
 			return err
@@ -253,9 +315,21 @@ func newListCmd() *capp.Cmd {
 			fmt.Fprintf(c.Output(), "%s\t%s@%s:%d\n", name, host.User, host.IP, host.Port)
 		}
 		return nil
-	}).WithConfigFn(func(c *capp.Cmd) {
-		c.Aliases = []string{"ls"}
 	})
+	cmd.Aliases = []string{"ls"}
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc list
+  sshc ls
+
+Output:
+  name    user@ip:port
+
+Notes:
+  - Hosts are read from ~/.config/sshc/hosts.json by default.
+  - Set SSHC_CONFIG to use a different hosts file.
+`)
+	return cmd
 }
 
 var logOpts = struct {
@@ -279,6 +353,23 @@ func newLogCmd() *capp.Cmd {
 		}
 		return nil
 	})
+	cmd.LongHelp = strings.TrimSpace(`
+Examples:
+  sshc log
+  sshc log dev
+  sshc log 192.168.1.10
+  sshc log dev --match uptime
+  sshc log dev -m error --tail 50
+
+Log files:
+  ~/.config/sshc/logs/<host>.log
+
+Notes:
+  - Without target, all host log files are read in file-name order.
+  - With target, sshc resolves a saved host first, so IP can map to the host name log.
+  - --match filters raw JSON log lines by substring.
+  - --tail limits the final number of printed lines after filtering.
+`)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&logOpts.Match, "match", "", "match log lines by keyword;;m")
 		c.IntVar(&logOpts.Tail, "tail", 200, "max lines to print")
