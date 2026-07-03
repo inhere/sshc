@@ -57,6 +57,7 @@ func NewDownloadCmd() *capp.Cmd {
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
   sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
+  sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost --sha256
   sshc download -r /tmp/remote-file.txt -l ./downloads/ devhost
   sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 
@@ -67,6 +68,7 @@ Path rules:
   - If local path ends with / or \, the remote base name is appended.
   - Directory download recursively creates local directories and files.
   - --sha256 verifies file downloads with remote and local sha256 hashes.
+  - --sha256 is only supported for single file downloads.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&downloadOpts.LocalPath, "local", "", "local destination path;true;l")

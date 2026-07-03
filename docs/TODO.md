@@ -14,9 +14,14 @@
   - 新增备注字段 --remark; 新增 --group 配置 server group，默认 "default"
 - [ ] 支持读取 ~/.ssh/ 的相关配置 config, password 文件
 - [x] 新增 scp -l local-path -r remote-path hostname 命令上传文件到remote
-  - [ ] local-path 支持使用 *通配符, 逗号分隔多个文件
-  - [ ] 新增选项 --remove-dir 是否上传前先删除远程目录
+  - [x] 输出 size/files/dirs/elapsed 传输统计
+  - [x] 新增 --sha256 文件级校验
+  - [x] local-path 支持使用 * 通配符上传多个文件
+  - [ ] local-path 支持逗号分隔多个文件
+  - [x] 新增选项 --remove-dir 是否上传前先删除远程目录
 - [x] 新增 download/dl 从远程下载 文件/目录 到本地路径下
+  - [x] 输出 size/files/dirs/elapsed 传输统计
+  - [x] 新增 --sha256 文件级校验
 - [ ] 新增 login/connect 命令，连接并打开 pty 可以连续操作(这种可以记录到命令执行日志吗？)
 
 ## [x] 整理项目结构

@@ -28,13 +28,17 @@ Upload a file or directory:
 
 ```bash
 sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost
+sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost --sha256
 sshc scp -l ./local-dir -r /tmp/remote-dir devhost
+sshc scp -l ./dist -r /opt/app/dist devhost --remove-dir
+sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
 ```
 
 Download a file or directory:
 
 ```bash
 sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
+sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost --sha256
 sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 ```
 

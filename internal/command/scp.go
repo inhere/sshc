@@ -62,7 +62,10 @@ func NewUploadCmd() *capp.Cmd {
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
   sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost
+  sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost --sha256
   sshc scp -l ./local-dir -r /tmp/remote-dir devhost
+  sshc scp -l ./dist -r /opt/app/dist devhost --remove-dir
+  sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
   sshc upload -l ./dist -r /opt/app/dist devhost
 
 Path rules:
@@ -71,7 +74,9 @@ Path rules:
   - File upload creates remote parent directories when needed.
   - If remote path ends with / for file upload, the local file name is appended.
   - Directory upload recursively creates directories and files under the remote path.
+  - Local glob patterns are expanded by sshc and upload matching files to the remote directory.
   - --sha256 verifies file uploads with local and remote sha256 hashes.
+  - --sha256 is only supported for single file uploads.
   - --remove-dir removes the remote directory before uploading a local directory.
   - --remove-dir refuses empty, current, and root remote paths.
 `)
