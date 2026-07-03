@@ -175,6 +175,92 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	}
 }
 
+func TestRunPassesScriptOptions(t *testing.T) {
+	withTempConfig(t)
+	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotCommand string
+	var gotOpts core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotCommand = command
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--script", scriptPath, "--keep-remote-script", "devhost"}); err != nil {
+		t.Fatalf("run script: %v", err)
+	}
+	if gotCommand != "" {
+		t.Fatalf("command = %q, want empty", gotCommand)
+	}
+	if gotOpts.ScriptPath != scriptPath {
+		t.Fatalf("script = %q, want %q", gotOpts.ScriptPath, scriptPath)
+	}
+	if gotOpts.RemoteScriptPath == "" || !strings.HasPrefix(gotOpts.RemoteScriptPath, "/tmp/sshc-run-") {
+		t.Fatalf("remote script = %q", gotOpts.RemoteScriptPath)
+	}
+	if !gotOpts.KeepRemoteScript {
+		t.Fatal("keep remote script = false, want true")
+	}
+
+	lines, err := core.ReadRunLogs("devhost", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("log lines len = %d, want 1", len(lines))
+	}
+	line := lines[0]
+	for _, want := range []string{`"script":"` + strings.ReplaceAll(scriptPath, `\`, `\\`) + `"`, `"keep_remote_script":true`, `"remote_script":"/tmp/sshc-run-`} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log line %q does not contain %q", line, want)
+		}
+	}
+}
+
+func TestRunRejectsCommandAndScriptTogether(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "--script", "deploy.sh", "devhost", "--", "hostname"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunRequiresCommandOrScript(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "devhost"})
+	if err == nil || !strings.Contains(err.Error(), "remote command or --script is required") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestSCPUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

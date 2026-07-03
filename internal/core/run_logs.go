@@ -21,13 +21,16 @@ var now = time.Now
 const logTimeLayout = "2006-01-02T15:04:05.000"
 
 type RunLogRecord struct {
-	Target     string
-	Command    string
-	Status     string
-	StartedAt  time.Time
-	DurationMS int64
-	Output     string
-	Error      string
+	Target           string
+	Command          string
+	Status           string
+	StartedAt        time.Time
+	DurationMS       int64
+	Output           string
+	Error            string
+	Script           string
+	RemoteScript     string
+	KeepRemoteScript bool
 }
 
 func Now() time.Time {
@@ -74,6 +77,13 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 	}
 	if rec.Error != "" {
 		attrs = append(attrs, slog.String("error", rec.Error))
+	}
+	if rec.Script != "" {
+		attrs = append(attrs,
+			slog.String("script", rec.Script),
+			slog.String("remote_script", rec.RemoteScript),
+			slog.Bool("keep_remote_script", rec.KeepRemoteScript),
+		)
 	}
 
 	logTime := rec.StartedAt

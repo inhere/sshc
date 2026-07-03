@@ -18,8 +18,11 @@ func NewRunCmd() *capp.Cmd {
 	cmd := capp.NewCmd("run", "run a remote command", func(c *capp.Cmd) error {
 		target := strings.TrimSpace(c.Arg("target").String())
 		command := strings.TrimSpace(strings.Join(c.Arg("command").Strings(), " "))
-		if command == "" {
-			return errors.New("remote command is required")
+		if command == "" && strings.TrimSpace(opts.Script) == "" {
+			return errors.New("remote command or --script is required")
+		}
+		if command != "" && strings.TrimSpace(opts.Script) != "" {
+			return errors.New("remote command and --script cannot be used together")
 		}
 
 		store, err := core.LoadStore()
@@ -40,15 +43,21 @@ func NewRunCmd() *capp.Cmd {
 		}
 
 		startedAt := core.Now()
+		if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
+			runOptions.RemoteScriptPath = core.NewRemoteScriptPath(startedAt)
+		}
 		out, err := runRemote(host, command, runOptions)
 		logErr := core.AppendRunLog(host, core.RunLogRecord{
-			Target:     target,
-			Command:    command,
-			Status:     core.RunStatus(err),
-			StartedAt:  startedAt,
-			DurationMS: core.SinceMS(startedAt),
-			Output:     string(out),
-			Error:      core.ErrorString(err),
+			Target:           target,
+			Command:          command,
+			Status:           core.RunStatus(err),
+			StartedAt:        startedAt,
+			DurationMS:       core.SinceMS(startedAt),
+			Output:           string(out),
+			Error:            core.ErrorString(err),
+			Script:           runOptions.ScriptPath,
+			RemoteScript:     runOptions.RemoteScriptPath,
+			KeepRemoteScript: runOptions.KeepRemoteScript,
 		})
 		if len(out) > 0 {
 			fmt.Fprint(c.Output(), string(out))
@@ -63,15 +72,19 @@ func NewRunCmd() *capp.Cmd {
 Examples:
   sshc run devhost -- uptime
   sshc run 192.168.1.10 -- docker ps
+  sshc run devhost --script ./deploy.sh
   sshc run devhost --timeout 30s -- systemctl status nginx
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
+  sshc run devhost --script ./deploy.sh --keep-remote-script
 
 Options:
   --timeout accepts Go duration values like 500ms, 30s, 2m.
   --timeout also accepts bare seconds, for example 5 means 5s.
   -e/--env can be repeated. Later values override env-file values.
   --env-file/--efile loads a single env file with KEY=value lines.
+  --script uploads a local shell script to /tmp and runs it with bash.
+  --keep-remote-script keeps the uploaded script for debugging.
 
 Env file format:
   # comments and blank lines are ignored
@@ -81,6 +94,7 @@ Env file format:
 
 Notes:
   - Remote commands must be placed after --.
+  - Use --script instead of command after -- for multi-line deployment scripts.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
 `)
@@ -88,16 +102,20 @@ Notes:
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
 		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
+		c.StringVar(&opts.Script, "script", "", "local shell script to upload and run")
+		c.BoolVar(&opts.KeepRemoteScript, "keep-remote-script", false, "keep uploaded remote script")
 		c.AddArg("target", "host ip or name", true)
-		c.AddArg("command", "remote command after --", true, nil, true)
+		c.AddArg("command", "remote command after --", false, nil, true)
 	}
 	return cmd
 }
 
 type runFlagOptions struct {
-	Timeout string
-	Env     cflag.Strings
-	EnvFile string
+	Timeout          string
+	Env              cflag.Strings
+	EnvFile          string
+	Script           string
+	KeepRemoteScript bool
 }
 
 func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
@@ -109,5 +127,10 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 	if err != nil {
 		return core.RunOptions{}, err
 	}
-	return core.RunOptions{Timeout: timeout, Env: env}, nil
+	return core.RunOptions{
+		Timeout:          timeout,
+		Env:              env,
+		ScriptPath:       strings.TrimSpace(flags.Script),
+		KeepRemoteScript: flags.KeepRemoteScript,
+	}, nil
 }

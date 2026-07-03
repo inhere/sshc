@@ -88,6 +88,21 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 	}
 }
 
+func TestScriptExecuteCommandQuotesPath(t *testing.T) {
+	command := scriptExecuteCommand("/tmp/sshc run/a'b.sh")
+	want := `bash '/tmp/sshc run/a'\''b.sh'`
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+}
+
+func TestNewRemoteScriptPath(t *testing.T) {
+	path := NewRemoteScriptPath(time.Unix(123, 456))
+	if !strings.HasPrefix(path, "/tmp/sshc-run-") || !strings.HasSuffix(path, ".sh") {
+		t.Fatalf("path = %q", path)
+	}
+}
+
 func TestLocalDownloadPaths(t *testing.T) {
 	dir := t.TempDir()
 	existingDir := filepath.Join(dir, "existing")

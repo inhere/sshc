@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -15,8 +17,11 @@ import (
 )
 
 type RunOptions struct {
-	Timeout time.Duration
-	Env     map[string]string
+	Timeout          time.Duration
+	Env              map[string]string
+	ScriptPath       string
+	RemoteScriptPath string
+	KeepRemoteScript bool
 }
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
@@ -25,6 +30,10 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 		return nil, err
 	}
 	defer client.Close()
+
+	if opts.ScriptPath != "" {
+		return executeRemoteScript(client, opts)
+	}
 
 	remoteCommand, err := BuildRemoteCommand(command, opts.Env)
 	if err != nil {
@@ -37,6 +46,69 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 	return client.RunContext(ctx, remoteCommand)
+}
+
+func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
+	remoteScriptPath := opts.RemoteScriptPath
+	if remoteScriptPath == "" {
+		remoteScriptPath = NewRemoteScriptPath(Now())
+	}
+	if err := uploadRemoteScript(client, opts.ScriptPath, remoteScriptPath); err != nil {
+		return nil, err
+	}
+	if !opts.KeepRemoteScript {
+		defer func() {
+			_, _ = client.Run("rm -f " + shellQuote(remoteScriptPath))
+		}()
+	}
+
+	if _, err := client.Run("chmod 700 " + shellQuote(remoteScriptPath)); err != nil {
+		return nil, err
+	}
+	remoteCommand, err := BuildRemoteCommand(scriptExecuteCommand(remoteScriptPath), opts.Env)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Timeout <= 0 {
+		return client.Run(remoteCommand)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	defer cancel()
+	return client.RunContext(ctx, remoteCommand)
+}
+
+func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error {
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("script path %q is a directory", localPath)
+	}
+
+	sftpClient, err := client.NewSftp()
+	if err != nil {
+		return err
+	}
+	defer sftpClient.Close()
+
+	if err := mkdirRemoteParent(sftpClient, remotePath); err != nil {
+		return err
+	}
+	return uploadFileWithSFTP(sftpClient, localPath, remotePath)
+}
+
+func scriptExecuteCommand(remotePath string) string {
+	return "bash " + shellQuote(remotePath)
+}
+
+func NewRemoteScriptPath(value time.Time) string {
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Sprintf("/tmp/sshc-run-%d.sh", value.UnixNano())
+	}
+	return fmt.Sprintf("/tmp/sshc-run-%d-%x.sh", value.UnixNano(), suffix[:])
 }
 
 func UploadRemote(host Host, localPath, remotePath string) error {
