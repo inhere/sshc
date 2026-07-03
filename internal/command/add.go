@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"sshc/internal/core"
+	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/cliui/cutypes"
 	"github.com/gookit/goutil/cflag/capp"

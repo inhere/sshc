@@ -26,13 +26,13 @@ remote operations where a full automation platform would be too heavy.
 ### Download a release
 
 1. **Recommanded** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
-2. Install by Golang: `go install github.com/inhere/sshc@latest`
+2. Install by Golang: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. Download the archive for your platform from GitHub Releases, extract it, and put the `sshc` binary on your `PATH`.
 
 ### Build from source
 
 ```bash
-git clone <this-repository-url> sshc
+git clone https://github.com/inhere/sshc.git
 cd sshc
 go build -o sshc ./cmd/sshc
 ```

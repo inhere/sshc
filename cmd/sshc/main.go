@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"sshc/internal/bootstrap"
+	"github.com/inhere/sshc/internal/bootstrap"
 )
 
 // Build metadata, injected by Makefile LDFLAGS (-X main.Version etc.).

@@ -23,13 +23,13 @@
 ### 下载 Release
 
 1. **Recommanded** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
-2. 通过 Golang 安装: `go install github.com/inhere/sshc@latest`
+2. 通过 Golang 安装: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. 从 GitHub Releases 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
 
 ### 从源码构建
 
 ```bash
-git clone <this-repository-url> sshc
+git clone https://github.com/inhere/sshc.git
 cd sshc
 go build -o sshc ./cmd/sshc
 ```

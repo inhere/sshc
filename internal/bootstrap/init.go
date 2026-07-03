@@ -1,7 +1,7 @@
 package bootstrap
 
 import (
-	"sshc/internal/command"
+	"github.com/inhere/sshc/internal/command"
 
 	"github.com/gookit/goutil/cflag/capp"
 )

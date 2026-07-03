@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"sshc/internal/core"
+	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/goutil/cflag/capp"
 )

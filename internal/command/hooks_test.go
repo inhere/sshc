@@ -1,6 +1,6 @@
 package command
 
-import "sshc/internal/core"
+import "github.com/inhere/sshc/internal/core"
 
 func setRunRemoteForTest(fn func(core.Host, string, core.RunOptions) ([]byte, error)) func() {
 	old := runRemote

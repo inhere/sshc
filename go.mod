@@ -1,4 +1,4 @@
-module sshc
+module github.com/inhere/sshc
 
 go 1.25.0
 

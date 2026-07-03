@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"sshc/internal/core"
+	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
