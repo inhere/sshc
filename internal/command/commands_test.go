@@ -61,6 +61,45 @@ func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
 	}
 }
 
+func TestAddFromClipboard(t *testing.T) {
+	withTempConfig(t)
+	t.Cleanup(setReadClipboardForTest(func() (string, error) {
+		return "ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\nname=devhost\nremark=testing host\ngroup=testing\n", nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"add", "--from-clipboard"}); err != nil {
+		t.Fatalf("add from clipboard: %v", err)
+	}
+	store := readTestStore(t)
+	if len(store.Hosts) != 1 {
+		t.Fatalf("hosts len = %d, want 1", len(store.Hosts))
+	}
+	host := store.Hosts[0]
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.KeyPath != "~/.ssh/id_rsa" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestParseClipboardHostCSV(t *testing.T) {
+	host, err := parseClipboardHost("10.0.0.8,root,secret,devhost,2222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.Password != "secret" || host.Port != 2222 {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestParseClipboardHostErrors(t *testing.T) {
+	if _, err := parseClipboardHost(""); err == nil {
+		t.Fatal("expected empty clipboard error")
+	}
+	if _, err := parseClipboardHost("only,two"); err == nil {
+		t.Fatal("expected CSV format error")
+	}
+}
+
 func TestCollectInteractiveHost(t *testing.T) {
 	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\n")
 	host, err := collectInteractiveHost(input, &strings.Builder{})

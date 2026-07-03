@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -14,21 +16,25 @@ import (
 )
 
 var addOpts = struct {
-	Interactive bool
-	IP          string
-	Name        string
-	User        string
-	Password    string
-	KeyPath     string
-	Remark      string
-	Group       string
-	Port        int
+	Interactive   bool
+	FromClipboard bool
+	IP            string
+	Name          string
+	User          string
+	Password      string
+	KeyPath       string
+	Remark        string
+	Group         string
+	Port          int
 }{Port: core.DefaultSSHPort}
 
 func NewAddCmd() *capp.Cmd {
 	cmd := capp.NewCmd("add", "add or update an ssh host", func(c *capp.Cmd) error {
 		if addOpts.Port == 0 {
 			addOpts.Port = core.DefaultSSHPort
+		}
+		if addOpts.Interactive && addOpts.FromClipboard {
+			return fmt.Errorf("--interactive and --from-clipboard cannot be used together")
 		}
 
 		var (
@@ -37,6 +43,12 @@ func NewAddCmd() *capp.Cmd {
 		)
 		if addOpts.Interactive {
 			host, err = collectInteractiveHost(cutypes.Input, c.Output())
+		} else if addOpts.FromClipboard {
+			text, readErr := readClipboard()
+			if readErr != nil {
+				return readErr
+			}
+			host, err = parseClipboardHost(text)
 		} else {
 			host, err = buildHostFromAddOptions()
 		}
@@ -62,6 +74,7 @@ func NewAddCmd() *capp.Cmd {
 Examples:
   sshc add --ip 192.168.1.10 -u root -p password
   sshc add -I
+  sshc add --from-clipboard
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 2222
   sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --remark "testing host" --group testing --key ~/.ssh/id_rsa
@@ -71,12 +84,14 @@ Notes:
   - If --group is empty, "default" is used.
   - Password or --key must be provided.
   - If both password and --key are provided, key authentication is tried first.
+  - --from-clipboard accepts key=value lines or one line: ip,user,password,name,port.
   - Adding the same name or IP updates the saved host.
   - Hosts are stored in ~/.config/sshc/hosts.json by default.
   - Passwords are currently stored in plain text. Keep the config file private.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.BoolVar(&addOpts.Interactive, "interactive", false, "interactive host entry;;I")
+		c.BoolVar(&addOpts.FromClipboard, "from-clipboard", false, "read host fields from clipboard")
 		c.StringVar(&addOpts.IP, "ip", "", "ssh host ip or hostname")
 		c.StringVar(&addOpts.Name, "name", "", "host alias")
 		c.StringVar(&addOpts.User, "user", "", "ssh username;;u")
@@ -88,6 +103,8 @@ Notes:
 	}
 	return cmd
 }
+
+var readClipboard = readSystemClipboard
 
 func buildHostFromAddOptions() (core.Host, error) {
 	host := core.Host{
@@ -102,6 +119,100 @@ func buildHostFromAddOptions() (core.Host, error) {
 	}
 	normalizeHostDefaults(&host)
 	return host, nil
+}
+
+func parseClipboardHost(text string) (core.Host, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return core.Host{}, fmt.Errorf("clipboard is empty")
+	}
+	var host core.Host
+	if strings.Contains(text, "=") {
+		host = parseClipboardKeyValues(text)
+	} else {
+		fields := strings.Split(text, ",")
+		if len(fields) < 3 || len(fields) > 5 {
+			return host, fmt.Errorf("clipboard must be key=value lines or ip,user,password,name,port")
+		}
+		host.IP = strings.TrimSpace(fields[0])
+		host.User = strings.TrimSpace(fields[1])
+		host.Password = strings.TrimSpace(fields[2])
+		if len(fields) >= 4 {
+			host.Name = strings.TrimSpace(fields[3])
+		}
+		if len(fields) >= 5 && strings.TrimSpace(fields[4]) != "" {
+			port, err := strconv.Atoi(strings.TrimSpace(fields[4]))
+			if err != nil {
+				return host, fmt.Errorf("invalid ssh port %q", strings.TrimSpace(fields[4]))
+			}
+			host.Port = port
+		}
+	}
+	if host.Port == 0 {
+		host.Port = core.DefaultSSHPort
+	}
+	normalizeHostDefaults(&host)
+	return host, nil
+}
+
+func parseClipboardKeyValues(text string) core.Host {
+	host := core.Host{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(value)
+		switch key {
+		case "ip", "host", "hostname":
+			host.IP = value
+		case "name":
+			host.Name = value
+		case "user", "username":
+			host.User = value
+		case "password", "pwd":
+			host.Password = value
+		case "key", "key_path", "keypath":
+			host.KeyPath = value
+		case "remark":
+			host.Remark = value
+		case "group":
+			host.Group = value
+		case "port":
+			if port, err := strconv.Atoi(value); err == nil {
+				host.Port = port
+			}
+		}
+	}
+	return host
+}
+
+func readSystemClipboard() (string, error) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw")
+	case "darwin":
+		cmd = exec.Command("pbpaste")
+	default:
+		if _, err := exec.LookPath("wl-paste"); err == nil {
+			cmd = exec.Command("wl-paste", "--no-newline")
+		} else if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
+		} else {
+			return "", fmt.Errorf("no clipboard reader found; install wl-paste or xclip")
+		}
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error) {

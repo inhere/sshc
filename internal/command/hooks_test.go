@@ -19,3 +19,9 @@ func setDownloadRemoteForTest(fn func(core.Host, string, string, core.TransferOp
 	downloadRemote = fn
 	return func() { downloadRemote = old }
 }
+
+func setReadClipboardForTest(fn func() (string, error)) func() {
+	old := readClipboard
+	readClipboard = fn
+	return func() { readClipboard = old }
+}
