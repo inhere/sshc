@@ -219,11 +219,19 @@ func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error
 }
 
 func NewRemoteScriptPath(value time.Time) string {
+	return NewRemoteScriptPathInDir(value, "/tmp")
+}
+
+func NewRemoteScriptPathInDir(value time.Time, dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = "/tmp"
+	}
 	var suffix [4]byte
 	if _, err := rand.Read(suffix[:]); err != nil {
-		return fmt.Sprintf("/tmp/sshc-run-%d.sh", value.UnixNano())
+		return JoinRemotePath(dir, fmt.Sprintf("sshc-run-%d.sh", value.UnixNano()))
 	}
-	return fmt.Sprintf("/tmp/sshc-run-%d-%x.sh", value.UnixNano(), suffix[:])
+	return JoinRemotePath(dir, fmt.Sprintf("sshc-run-%d-%x.sh", value.UnixNano(), suffix[:]))
 }
 
 func remoteScriptMode(opts RunOptions) string {

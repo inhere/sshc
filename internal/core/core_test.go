@@ -186,6 +186,13 @@ func TestNewRemoteScriptPath(t *testing.T) {
 	}
 }
 
+func TestNewRemoteScriptPathInDir(t *testing.T) {
+	path := NewRemoteScriptPathInDir(time.Unix(123, 456), "/opt/app/tmp")
+	if !strings.HasPrefix(path, "/opt/app/tmp/sshc-run-") || !strings.HasSuffix(path, ".sh") {
+		t.Fatalf("path = %q", path)
+	}
+}
+
 func TestLocalDownloadPaths(t *testing.T) {
 	dir := t.TempDir()
 	existingDir := filepath.Join(dir, "existing")

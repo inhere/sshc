@@ -20,6 +20,7 @@ type RunOptions struct {
 	Sudo             bool
 	SudoUser         string
 	ScriptPath       string
+	RemoteScriptDir  string
 	RemoteScriptPath string
 	KeepRemoteScript bool
 }

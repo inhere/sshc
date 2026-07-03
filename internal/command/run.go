@@ -44,7 +44,7 @@ func NewRunCmd() *capp.Cmd {
 
 		startedAt := core.Now()
 		if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
-			runOptions.RemoteScriptPath = core.NewRemoteScriptPath(startedAt)
+			runOptions.RemoteScriptPath = core.NewRemoteScriptPathInDir(startedAt, runOptions.RemoteScriptDir)
 		}
 		out, err := runRemote(host, command, runOptions)
 		logErr := core.AppendRunLog(host, core.RunLogRecord{
@@ -106,6 +106,7 @@ Notes:
 		c.BoolVar(&opts.Sudo, "sudo", false, "run remote command with sudo")
 		c.StringVar(&opts.SudoUser, "sudo-user", "", "run remote command as user via sudo")
 		c.StringVar(&opts.Script, "script", "", "local shell script to upload and run")
+		c.StringVar(&opts.RemoteScriptDir, "remote-script-dir", "", "remote directory for uploaded script")
 		c.BoolVar(&opts.KeepRemoteScript, "keep-remote-script", false, "keep uploaded remote script")
 		c.AddArg("target", "host ip or name", true)
 		c.AddArg("command", "remote command after --", false, nil, true)
@@ -122,6 +123,7 @@ type runFlagOptions struct {
 	Sudo             bool
 	SudoUser         string
 	Script           string
+	RemoteScriptDir  string
 	KeepRemoteScript bool
 }
 
@@ -147,6 +149,11 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 			return core.RunOptions{}, err
 		}
 	}
+	scriptPath := strings.TrimSpace(flags.Script)
+	remoteScriptDir := strings.TrimSpace(flags.RemoteScriptDir)
+	if remoteScriptDir != "" && scriptPath == "" {
+		return core.RunOptions{}, errors.New("--remote-script-dir requires --script")
+	}
 	return core.RunOptions{
 		Timeout:          timeout,
 		KillAfter:        killAfter,
@@ -154,7 +161,8 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 		CWD:              strings.TrimSpace(flags.CWD),
 		Sudo:             flags.Sudo,
 		SudoUser:         sudoUser,
-		ScriptPath:       strings.TrimSpace(flags.Script),
+		ScriptPath:       scriptPath,
+		RemoteScriptDir:  remoteScriptDir,
 		KeepRemoteScript: flags.KeepRemoteScript,
 	}, nil
 }

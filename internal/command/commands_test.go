@@ -403,6 +403,41 @@ func TestRunPassesScriptOptions(t *testing.T) {
 	}
 }
 
+func TestRunPassesRemoteScriptDir(t *testing.T) {
+	withTempConfig(t)
+	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotOpts core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--script", scriptPath, "--remote-script-dir", "/opt/app/tmp", "devhost"}); err != nil {
+		t.Fatalf("run script: %v", err)
+	}
+	if gotOpts.RemoteScriptDir != "/opt/app/tmp" {
+		t.Fatalf("remote script dir = %q, want /opt/app/tmp", gotOpts.RemoteScriptDir)
+	}
+	if !strings.HasPrefix(gotOpts.RemoteScriptPath, "/opt/app/tmp/sshc-run-") {
+		t.Fatalf("remote script = %q", gotOpts.RemoteScriptPath)
+	}
+}
+
 func TestRunRejectsCommandAndScriptTogether(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{
@@ -419,6 +454,15 @@ func TestRunRejectsCommandAndScriptTogether(t *testing.T) {
 	app := newTestApp()
 	err := app.RunWithArgs([]string{"run", "--script", "deploy.sh", "devhost", "--", "hostname"})
 	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunRejectsRemoteScriptDirWithoutScript(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "--remote-script-dir", "/opt/app/tmp", "devhost", "--", "hostname"})
+	if err == nil || !strings.Contains(err.Error(), "--remote-script-dir requires --script") {
 		t.Fatalf("err = %v", err)
 	}
 }
