@@ -575,6 +575,23 @@ func TestDownloadRequiresSavedHost(t *testing.T) {
 	}
 }
 
+func TestBuildHostListTable(t *testing.T) {
+	out := buildHostListTable([]core.Host{{
+		Name:    "devhost",
+		IP:      "10.0.0.8",
+		User:    "root",
+		KeyPath: "~/.ssh/id_rsa",
+		Remark:  "testing host",
+		Group:   "testing",
+		Port:    2222,
+	}})
+	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.0.0.8:2222", "key:~/.ssh/id_rsa", "testing host"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("table output %q does not contain %q", out, want)
+		}
+	}
+}
+
 func TestLoginUsesSavedHostAndWritesLog(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

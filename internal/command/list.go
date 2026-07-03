@@ -6,6 +6,7 @@ import (
 
 	"sshc/internal/core"
 
+	"github.com/gookit/cliui/show/table"
 	"github.com/gookit/goutil/cflag/capp"
 )
 
@@ -15,20 +16,9 @@ func NewListCmd() *capp.Cmd {
 		if err != nil {
 			return err
 		}
-		for _, host := range store.Hosts {
-			name := host.Name
-			if name == "" {
-				name = host.IP
-			}
-			auth := "password"
-			if strings.TrimSpace(host.KeyPath) != "" {
-				auth = "key:" + strings.TrimSpace(host.KeyPath)
-			}
-			remark := strings.TrimSpace(host.Remark)
-			if remark == "" {
-				remark = "-"
-			}
-			fmt.Fprintf(c.Output(), "%s\t%s\t%s@%s:%d\t%s\t%s\n", name, core.HostGroupName(host), host.User, host.IP, host.Port, auth, remark)
+		out := buildHostListTable(store.Hosts)
+		if out != "" {
+			fmt.Fprint(c.Output(), out)
 		}
 		return nil
 	})
@@ -46,4 +36,31 @@ Notes:
   - Set SSHC_CONFIG to use a different hosts file.
 `)
 	return cmd
+}
+
+func buildHostListTable(hosts []core.Host) string {
+	if len(hosts) == 0 {
+		return ""
+	}
+	tb := table.New("", table.WithBorderFlags(table.BorderDefault), table.WithOverflowFlag(table.OverflowWrap))
+	tb.SetHeads("Name", "Group", "Address", "Auth", "Remark")
+	for _, host := range hosts {
+		name := host.Name
+		if name == "" {
+			name = host.IP
+		}
+		remark := strings.TrimSpace(host.Remark)
+		if remark == "" {
+			remark = "-"
+		}
+		tb.AddRow(name, core.HostGroupName(host), fmt.Sprintf("%s@%s:%d", host.User, host.IP, host.Port), hostAuthLabel(host), remark)
+	}
+	return tb.String()
+}
+
+func hostAuthLabel(host core.Host) string {
+	if strings.TrimSpace(host.KeyPath) != "" {
+		return "key:" + strings.TrimSpace(host.KeyPath)
+	}
+	return "password"
 }
