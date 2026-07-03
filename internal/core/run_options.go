@@ -13,6 +13,7 @@ import (
 )
 
 var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var sudoUserPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*[$]?$`)
 
 func ParseTimeout(value string) (time.Duration, error) {
 	value = strings.TrimSpace(value)
@@ -50,6 +51,17 @@ func LoadRunEnv(file string, inline []string) (map[string]string, error) {
 		env[key] = val
 	}
 	return env, nil
+}
+
+func ValidateSudoUser(user string) error {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return errors.New("sudo-user is required")
+	}
+	if !sudoUserPattern.MatchString(user) {
+		return fmt.Errorf("invalid sudo-user %q", user)
+	}
+	return nil
 }
 
 func loadEnvFile(dst map[string]string, path string) error {

@@ -26,6 +26,8 @@ type RunOptions struct {
 	KillAfter        time.Duration
 	Env              map[string]string
 	CWD              string
+	Sudo             bool
+	SudoUser         string
 	ScriptPath       string
 	RemoteScriptPath string
 	KeepRemoteScript bool
@@ -46,6 +48,7 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	remoteCommand = remoteSudoCommand(remoteCommand, opts)
 	remoteCommand = remoteTimeoutCommand(remoteCommand, opts)
 	clientTimeout := remoteClientTimeout(opts)
 	if clientTimeout <= 0 {
@@ -78,6 +81,7 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	remoteCommand = remoteSudoCommand(remoteCommand, opts)
 	remoteCommand = remoteTimeoutCommand(remoteCommand, opts)
 	clientTimeout := remoteClientTimeout(opts)
 	if clientTimeout <= 0 {
@@ -96,6 +100,16 @@ func remoteTimeoutCommand(command string, opts RunOptions) string {
 	killAfter := effectiveKillAfter(opts.KillAfter)
 	return "command -v timeout >/dev/null 2>&1 || { echo 'sshc: remote timeout command not found' >&2; exit 127; }; " +
 		"timeout --kill-after=" + remoteDuration(killAfter) + " " + remoteDuration(opts.Timeout) + " bash -lc " + shellQuote(command)
+}
+
+func remoteSudoCommand(command string, opts RunOptions) string {
+	if opts.SudoUser != "" {
+		return "sudo -u " + shellQuote(opts.SudoUser) + " bash -lc " + shellQuote(command)
+	}
+	if opts.Sudo {
+		return "sudo bash -lc " + shellQuote(command)
+	}
+	return command
 }
 
 func remoteClientTimeout(opts RunOptions) time.Duration {

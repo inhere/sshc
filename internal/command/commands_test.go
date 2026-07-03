@@ -215,6 +215,43 @@ func TestRunPassesCWDOption(t *testing.T) {
 	}
 }
 
+func TestRunPassesSudoOptions(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotOpts core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--sudo-user", "ylpy", "devhost", "--", "whoami"}); err != nil {
+		t.Fatalf("run host: %v", err)
+	}
+	if gotOpts.SudoUser != "ylpy" {
+		t.Fatalf("sudo user = %q, want ylpy", gotOpts.SudoUser)
+	}
+}
+
+func TestRunRejectsConflictingSudoOptions(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "--sudo", "--sudo-user", "ylpy", "devhost", "--", "whoami"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestRunPassesScriptOptions(t *testing.T) {
 	withTempConfig(t)
 	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")

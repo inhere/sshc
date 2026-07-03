@@ -123,6 +123,35 @@ func TestRemoteTimeoutCommand(t *testing.T) {
 	}
 }
 
+func TestRemoteSudoCommand(t *testing.T) {
+	command := remoteSudoCommand("cd /opt/app && whoami", RunOptions{Sudo: true})
+	want := `sudo bash -lc 'cd /opt/app && whoami'`
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+}
+
+func TestRemoteSudoUserCommand(t *testing.T) {
+	command := remoteSudoCommand("whoami", RunOptions{SudoUser: "ylpy"})
+	want := `sudo -u 'ylpy' bash -lc 'whoami'`
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+}
+
+func TestValidateSudoUser(t *testing.T) {
+	for _, user := range []string{"ylpy", "app-user", "user_1", "svc$"} {
+		if err := ValidateSudoUser(user); err != nil {
+			t.Fatalf("ValidateSudoUser(%q): %v", user, err)
+		}
+	}
+	for _, user := range []string{"", "bad user", "bad;user"} {
+		if err := ValidateSudoUser(user); err == nil {
+			t.Fatalf("ValidateSudoUser(%q) nil error", user)
+		}
+	}
+}
+
 func TestRemoteClientTimeoutAddsKillAfterAndBuffer(t *testing.T) {
 	got := remoteClientTimeout(RunOptions{Timeout: 10 * time.Second, KillAfter: 2 * time.Second})
 	want := 17 * time.Second

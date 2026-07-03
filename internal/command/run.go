@@ -25,6 +25,11 @@ func NewRunCmd() *capp.Cmd {
 			return errors.New("remote command and --script cannot be used together")
 		}
 
+		runOptions, err := buildRunOptions(*opts)
+		if err != nil {
+			return err
+		}
+
 		store, err := core.LoadStore()
 		if err != nil {
 			return err
@@ -35,11 +40,6 @@ func NewRunCmd() *capp.Cmd {
 		}
 		if !ok {
 			return fmt.Errorf("host %q not found", target)
-		}
-
-		runOptions, err := buildRunOptions(*opts)
-		if err != nil {
-			return err
 		}
 
 		startedAt := core.Now()
@@ -110,6 +110,8 @@ Notes:
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
 		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
 		c.StringVar(&opts.CWD, "cwd", "", "remote working directory")
+		c.BoolVar(&opts.Sudo, "sudo", false, "run remote command with sudo")
+		c.StringVar(&opts.SudoUser, "sudo-user", "", "run remote command as user via sudo")
 		c.StringVar(&opts.Script, "script", "", "local shell script to upload and run")
 		c.BoolVar(&opts.KeepRemoteScript, "keep-remote-script", false, "keep uploaded remote script")
 		c.AddArg("target", "host ip or name", true)
@@ -124,6 +126,8 @@ type runFlagOptions struct {
 	Env              cflag.Strings
 	EnvFile          string
 	CWD              string
+	Sudo             bool
+	SudoUser         string
 	Script           string
 	KeepRemoteScript bool
 }
@@ -141,11 +145,22 @@ func buildRunOptions(flags runFlagOptions) (core.RunOptions, error) {
 	if err != nil {
 		return core.RunOptions{}, err
 	}
+	sudoUser := strings.TrimSpace(flags.SudoUser)
+	if flags.Sudo && sudoUser != "" {
+		return core.RunOptions{}, errors.New("--sudo and --sudo-user cannot be used together")
+	}
+	if sudoUser != "" {
+		if err := core.ValidateSudoUser(sudoUser); err != nil {
+			return core.RunOptions{}, err
+		}
+	}
 	return core.RunOptions{
 		Timeout:          timeout,
 		KillAfter:        killAfter,
 		Env:              env,
 		CWD:              strings.TrimSpace(flags.CWD),
+		Sudo:             flags.Sudo,
+		SudoUser:         sudoUser,
 		ScriptPath:       strings.TrimSpace(flags.Script),
 		KeepRemoteScript: flags.KeepRemoteScript,
 	}, nil
