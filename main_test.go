@@ -77,6 +77,93 @@ func TestRunUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestSCPUsesSavedHost(t *testing.T) {
+	withTempConfig(t)
+	store := &Store{Hosts: []Host{{
+		Name:     "dev",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := saveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	oldUpload := scpUpload
+	t.Cleanup(func() { scpUpload = oldUpload })
+
+	var gotHost Host
+	var gotLocal string
+	var gotRemote string
+	scpUpload = func(host Host, localPath, remotePath string) error {
+		gotHost = host
+		gotLocal = localPath
+		gotRemote = remotePath
+		return nil
+	}
+
+	app := newApp()
+	if err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "dev"}); err != nil {
+		t.Fatalf("scp: %v", err)
+	}
+	if gotHost.IP != "10.0.0.8" {
+		t.Fatalf("host ip = %q", gotHost.IP)
+	}
+	if gotLocal != "local.txt" || gotRemote != "/tmp/remote.txt" {
+		t.Fatalf("paths = %q -> %q", gotLocal, gotRemote)
+	}
+}
+
+func TestSCPRequiresSavedHost(t *testing.T) {
+	withTempConfig(t)
+	oldUpload := scpUpload
+	t.Cleanup(func() { scpUpload = oldUpload })
+	scpUpload = func(host Host, localPath, remotePath string) error {
+		t.Fatal("upload should not be called")
+		return nil
+	}
+
+	app := newApp()
+	err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "missing"})
+	if err == nil || !strings.Contains(err.Error(), `host "missing" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestJoinRemotePath(t *testing.T) {
+	tests := []struct {
+		base string
+		elem string
+		want string
+	}{
+		{base: "/opt/app", elem: "a.txt", want: "/opt/app/a.txt"},
+		{base: "/opt/app/", elem: "dir/a.txt", want: "/opt/app/dir/a.txt"},
+		{base: ".", elem: "a.txt", want: "a.txt"},
+	}
+	for _, tt := range tests {
+		if got := joinRemotePath(tt.base, tt.elem); got != tt.want {
+			t.Fatalf("joinRemotePath(%q, %q) = %q, want %q", tt.base, tt.elem, got, tt.want)
+		}
+	}
+}
+
+func TestRemoteFilePath(t *testing.T) {
+	tests := []struct {
+		local  string
+		remote string
+		want   string
+	}{
+		{local: "local.txt", remote: "/tmp/remote.txt", want: "/tmp/remote.txt"},
+		{local: "local.txt", remote: "/tmp/", want: "/tmp/local.txt"},
+	}
+	for _, tt := range tests {
+		if got := remoteFilePath(tt.local, tt.remote); got != tt.want {
+			t.Fatalf("remoteFilePath(%q, %q) = %q, want %q", tt.local, tt.remote, got, tt.want)
+		}
+	}
+}
+
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
 	if err := store.Upsert(Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {

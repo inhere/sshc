@@ -21,6 +21,7 @@ var (
 	}{Port: defaultSSHPort}
 
 	runRemote = executeRemote
+	scpUpload = uploadRemote
 )
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 
 func newApp() *capp.App {
 	app := capp.NewWith("sshc", version, "simple ssh command runner")
-	app.Add(newAddCmd(), newRunCmd(), newListCmd(), newLogCmd())
+	app.Add(newAddCmd(), newRunCmd(), newSCPCmd(), newListCmd(), newLogCmd())
 	return app
 }
 
@@ -116,6 +117,46 @@ func newRunCmd() *capp.Cmd {
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.AddArg("target", "host ip or name", true)
 		c.AddArg("command", "remote command after --", true, nil, true)
+	}
+	return cmd
+}
+
+var scpOpts = struct {
+	LocalPath  string
+	RemotePath string
+}{}
+
+func newSCPCmd() *capp.Cmd {
+	cmd := capp.NewCmd("scp", "upload a file or directory to remote host", func(c *capp.Cmd) error {
+		target := strings.TrimSpace(c.Arg("target").String())
+		localPath := strings.TrimSpace(scpOpts.LocalPath)
+		remotePath := strings.TrimSpace(scpOpts.RemotePath)
+		if localPath == "" {
+			return errors.New("local path is required")
+		}
+		if remotePath == "" {
+			return errors.New("remote path is required")
+		}
+
+		store, err := loadStore()
+		if err != nil {
+			return err
+		}
+		host, ok := store.Find(target)
+		if !ok {
+			return fmt.Errorf("host %q not found", target)
+		}
+
+		if err := scpUpload(host, localPath, remotePath); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.Output(), "uploaded %s to %s:%s\n", localPath, hostLogName(host), remotePath)
+		return nil
+	})
+	cmd.OnAdd = func(c *capp.Cmd) {
+		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
+		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
+		c.AddArg("target", "host ip or name", true)
 	}
 	return cmd
 }

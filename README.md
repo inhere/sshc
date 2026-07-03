@@ -18,6 +18,13 @@ sshc run 192.168.1.10 -- uptime
 sshc run dev -- docker ps
 ```
 
+Upload a file or directory:
+
+```bash
+sshc scp -l ./local-file.txt -r /tmp/remote-file.txt dev
+sshc scp -l ./local-dir -r /tmp/remote-dir dev
+```
+
 List saved hosts:
 
 ```bash
