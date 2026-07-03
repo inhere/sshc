@@ -55,4 +55,4 @@ jobs:
           body_path: changelog.md
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            cmd/dist/*
+            dist/*
