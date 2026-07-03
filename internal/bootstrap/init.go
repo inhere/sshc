@@ -34,6 +34,7 @@ func NewApp() *capp.App {
 		command.NewDownloadCmd(),
 		command.NewListCmd(),
 		command.NewLogCmd(),
+		command.NewLoginCmd(),
 	)
 	return app
 }

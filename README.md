@@ -57,6 +57,13 @@ sshc log devhost --match uptime
 sshc log devhost --tail 50
 ```
 
+Open an interactive remote shell:
+
+```bash
+sshc login devhost
+sshc connect devhost
+```
+
 Deployment examples:
 
 ```text

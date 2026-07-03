@@ -22,7 +22,7 @@
 - [x] 新增 download/dl 从远程下载 文件/目录 到本地路径下
   - [x] 输出 size/files/dirs/elapsed 传输统计
   - [x] 新增 --sha256 文件级校验
-- [ ] 新增 login/connect 命令，连接并打开 pty 可以连续操作(这种可以记录到命令执行日志吗？)
+- [x] 新增 login/connect 命令，连接并打开 pty 可以连续操作，默认只记录连接元信息
 
 ## [x] 整理项目结构
 

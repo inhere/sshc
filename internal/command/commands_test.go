@@ -575,6 +575,41 @@ func TestDownloadRequiresSavedHost(t *testing.T) {
 	}
 }
 
+func TestLoginUsesSavedHostAndWritesLog(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotHost core.Host
+	t.Cleanup(setLoginRemoteForTest(func(host core.Host) error {
+		gotHost = host
+		return nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"connect", "devhost"}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if gotHost.IP != "10.0.0.8" {
+		t.Fatalf("host ip = %q", gotHost.IP)
+	}
+	lines, err := core.ReadRunLogs("devhost", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], `"command":"login"`) {
+		t.Fatalf("logs = %#v", lines)
+	}
+}
+
 func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{
@@ -599,7 +634,7 @@ func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 
 func newTestApp() *capp.App {
 	app := capp.NewWith("sshc", "test", "simple ssh command runner")
-	app.Add(NewAddCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd())
+	app.Add(NewAddCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd())
 	return app
 }
 

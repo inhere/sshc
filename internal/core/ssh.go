@@ -17,6 +17,7 @@ import (
 	"github.com/melbahja/goph"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 const (
@@ -76,6 +77,46 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), clientTimeout)
 	defer cancel()
 	return client.RunContext(ctx, remoteCommand)
+}
+
+func LoginRemote(host Host) error {
+	client, err := newSSHClient(host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	fd := int(os.Stdin.Fd())
+	width, height := 120, 40
+	if term.IsTerminal(fd) {
+		if w, h, err := term.GetSize(fd); err == nil {
+			width, height = w, h
+		}
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = term.Restore(fd, oldState)
+		}()
+	}
+
+	if err := session.RequestPty("xterm-256color", height, width, ssh.TerminalModes{}); err != nil {
+		return err
+	}
+	session.Stdin = os.Stdin
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+	if err := session.Shell(); err != nil {
+		return err
+	}
+	return session.Wait()
 }
 
 func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
