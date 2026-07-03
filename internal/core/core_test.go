@@ -107,6 +107,36 @@ func TestScriptExecuteCommandQuotesPath(t *testing.T) {
 	}
 }
 
+func TestRemoteTimeoutCommand(t *testing.T) {
+	command := remoteTimeoutCommand("cd '/opt/app' && python -m app", RunOptions{
+		Timeout:   10 * time.Second,
+		KillAfter: 2 * time.Second,
+	})
+	for _, want := range []string{
+		"command -v timeout",
+		"timeout --kill-after=2s 10s bash -lc",
+		`'cd '\''/opt/app'\'' && python -m app'`,
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("command %q does not contain %q", command, want)
+		}
+	}
+}
+
+func TestRemoteClientTimeoutAddsKillAfterAndBuffer(t *testing.T) {
+	got := remoteClientTimeout(RunOptions{Timeout: 10 * time.Second, KillAfter: 2 * time.Second})
+	want := 17 * time.Second
+	if got != want {
+		t.Fatalf("client timeout = %s, want %s", got, want)
+	}
+}
+
+func TestEffectiveKillAfterDefault(t *testing.T) {
+	if got := effectiveKillAfter(0); got != defaultRemoteKillAfter {
+		t.Fatalf("kill after = %s, want %s", got, defaultRemoteKillAfter)
+	}
+}
+
 func TestNewRemoteScriptPath(t *testing.T) {
 	path := NewRemoteScriptPath(time.Unix(123, 456))
 	if !strings.HasPrefix(path, "/tmp/sshc-run-") || !strings.HasSuffix(path, ".sh") {

@@ -16,6 +16,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	defaultRemoteKillAfter = 30 * time.Second
+	clientTimeoutBuffer    = 5 * time.Second
+)
+
 type RunOptions struct {
 	Timeout          time.Duration
 	KillAfter        time.Duration
@@ -41,11 +46,13 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if opts.Timeout <= 0 {
+	remoteCommand = remoteTimeoutCommand(remoteCommand, opts)
+	clientTimeout := remoteClientTimeout(opts)
+	if clientTimeout <= 0 {
 		return client.Run(remoteCommand)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), clientTimeout)
 	defer cancel()
 	return client.RunContext(ctx, remoteCommand)
 }
@@ -71,13 +78,42 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if opts.Timeout <= 0 {
+	remoteCommand = remoteTimeoutCommand(remoteCommand, opts)
+	clientTimeout := remoteClientTimeout(opts)
+	if clientTimeout <= 0 {
 		return client.Run(remoteCommand)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), clientTimeout)
 	defer cancel()
 	return client.RunContext(ctx, remoteCommand)
+}
+
+func remoteTimeoutCommand(command string, opts RunOptions) string {
+	if opts.Timeout <= 0 {
+		return command
+	}
+	killAfter := effectiveKillAfter(opts.KillAfter)
+	return "command -v timeout >/dev/null 2>&1 || { echo 'sshc: remote timeout command not found' >&2; exit 127; }; " +
+		"timeout --kill-after=" + remoteDuration(killAfter) + " " + remoteDuration(opts.Timeout) + " bash -lc " + shellQuote(command)
+}
+
+func remoteClientTimeout(opts RunOptions) time.Duration {
+	if opts.Timeout <= 0 {
+		return 0
+	}
+	return opts.Timeout + effectiveKillAfter(opts.KillAfter) + clientTimeoutBuffer
+}
+
+func effectiveKillAfter(value time.Duration) time.Duration {
+	if value <= 0 {
+		return defaultRemoteKillAfter
+	}
+	return value
+}
+
+func remoteDuration(value time.Duration) string {
+	return fmt.Sprintf("%gs", value.Seconds())
 }
 
 func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error {
