@@ -45,15 +45,28 @@ sshc run devhost --cwd /opt/app -- "ls -lah && ./bin/app --version"
 ## 使用脚本部署
 
 复杂部署逻辑建议放在本地脚本中，再通过 `--script` 上传执行，避免多层 shell 转义。
+多行 shell、here-doc、`source` 激活虚拟环境、复杂引号拼接等场景优先使用 `--script`。
 
 ```bash
 sshc run devhost --script ./scripts/deploy.sh --cwd /opt/app
+```
+
+例如复杂检查脚本可以直接本地保存后远端执行：
+
+```bash
+sshc run devhost --script ./scripts/check-service.sh --cwd /opt/app --timeout 60s
 ```
 
 调试脚本时保留远端临时脚本：
 
 ```bash
 sshc run devhost --script ./scripts/deploy.sh --keep-remote-script
+```
+
+如果远端 `/tmp` 有 noexec、权限或清理策略限制，可以指定远端临时脚本目录：
+
+```bash
+sshc run devhost --script ./scripts/deploy.sh --remote-script-dir /opt/app/tmp
 ```
 
 ## sudo 和执行用户
@@ -68,9 +81,11 @@ sshc run devhost --sudo -- systemctl restart app.service
 
 ```bash
 sshc run devhost --sudo-user app --cwd /opt/app -- ./bin/app migrate
+sshc run devhost --script ./scripts/migrate.sh --sudo-user app --remote-script-dir /opt/app/tmp
 ```
 
 `--sudo` 和 `--sudo-user` 需要远端支持免密 sudo，或当前 SSH 用户已经是 root。
+使用 `--script --sudo-user` 时，远端临时脚本会设置为本机远端用户可读；脚本包含敏感内容时，建议配合 `--remote-script-dir` 使用权限受控的目录。
 
 ## 超时控制
 
@@ -106,6 +121,7 @@ sshc run devhost -- "curl -fsS http://127.0.0.1:18080/health"
 
 ```bash
 sshc download -r /var/log/app/app.log -l tmp/app.log devhost --sha256
+sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
 ```
 
 下载整个日志目录：

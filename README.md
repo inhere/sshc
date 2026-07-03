@@ -21,6 +21,7 @@ sshc run 192.168.1.10 -- uptime
 sshc run devhost -- docker ps
 sshc run devhost --cwd /opt/app -- python -m app
 sshc run devhost --script ./deploy.sh
+sshc run devhost --script ./deploy.sh --remote-script-dir /opt/app/tmp
 sshc run devhost --sudo -- apt-get update
 sshc run devhost --sudo-user app --cwd /opt/app -- whoami
 sshc run devhost --timeout 30s --kill-after 5s -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
@@ -44,6 +45,7 @@ Download a file or directory:
 ```bash
 sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
 sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost --sha256
+sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
 sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 ```
 

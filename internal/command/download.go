@@ -59,6 +59,7 @@ Examples:
   sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
   sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost --sha256
   sshc download -r /tmp/remote-file.txt -l ./downloads/ devhost
+  sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
   sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 
 Path rules:

@@ -85,6 +85,7 @@ Examples:
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
   sshc run devhost --script ./deploy.sh --keep-remote-script
+  sshc run devhost --script ./deploy.sh --remote-script-dir /opt/app/tmp
 
 Env file format:
   # comments and blank lines are ignored
@@ -94,9 +95,11 @@ Env file format:
 
 Notes:
   - Remote commands must be placed after --.
+  - Use --script for multiline shell, here-doc, source/venv activation, or heavy quoting.
   - Remote timeout requires the remote host to provide the timeout command.
   - Sudo options require passwordless sudo or a root SSH user.
-  - Script mode uploads the local file to /tmp and runs it with bash.
+  - Script mode uploads the local file to /tmp by default and runs it with bash.
+  - With --script --sudo-user, the uploaded script is readable by local remote users.
   - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
