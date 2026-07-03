@@ -75,12 +75,13 @@ Examples:
   sshc run 192.168.1.10 -- docker ps
   sshc run devhost --script ./deploy.sh
   sshc run devhost --cwd /opt/app -- python -m app
-  sshc run devhost --timeout 30s -- systemctl status nginx
+  sshc run devhost --timeout 30s --kill-after 5s -- systemctl status nginx
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
   sshc run devhost --script ./deploy.sh --keep-remote-script
 
 Options:
+  --timeout wraps the remote command with timeout and also protects the SSH client wait.
   --timeout accepts Go duration values like 500ms, 30s, 2m.
   --timeout also accepts bare seconds, for example 5 means 5s.
   --kill-after accepts the same duration format as --timeout.
@@ -98,6 +99,7 @@ Env file format:
 
 Notes:
   - Remote commands must be placed after --.
+  - Remote timeout requires the remote host to provide the timeout command.
   - Use --script instead of command after -- for multi-line deployment scripts.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.

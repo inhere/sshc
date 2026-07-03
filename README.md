@@ -18,7 +18,7 @@ sshc run 192.168.1.10 -- uptime
 sshc run devhost -- docker ps
 sshc run devhost --cwd /opt/app -- python -m app
 sshc run devhost --script ./deploy.sh
-sshc run devhost --timeout 30s -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
+sshc run devhost --timeout 30s --kill-after 5s -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
 sshc run devhost --efile ./remote.env -- env
 ```
 

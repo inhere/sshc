@@ -4,7 +4,7 @@
   - [x] 执行记录日志
   - [x] host 不一定要完整匹配，根据输入 'ab cd' 能匹配到一个就可以，多个时提示
   - [x] 新增 --script 执行本地脚本; --keep-remote-script 保留远端临时脚本; --cwd 指定远端工作目录
-  - [x] 新增参数支持 --timeout 超时设置; --env k=v 可以多次设置; --env-file 从文件加载ENV
+  - [x] 新增参数支持 --timeout 远端超时设置; --kill-after 超时后强制清理延迟; --env k=v 可以多次设置; --env-file 从文件加载ENV
 - add 命令
   - -I, --interactive 交互录入信息(引入 githu.com/gookit/cliui 包)
   - add pwd 加密
