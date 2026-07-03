@@ -12,6 +12,44 @@ import (
 	"time"
 )
 
+type RunOptions struct {
+	Timeout          time.Duration
+	KillAfter        time.Duration
+	Env              map[string]string
+	CWD              string
+	Sudo             bool
+	SudoUser         string
+	ScriptPath       string
+	RemoteScriptPath string
+	KeepRemoteScript bool
+}
+
+func remoteTimeoutCommand(command string, opts RunOptions) string {
+	if opts.Timeout <= 0 {
+		return command
+	}
+	killAfter := effectiveKillAfter(opts.KillAfter)
+	return "command -v timeout >/dev/null 2>&1 || { echo 'sshc: remote timeout command not found' >&2; exit 127; }; " +
+		"timeout --kill-after=" + remoteDuration(killAfter) + " " + remoteDuration(opts.Timeout) + " bash -lc " + shellQuote(command)
+}
+
+func remoteSudoCommand(command string, opts RunOptions) string {
+	if opts.SudoUser != "" {
+		return "sudo -u " + shellQuote(opts.SudoUser) + " bash -lc " + shellQuote(command)
+	}
+	if opts.Sudo {
+		return "sudo bash -lc " + shellQuote(command)
+	}
+	return command
+}
+
+func remoteClientTimeout(opts RunOptions) time.Duration {
+	if opts.Timeout <= 0 {
+		return 0
+	}
+	return opts.Timeout + effectiveKillAfter(opts.KillAfter) + clientTimeoutBuffer
+}
+
 var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sudoUserPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*[$]?$`)
 
@@ -138,19 +176,4 @@ func BuildRemoteCommandWithCWD(command string, env map[string]string, cwd string
 	}
 	parts = append(parts, command)
 	return withRemoteCWD(strings.Join(parts, " "), cwd), nil
-}
-
-func withRemoteCWD(command, cwd string) string {
-	cwd = strings.TrimSpace(cwd)
-	if cwd == "" {
-		return command
-	}
-	return "cd " + shellQuote(cwd) + " && " + command
-}
-
-func shellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }

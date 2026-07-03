@@ -3,14 +3,11 @@ package core
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -24,18 +21,6 @@ const (
 	defaultRemoteKillAfter = 30 * time.Second
 	clientTimeoutBuffer    = 5 * time.Second
 )
-
-type RunOptions struct {
-	Timeout          time.Duration
-	KillAfter        time.Duration
-	Env              map[string]string
-	CWD              string
-	Sudo             bool
-	SudoUser         string
-	ScriptPath       string
-	RemoteScriptPath string
-	KeepRemoteScript bool
-}
 
 type TransferResult struct {
 	Bytes        int64
@@ -152,43 +137,6 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 	return client.RunContext(ctx, remoteCommand)
 }
 
-func remoteTimeoutCommand(command string, opts RunOptions) string {
-	if opts.Timeout <= 0 {
-		return command
-	}
-	killAfter := effectiveKillAfter(opts.KillAfter)
-	return "command -v timeout >/dev/null 2>&1 || { echo 'sshc: remote timeout command not found' >&2; exit 127; }; " +
-		"timeout --kill-after=" + remoteDuration(killAfter) + " " + remoteDuration(opts.Timeout) + " bash -lc " + shellQuote(command)
-}
-
-func remoteSudoCommand(command string, opts RunOptions) string {
-	if opts.SudoUser != "" {
-		return "sudo -u " + shellQuote(opts.SudoUser) + " bash -lc " + shellQuote(command)
-	}
-	if opts.Sudo {
-		return "sudo bash -lc " + shellQuote(command)
-	}
-	return command
-}
-
-func remoteClientTimeout(opts RunOptions) time.Duration {
-	if opts.Timeout <= 0 {
-		return 0
-	}
-	return opts.Timeout + effectiveKillAfter(opts.KillAfter) + clientTimeoutBuffer
-}
-
-func effectiveKillAfter(value time.Duration) time.Duration {
-	if value <= 0 {
-		return defaultRemoteKillAfter
-	}
-	return value
-}
-
-func remoteDuration(value time.Duration) string {
-	return fmt.Sprintf("%gs", value.Seconds())
-}
-
 func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error {
 	info, err := os.Stat(localPath)
 	if err != nil {
@@ -209,10 +157,6 @@ func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error
 	}
 	_, err = uploadFileWithSFTP(sftpClient, localPath, remotePath)
 	return err
-}
-
-func scriptExecuteCommand(remotePath string) string {
-	return "bash " + shellQuote(remotePath)
 }
 
 func NewRemoteScriptPath(value time.Time) string {
@@ -485,31 +429,6 @@ func hostAuth(host Host) (goph.Auth, error) {
 	return auth, nil
 }
 
-func expandUserPath(filePath string) string {
-	filePath = strings.TrimSpace(filePath)
-	if filePath == "~" {
-		home, err := userHomeDir()
-		if err == nil {
-			return home
-		}
-		return filePath
-	}
-	if strings.HasPrefix(filePath, "~/") || strings.HasPrefix(filePath, `~\`) {
-		home, err := userHomeDir()
-		if err == nil {
-			return filepath.Join(home, filePath[2:])
-		}
-	}
-	return filePath
-}
-
-func RemoteFilePath(localPath, remotePath string) string {
-	if strings.HasSuffix(remotePath, "/") {
-		return JoinRemotePath(remotePath, filepath.Base(localPath))
-	}
-	return remotePath
-}
-
 func mkdirRemoteParent(client *sftp.Client, remotePath string) error {
 	parent := path.Dir(remotePath)
 	if parent == "." || parent == "/" {
@@ -553,88 +472,6 @@ func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (in
 	return io.Copy(localFile, remoteFile)
 }
 
-func LocalFilePath(remotePath, localPath string) string {
-	if isLocalDirTarget(localPath) {
-		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
-	}
-	return localPath
-}
-
-func LocalDirPath(remotePath, localPath string) string {
-	if isLocalDirTarget(localPath) {
-		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
-	}
-	return localPath
-}
-
-func isLocalDirTarget(localPath string) bool {
-	if strings.HasSuffix(localPath, "/") || strings.HasSuffix(localPath, `\`) {
-		return true
-	}
-	info, err := os.Stat(localPath)
-	return err == nil && info.IsDir()
-}
-
-func RemoteRelPath(root, current string) string {
-	root = strings.TrimRight(root, "/")
-	current = strings.TrimRight(current, "/")
-	if current == root {
-		return ""
-	}
-	return strings.TrimPrefix(strings.TrimPrefix(current, root), "/")
-}
-
-func JoinRemotePath(base, elem string) string {
-	if base == "" || base == "." {
-		return elem
-	}
-	if strings.HasSuffix(base, "/") {
-		return path.Clean(base + elem)
-	}
-	return path.Join(base, elem)
-}
-
-func isLocalGlob(localPath string) bool {
-	return strings.ContainsAny(localPath, "*?[")
-}
-
-func expandLocalGlob(pattern string) ([]string, error) {
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("local glob %q matched no files", pattern)
-	}
-	sort.Strings(matches)
-	files := make([]string, 0, len(matches))
-	for _, match := range matches {
-		info, err := os.Stat(match)
-		if err != nil {
-			return nil, err
-		}
-		if info.IsDir() {
-			return nil, fmt.Errorf("local glob %q matched directory %q; only files are supported", pattern, match)
-		}
-		files = append(files, match)
-	}
-	return files, nil
-}
-
-func fileSHA256(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
 func remoteSHA256(client *goph.Client, remotePath string) (string, error) {
 	command := "command -v sha256sum >/dev/null 2>&1 || { echo 'sshc: remote sha256sum command not found' >&2; exit 127; }; sha256sum " + shellQuote(remotePath)
 	out, err := client.Run(command)
@@ -642,35 +479,4 @@ func remoteSHA256(client *goph.Client, remotePath string) (string, error) {
 		return "", err
 	}
 	return parseSHA256SumOutput(string(out))
-}
-
-func parseSHA256SumOutput(output string) (string, error) {
-	fields := strings.Fields(strings.TrimSpace(output))
-	if len(fields) == 0 {
-		return "", fmt.Errorf("empty sha256sum output")
-	}
-	hash := fields[0]
-	if len(hash) != sha256.Size*2 {
-		return "", fmt.Errorf("invalid sha256sum output %q", strings.TrimSpace(output))
-	}
-	if _, err := hex.DecodeString(hash); err != nil {
-		return "", fmt.Errorf("invalid sha256sum output %q", strings.TrimSpace(output))
-	}
-	return strings.ToLower(hash), nil
-}
-
-func verifySHA256(localHash, remoteHash string) error {
-	if localHash != remoteHash {
-		return fmt.Errorf("sha256 mismatch: local=%s remote=%s", localHash, remoteHash)
-	}
-	return nil
-}
-
-func validateRemoteRemoveDirPath(remotePath string) error {
-	remotePath = strings.TrimSpace(remotePath)
-	cleaned := path.Clean(remotePath)
-	if remotePath == "" || cleaned == "." || cleaned == "/" {
-		return fmt.Errorf("--remove-dir requires a non-root remote directory")
-	}
-	return nil
 }
