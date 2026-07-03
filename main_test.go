@@ -259,24 +259,6 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 	}
 }
 
-func TestNormalizeEnvFile(t *testing.T) {
-	got, err := normalizeEnvFile("a.env", "")
-	if err != nil || got != "a.env" {
-		t.Fatalf("normalizeEnvFile env-file = %q, %v", got, err)
-	}
-	got, err = normalizeEnvFile("", "b.env")
-	if err != nil || got != "b.env" {
-		t.Fatalf("normalizeEnvFile efile = %q, %v", got, err)
-	}
-	got, err = normalizeEnvFile("same.env", "same.env")
-	if err != nil || got != "same.env" {
-		t.Fatalf("normalizeEnvFile same = %q, %v", got, err)
-	}
-	if _, err = normalizeEnvFile("a.env", "b.env"); err == nil {
-		t.Fatal("expected different env-file aliases to fail")
-	}
-}
-
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
 	if err := store.Upsert(Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {

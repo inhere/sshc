@@ -124,10 +124,8 @@ func newRunCmd() *capp.Cmd {
 	})
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
-		c.Var(&opts.Env, "env", "environment variable k=v, repeatable")
-		c.AddShortcuts("env", "e")
-		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file")
-		c.StringVar(&opts.EFile, "efile", "", "alias of --env-file")
+		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
+		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
 		c.AddArg("target", "host ip or name", true)
 		c.AddArg("command", "remote command after --", true, nil, true)
 	}
@@ -138,7 +136,6 @@ type runFlagOptions struct {
 	Timeout string
 	Env     cflag.Strings
 	EnvFile string
-	EFile   string
 }
 
 type RunOptions struct {
@@ -151,11 +148,7 @@ func buildRunOptions(flags runFlagOptions) (RunOptions, error) {
 	if err != nil {
 		return RunOptions{}, err
 	}
-	envFile, err := normalizeEnvFile(flags.EnvFile, flags.EFile)
-	if err != nil {
-		return RunOptions{}, err
-	}
-	env, err := loadRunEnv(envFile, flags.Env.Strings())
+	env, err := loadRunEnv(flags.EnvFile, flags.Env.Strings())
 	if err != nil {
 		return RunOptions{}, err
 	}
@@ -194,6 +187,7 @@ func newSCPCmd() *capp.Cmd {
 		fmt.Fprintf(c.Output(), "uploaded %s to %s:%s\n", localPath, hostLogName(host), remotePath)
 		return nil
 	})
+	cmd.Aliases = []string{"upload"}
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
 		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
