@@ -84,6 +84,53 @@ func uploadRemote(host Host, localPath, remotePath string) error {
 	})
 }
 
+func fetchRemote(host Host, remotePath, localPath string) error {
+	client, err := newSSHClient(host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	sftpClient, err := client.NewSftp()
+	if err != nil {
+		return err
+	}
+	defer sftpClient.Close()
+
+	info, err := sftpClient.Stat(remotePath)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return downloadFileWithSFTP(sftpClient, remotePath, localFilePath(remotePath, localPath))
+	}
+
+	root := strings.TrimRight(remotePath, "/")
+	localRoot := localDirPath(root, localPath)
+	walker := sftpClient.Walk(root)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			return err
+		}
+
+		remoteCurrent := walker.Path()
+		localCurrent := localRoot
+		if rel := remoteRelPath(root, remoteCurrent); rel != "" {
+			localCurrent = filepath.Join(localRoot, filepath.FromSlash(rel))
+		}
+		if walker.Stat().IsDir() {
+			if err := os.MkdirAll(localCurrent, 0700); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := downloadFileWithSFTP(sftpClient, remoteCurrent, localCurrent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newSSHClient(host Host) (*goph.Client, error) {
 	return goph.NewConn(&goph.Config{
 		User:     host.User,
@@ -125,6 +172,57 @@ func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string) error
 
 	_, err = io.Copy(remoteFile, localFile)
 	return err
+}
+
+func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) error {
+	remoteFile, err := client.Open(remotePath)
+	if err != nil {
+		return err
+	}
+	defer remoteFile.Close()
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0700); err != nil {
+		return err
+	}
+	localFile, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer localFile.Close()
+
+	_, err = io.Copy(localFile, remoteFile)
+	return err
+}
+
+func localFilePath(remotePath, localPath string) string {
+	if isLocalDirTarget(localPath) {
+		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
+	}
+	return localPath
+}
+
+func localDirPath(remotePath, localPath string) string {
+	if isLocalDirTarget(localPath) {
+		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
+	}
+	return localPath
+}
+
+func isLocalDirTarget(localPath string) bool {
+	if strings.HasSuffix(localPath, "/") || strings.HasSuffix(localPath, `\`) {
+		return true
+	}
+	info, err := os.Stat(localPath)
+	return err == nil && info.IsDir()
+}
+
+func remoteRelPath(root, current string) string {
+	root = strings.TrimRight(root, "/")
+	current = strings.TrimRight(current, "/")
+	if current == root {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(current, root), "/")
 }
 
 func joinRemotePath(base, elem string) string {

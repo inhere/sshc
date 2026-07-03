@@ -22,8 +22,9 @@ var (
 		Port     int
 	}{Port: defaultSSHPort}
 
-	runRemote = executeRemote
-	scpUpload = uploadRemote
+	runRemote      = executeRemote
+	scpUpload      = uploadRemote
+	downloadRemote = fetchRemote
 )
 
 func main() {
@@ -35,7 +36,7 @@ func main() {
 
 func newApp() *capp.App {
 	app := capp.NewWith("sshc", version, "simple ssh command runner")
-	app.Add(newAddCmd(), newRunCmd(), newSCPCmd(), newListCmd(), newLogCmd())
+	app.Add(newAddCmd(), newRunCmd(), newSCPCmd(), newDownloadCmd(), newListCmd(), newLogCmd())
 	return app
 }
 
@@ -192,6 +193,47 @@ func newSCPCmd() *capp.Cmd {
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
 		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
+		c.AddArg("target", "host ip or name", true)
+	}
+	return cmd
+}
+
+var downloadOpts = struct {
+	LocalPath  string
+	RemotePath string
+}{}
+
+func newDownloadCmd() *capp.Cmd {
+	cmd := capp.NewCmd("download", "download a file or directory from remote host", func(c *capp.Cmd) error {
+		target := strings.TrimSpace(c.Arg("target").String())
+		localPath := strings.TrimSpace(downloadOpts.LocalPath)
+		remotePath := strings.TrimSpace(downloadOpts.RemotePath)
+		if localPath == "" {
+			return errors.New("local path is required")
+		}
+		if remotePath == "" {
+			return errors.New("remote path is required")
+		}
+
+		store, err := loadStore()
+		if err != nil {
+			return err
+		}
+		host, ok := store.Find(target)
+		if !ok {
+			return fmt.Errorf("host %q not found", target)
+		}
+
+		if err := downloadRemote(host, remotePath, localPath); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.Output(), "downloaded %s:%s to %s\n", hostLogName(host), remotePath, localPath)
+		return nil
+	})
+	cmd.Aliases = []string{"dl"}
+	cmd.OnAdd = func(c *capp.Cmd) {
+		c.StringVar(&downloadOpts.LocalPath, "local", "", "local destination path;true;l")
+		c.StringVar(&downloadOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
 		c.AddArg("target", "host ip or name", true)
 	}
 	return cmd

@@ -179,6 +179,83 @@ func TestSCPRequiresSavedHost(t *testing.T) {
 	}
 }
 
+func TestDownloadUsesSavedHost(t *testing.T) {
+	withTempConfig(t)
+	store := &Store{Hosts: []Host{{
+		Name:     "dev",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := saveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	oldDownload := downloadRemote
+	t.Cleanup(func() { downloadRemote = oldDownload })
+
+	var gotHost Host
+	var gotRemote string
+	var gotLocal string
+	downloadRemote = func(host Host, remotePath, localPath string) error {
+		gotHost = host
+		gotRemote = remotePath
+		gotLocal = localPath
+		return nil
+	}
+
+	app := newApp()
+	if err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "dev"}); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if gotHost.IP != "10.0.0.8" {
+		t.Fatalf("host ip = %q", gotHost.IP)
+	}
+	if gotRemote != "/tmp/remote.txt" || gotLocal != "local.txt" {
+		t.Fatalf("paths = %q -> %q", gotRemote, gotLocal)
+	}
+}
+
+func TestDownloadAlias(t *testing.T) {
+	withTempConfig(t)
+	store := &Store{Hosts: []Host{{
+		Name:     "dev",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := saveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	oldDownload := downloadRemote
+	t.Cleanup(func() { downloadRemote = oldDownload })
+	downloadRemote = func(host Host, remotePath, localPath string) error { return nil }
+
+	app := newApp()
+	if err := app.RunWithArgs([]string{"dl", "-r", "/tmp/remote.txt", "-l", "local.txt", "dev"}); err != nil {
+		t.Fatalf("dl: %v", err)
+	}
+}
+
+func TestDownloadRequiresSavedHost(t *testing.T) {
+	withTempConfig(t)
+	oldDownload := downloadRemote
+	t.Cleanup(func() { downloadRemote = oldDownload })
+	downloadRemote = func(host Host, remotePath, localPath string) error {
+		t.Fatal("download should not be called")
+		return nil
+	}
+
+	app := newApp()
+	err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "missing"})
+	if err == nil || !strings.Contains(err.Error(), `host "missing" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestJoinRemotePath(t *testing.T) {
 	tests := []struct {
 		base string
@@ -255,6 +332,50 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 	for _, want := range []string{"BAR='bar value'", "EMPTY=''", "FOO='inline'", `QUOTE='a'\''b'`, "echo ok"} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command %q does not contain %q", command, want)
+		}
+	}
+}
+
+func TestLocalDownloadPaths(t *testing.T) {
+	dir := t.TempDir()
+	existingDir := filepath.Join(dir, "existing")
+	if err := os.Mkdir(existingDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		fn     func(string, string) string
+		remote string
+		local  string
+		want   string
+	}{
+		{name: "file explicit", fn: localFilePath, remote: "/tmp/a.txt", local: filepath.Join(dir, "renamed.txt"), want: filepath.Join(dir, "renamed.txt")},
+		{name: "file existing dir", fn: localFilePath, remote: "/tmp/a.txt", local: existingDir, want: filepath.Join(existingDir, "a.txt")},
+		{name: "file slash dir", fn: localFilePath, remote: "/tmp/a.txt", local: "downloads/", want: filepath.Join("downloads", "a.txt")},
+		{name: "dir explicit", fn: localDirPath, remote: "/tmp/app", local: filepath.Join(dir, "app-copy"), want: filepath.Join(dir, "app-copy")},
+		{name: "dir existing dir", fn: localDirPath, remote: "/tmp/app", local: existingDir, want: filepath.Join(existingDir, "app")},
+	}
+	for _, tt := range tests {
+		if got := tt.fn(tt.remote, tt.local); got != tt.want {
+			t.Fatalf("%s = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestRemoteRelPath(t *testing.T) {
+	tests := []struct {
+		root    string
+		current string
+		want    string
+	}{
+		{root: "/tmp/app", current: "/tmp/app", want: ""},
+		{root: "/tmp/app", current: "/tmp/app/conf", want: "conf"},
+		{root: "/tmp/app", current: "/tmp/app/conf/app.yaml", want: "conf/app.yaml"},
+	}
+	for _, tt := range tests {
+		if got := remoteRelPath(tt.root, tt.current); got != tt.want {
+			t.Fatalf("remoteRelPath(%q, %q) = %q, want %q", tt.root, tt.current, got, tt.want)
 		}
 	}
 }

@@ -27,6 +27,13 @@ sshc scp -l ./local-file.txt -r /tmp/remote-file.txt dev
 sshc scp -l ./local-dir -r /tmp/remote-dir dev
 ```
 
+Download a file or directory:
+
+```bash
+sshc download -r /tmp/remote-file.txt -l ./local-file.txt dev
+sshc dl -r /tmp/remote-dir -l ./local-dir dev
+```
+
 List saved hosts:
 
 ```bash
