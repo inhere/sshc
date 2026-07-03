@@ -46,7 +46,8 @@ type TransferResult struct {
 }
 
 type TransferOptions struct {
-	SHA256 bool
+	SHA256    bool
+	RemoveDir bool
 }
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
@@ -186,16 +187,20 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 		result.Elapsed = time.Since(started)
 	}()
 
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return result, err
+	}
+	if !info.IsDir() && opts.RemoveDir {
+		return result, fmt.Errorf("--remove-dir is only supported for directory uploads")
+	}
+
 	client, err := newSSHClient(host)
 	if err != nil {
 		return result, err
 	}
 	defer client.Close()
 
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return result, err
-	}
 	sftpClient, err := client.NewSftp()
 	if err != nil {
 		return result, err
@@ -233,6 +238,14 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 	}
 	if opts.SHA256 {
 		return result, fmt.Errorf("--sha256 is only supported for file transfers")
+	}
+	if opts.RemoveDir {
+		if err := validateRemoteRemoveDirPath(remotePath); err != nil {
+			return result, err
+		}
+		if _, err := client.Run("rm -rf -- " + shellQuote(remotePath)); err != nil {
+			return result, err
+		}
 	}
 
 	root := filepath.Clean(localPath)
@@ -493,6 +506,15 @@ func parseSHA256SumOutput(output string) (string, error) {
 func verifySHA256(localHash, remoteHash string) error {
 	if localHash != remoteHash {
 		return fmt.Errorf("sha256 mismatch: local=%s remote=%s", localHash, remoteHash)
+	}
+	return nil
+}
+
+func validateRemoteRemoveDirPath(remotePath string) error {
+	remotePath = strings.TrimSpace(remotePath)
+	cleaned := path.Clean(remotePath)
+	if remotePath == "" || cleaned == "." || cleaned == "/" {
+		return fmt.Errorf("--remove-dir requires a non-root remote directory")
 	}
 	return nil
 }

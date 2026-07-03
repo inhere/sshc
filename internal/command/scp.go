@@ -16,6 +16,7 @@ var (
 		LocalPath  string
 		RemotePath string
 		SHA256     bool
+		RemoveDir  bool
 	}{}
 
 	scpUpload = core.UploadRemote
@@ -45,7 +46,10 @@ func NewUploadCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
-		result, err := scpUpload(host, localPath, remotePath, core.TransferOptions{SHA256: scpOpts.SHA256})
+		result, err := scpUpload(host, localPath, remotePath, core.TransferOptions{
+			SHA256:    scpOpts.SHA256,
+			RemoveDir: scpOpts.RemoveDir,
+		})
 		if err != nil {
 			return err
 		}
@@ -68,11 +72,14 @@ Path rules:
   - If remote path ends with / for file upload, the local file name is appended.
   - Directory upload recursively creates directories and files under the remote path.
   - --sha256 verifies file uploads with local and remote sha256 hashes.
+  - --remove-dir removes the remote directory before uploading a local directory.
+  - --remove-dir refuses empty, current, and root remote paths.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
 		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
 		c.BoolVar(&scpOpts.SHA256, "sha256", false, "verify file transfer with sha256")
+		c.BoolVar(&scpOpts.RemoveDir, "remove-dir", false, "remove remote directory before directory upload")
 		c.AddArg("target", "host ip or name", true)
 	}
 	return cmd

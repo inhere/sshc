@@ -364,7 +364,7 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"scp", "--sha256", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"scp", "--sha256", "--remove-dir", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
 		t.Fatalf("scp: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -375,6 +375,9 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}
 	if !gotOpts.SHA256 {
 		t.Fatal("sha256 option = false, want true")
+	}
+	if !gotOpts.RemoveDir {
+		t.Fatal("remove-dir option = false, want true")
 	}
 }
 

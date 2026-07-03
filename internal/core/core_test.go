@@ -253,6 +253,28 @@ func TestVerifySHA256Mismatch(t *testing.T) {
 	}
 }
 
+func TestValidateRemoteRemoveDirPath(t *testing.T) {
+	for _, remotePath := range []string{"", ".", "/"} {
+		if err := validateRemoteRemoveDirPath(remotePath); err == nil {
+			t.Fatalf("validateRemoteRemoveDirPath(%q) nil error", remotePath)
+		}
+	}
+	if err := validateRemoteRemoveDirPath("/opt/app/dist"); err != nil {
+		t.Fatalf("validateRemoteRemoveDirPath valid path: %v", err)
+	}
+}
+
+func TestUploadRemoteRejectsRemoveDirForFileBeforeConnect(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "data.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := UploadRemote(Host{IP: "127.0.0.1", User: "root", Port: 1}, file, "/tmp/data.txt", TransferOptions{RemoveDir: true})
+	if err == nil || !strings.Contains(err.Error(), "only supported for directory uploads") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
 	if err := store.Upsert(Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {
