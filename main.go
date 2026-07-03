@@ -122,6 +122,7 @@ func newRunCmd() *capp.Cmd {
 		}
 		return err
 	})
+	cmd.Aliases = []string{"exec"}
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
