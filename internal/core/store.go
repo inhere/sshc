@@ -44,12 +44,67 @@ func (s *Store) Upsert(host Host) error {
 }
 
 func (s Store) Find(target string) (Host, bool) {
+	target = strings.TrimSpace(target)
 	for _, host := range s.Hosts {
 		if host.Name == target || host.IP == target {
 			return host, true
 		}
 	}
 	return Host{}, false
+}
+
+func (s Store) ResolveHost(target string) (Host, bool, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return Host{}, false, nil
+	}
+	if host, ok := s.Find(target); ok {
+		return host, true, nil
+	}
+
+	matches := s.MatchHosts(target)
+	switch len(matches) {
+	case 0:
+		return Host{}, false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		return Host{}, false, fmt.Errorf("host %q matches multiple hosts: %s", target, formatHostCandidates(matches))
+	}
+}
+
+func (s Store) MatchHosts(target string) []Host {
+	parts := strings.Fields(strings.ToLower(strings.TrimSpace(target)))
+	if len(parts) == 0 {
+		return nil
+	}
+
+	var matches []Host
+	for _, host := range s.Hosts {
+		text := strings.ToLower(strings.TrimSpace(host.Name) + " " + strings.TrimSpace(host.IP))
+		if matchAllParts(text, parts) {
+			matches = append(matches, host)
+		}
+	}
+	return matches
+}
+
+func matchAllParts(text string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(text, part) {
+			return false
+		}
+	}
+	return true
+}
+
+func formatHostCandidates(hosts []Host) string {
+	items := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		name := HostLogName(host)
+		items = append(items, fmt.Sprintf("%s (%s:%d)", name, host.IP, host.Port))
+	}
+	return strings.Join(items, ", ")
 }
 
 func validateHost(host Host) error {

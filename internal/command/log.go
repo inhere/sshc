@@ -63,7 +63,9 @@ func resolveLogTarget(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if host, ok := store.Find(target); ok {
+	if host, ok, err := store.ResolveHost(target); err != nil {
+		return "", err
+	} else if ok {
 		return core.HostLogName(host), nil
 	}
 	return target, nil

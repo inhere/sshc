@@ -78,6 +78,59 @@ func TestRunUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestRunUsesPartialHostTarget(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "testing-web",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "test web", "--", "hostname"}); err != nil {
+		t.Fatalf("run host: %v", err)
+	}
+	if gotHost.Name != "testing-web" {
+		t.Fatalf("host = %+v", gotHost)
+	}
+}
+
+func TestRunRejectsAmbiguousPartialHostTarget(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{
+		{Name: "testing-web", IP: "10.0.0.8", User: "root", Password: "secret", Port: 2222},
+		{Name: "testing-db", IP: "10.0.0.9", User: "root", Password: "secret", Port: 2222},
+	}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		t.Fatal("run should not be called")
+		return nil, nil
+	}))
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "testing", "--", "hostname"})
+	if err == nil {
+		t.Fatal("expected ambiguous target error")
+	}
+	if !strings.Contains(err.Error(), "matches multiple hosts") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	withTempConfig(t)
 	envFile := filepath.Join(t.TempDir(), "run.env")

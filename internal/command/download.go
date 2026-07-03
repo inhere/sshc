@@ -35,7 +35,10 @@ func NewDownloadCmd() *capp.Cmd {
 		if err != nil {
 			return err
 		}
-		host, ok := store.Find(target)
+		host, ok, err := store.ResolveHost(target)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			return fmt.Errorf("host %q not found", target)
 		}
