@@ -52,8 +52,6 @@ Examples:
   sshc login devhost --term xterm-256color
 
 Notes:
-  - Opens an interactive PTY shell on the remote host.
-  - The requested terminal type defaults to local TERM, or xterm-256color when TERM is empty.
   - Terminal resize is forwarded on Unix-like systems; Windows uses the startup terminal size.
   - By default, sshc only logs connection metadata, not full session input/output.
   - Use run for non-interactive commands that need full stdout/stderr logs.

@@ -69,16 +69,12 @@ Examples:
   sshc upload -l ./dist -r /opt/app/dist devhost
 
 Path rules:
-  - -l/--local can be a file or directory.
-  - -r/--remote is the remote destination path.
   - File upload creates remote parent directories when needed.
   - If remote path ends with / for file upload, the local file name is appended.
   - Directory upload recursively creates directories and files under the remote path.
   - Local glob patterns are expanded by sshc and upload matching files to the remote directory.
-  - --sha256 verifies file uploads with local and remote sha256 hashes.
-  - --sha256 is only supported for single file uploads.
-  - --remove-dir removes the remote directory before uploading a local directory.
-  - --remove-dir refuses empty, current, and root remote paths.
+  - SHA256 verification is available for single file uploads only.
+  - Removing a remote directory refuses empty, current, and root remote paths.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")

@@ -82,19 +82,6 @@ Examples:
   sshc run devhost --efile ./remote.env -- env
   sshc run devhost --script ./deploy.sh --keep-remote-script
 
-Options:
-  --timeout wraps the remote command with timeout and also protects the SSH client wait.
-  --timeout accepts Go duration values like 500ms, 30s, 2m.
-  --timeout also accepts bare seconds, for example 5 means 5s.
-  --kill-after accepts the same duration format as --timeout.
-  -e/--env can be repeated. Later values override env-file values.
-  --env-file/--efile loads a single env file with KEY=value lines.
-  --cwd runs the command or script from the given remote directory.
-  --sudo runs the command with sudo.
-  --sudo-user runs the command as a user via sudo.
-  --script uploads a local shell script to /tmp and runs it with bash.
-  --keep-remote-script keeps the uploaded script for debugging.
-
 Env file format:
   # comments and blank lines are ignored
   APP_ENV=prod
@@ -105,7 +92,7 @@ Notes:
   - Remote commands must be placed after --.
   - Remote timeout requires the remote host to provide the timeout command.
   - Sudo options require passwordless sudo or a root SSH user.
-  - Use --script instead of command after -- for multi-line deployment scripts.
+  - Script mode uploads the local file to /tmp and runs it with bash.
   - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.

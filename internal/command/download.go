@@ -62,13 +62,10 @@ Examples:
   sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 
 Path rules:
-  - -r/--remote can be a remote file or directory.
-  - -l/--local is the local destination path.
-  - If local path exists as a directory, the remote base name is appended.
-  - If local path ends with / or \, the remote base name is appended.
+  - Existing local directories receive the remote base name.
+  - Local paths ending with / or \ also receive the remote base name.
   - Directory download recursively creates local directories and files.
-  - --sha256 verifies file downloads with remote and local sha256 hashes.
-  - --sha256 is only supported for single file downloads.
+  - SHA256 verification is available for single file downloads only.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&downloadOpts.LocalPath, "local", "", "local destination path;true;l")

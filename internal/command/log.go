@@ -44,8 +44,6 @@ Log files:
 Notes:
   - Without target, all host log files are read in file-name order.
   - With target, sshc resolves a saved host first, so IP can map to the host name log.
-  - --match filters raw JSON log lines by substring.
-  - --tail limits the final number of printed lines after filtering.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&logOpts.Match, "match", "", "match log lines by keyword;;m")
