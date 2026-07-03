@@ -111,6 +111,15 @@ func TestScriptExecuteCommandQuotesPath(t *testing.T) {
 	}
 }
 
+func TestRemoteScriptMode(t *testing.T) {
+	if got := remoteScriptMode(RunOptions{}); got != "700" {
+		t.Fatalf("default script mode = %q, want 700", got)
+	}
+	if got := remoteScriptMode(RunOptions{SudoUser: "app"}); got != "644" {
+		t.Fatalf("sudo-user script mode = %q, want 644", got)
+	}
+}
+
 func TestRemoteTimeoutCommand(t *testing.T) {
 	command := remoteTimeoutCommand("cd '/opt/app' && python -m app", RunOptions{
 		Timeout:   10 * time.Second,

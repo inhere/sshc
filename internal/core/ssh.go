@@ -177,7 +177,7 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 		}()
 	}
 
-	if _, err := client.Run("chmod 700 " + shellQuote(remoteScriptPath)); err != nil {
+	if _, err := client.Run("chmod " + remoteScriptMode(opts) + " " + shellQuote(remoteScriptPath)); err != nil {
 		return nil, err
 	}
 	remoteCommand, err := BuildRemoteCommandWithCWD(scriptExecuteCommand(remoteScriptPath), opts.Env, opts.CWD)
@@ -224,6 +224,13 @@ func NewRemoteScriptPath(value time.Time) string {
 		return fmt.Sprintf("/tmp/sshc-run-%d.sh", value.UnixNano())
 	}
 	return fmt.Sprintf("/tmp/sshc-run-%d-%x.sh", value.UnixNano(), suffix[:])
+}
+
+func remoteScriptMode(opts RunOptions) string {
+	if strings.TrimSpace(opts.SudoUser) != "" {
+		return "644"
+	}
+	return "700"
 }
 
 func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions) (result TransferResult, err error) {
