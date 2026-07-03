@@ -122,9 +122,9 @@ func storePath() (string, error) {
 	if path := strings.TrimSpace(os.Getenv(configEnvKey)); path != "" {
 		return path, nil
 	}
-	dir, err := userHomeDir()
+	dir, err := configRoot()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, ".config", "sshc", "hosts.json"), nil
+	return filepath.Join(dir, "hosts.json"), nil
 }

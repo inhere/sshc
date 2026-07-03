@@ -24,12 +24,27 @@ List saved hosts:
 sshc list
 ```
 
+Show run logs:
+
+```bash
+sshc log
+sshc log dev
+sshc log dev --match uptime
+sshc log dev --tail 50
+```
+
 ## Config
 
 The default config file is:
 
 ```text
 ~/.config/sshc/hosts.json
+```
+
+Run logs are stored per host under:
+
+```text
+~/.config/sshc/logs/
 ```
 
 Set `SSHC_CONFIG` to use a different file:

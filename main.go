@@ -32,7 +32,7 @@ func main() {
 
 func newApp() *capp.App {
 	app := capp.NewWith("sshc", version, "simple ssh command runner")
-	app.Add(newAddCmd(), newRunCmd(), newListCmd())
+	app.Add(newAddCmd(), newRunCmd(), newListCmd(), newLogCmd())
 	return app
 }
 
@@ -94,9 +94,22 @@ func newRunCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
+		startedAt := now()
 		out, err := runRemote(host, command)
+		logErr := appendRunLog(host, RunLogRecord{
+			Target:     target,
+			Command:    command,
+			Status:     runStatus(err),
+			StartedAt:  startedAt,
+			DurationMS: sinceMS(startedAt),
+			Output:     string(out),
+			Error:      errorString(err),
+		})
 		if len(out) > 0 {
 			fmt.Fprint(c.Output(), string(out))
+		}
+		if err == nil && logErr != nil {
+			return logErr
 		}
 		return err
 	})
@@ -124,4 +137,47 @@ func newListCmd() *capp.Cmd {
 	}).WithConfigFn(func(c *capp.Cmd) {
 		c.Aliases = []string{"ls"}
 	})
+}
+
+var logOpts = struct {
+	Match string
+	Tail  int
+}{Tail: 200}
+
+func newLogCmd() *capp.Cmd {
+	cmd := capp.NewCmd("log", "show or search run logs", func(c *capp.Cmd) error {
+		target := strings.TrimSpace(c.Arg("target").String())
+		logTarget, err := resolveLogTarget(target)
+		if err != nil {
+			return err
+		}
+		lines, err := readRunLogs(logTarget, logOpts.Match, logOpts.Tail)
+		if err != nil {
+			return err
+		}
+		for _, line := range lines {
+			fmt.Fprintln(c.Output(), line)
+		}
+		return nil
+	})
+	cmd.OnAdd = func(c *capp.Cmd) {
+		c.StringVar(&logOpts.Match, "match", "", "match log lines by keyword;;m")
+		c.IntVar(&logOpts.Tail, "tail", 200, "max lines to print")
+		c.AddArg("target", "host ip or name, empty means all logs", false)
+	}
+	return cmd
+}
+
+func resolveLogTarget(target string) (string, error) {
+	if target == "" {
+		return "", nil
+	}
+	store, err := loadStore()
+	if err != nil {
+		return "", err
+	}
+	if host, ok := store.Find(target); ok {
+		return hostLogName(host), nil
+	}
+	return target, nil
 }

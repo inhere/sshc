@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,20 @@ func TestRunUsesSavedHost(t *testing.T) {
 	if gotCommand != "echo hello" {
 		t.Fatalf("command = %q", gotCommand)
 	}
+
+	lines, err := readRunLogs("dev", "", 10)
+	if err != nil {
+		t.Fatalf("read run logs: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("log lines len = %d, want 1", len(lines))
+	}
+	line := lines[0]
+	for _, want := range []string{`"command":"echo hello"`, `"status":"success"`, `"output":"ok\n"`} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log line %q does not contain %q", line, want)
+		}
+	}
 }
 
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
@@ -96,9 +111,68 @@ func TestStorePathDefaultsToDotConfig(t *testing.T) {
 	}
 }
 
+func TestReadRunLogsMatchesAndTails(t *testing.T) {
+	withTempConfig(t)
+	host := Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
+
+	records := []RunLogRecord{
+		{Target: "dev", Command: "echo alpha", Status: "success"},
+		{Target: "dev", Command: "echo beta", Status: "success"},
+		{Target: "dev", Command: "echo gamma", Status: "success"},
+	}
+	for _, rec := range records {
+		if err := appendRunLog(host, rec); err != nil {
+			t.Fatalf("append log: %v", err)
+		}
+	}
+
+	matched, err := readRunLogs("dev", "beta", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matched) != 1 || !strings.Contains(matched[0], "echo beta") {
+		t.Fatalf("matched logs = %#v", matched)
+	}
+
+	tailed, err := readRunLogs("dev", "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tailed) != 2 || !strings.Contains(tailed[0], "echo beta") || !strings.Contains(tailed[1], "echo gamma") {
+		t.Fatalf("tailed logs = %#v", tailed)
+	}
+}
+
+func TestResolveLogTargetUsesSavedHost(t *testing.T) {
+	withTempConfig(t)
+	store := &Store{Hosts: []Host{{
+		Name:     "dev",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     22,
+	}}}
+	if err := saveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	target, err := resolveLogTarget("10.0.0.8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "dev" {
+		t.Fatalf("target = %q, want dev", target)
+	}
+}
+
 func withTempConfig(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "hosts.json")
+	home := filepath.Join(t.TempDir(), "home")
+	oldUserHomeDir := userHomeDir
+	userHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { userHomeDir = oldUserHomeDir })
+
+	path := filepath.Join(home, "hosts.json")
 	t.Setenv(configEnvKey, path)
 	return path
 }
