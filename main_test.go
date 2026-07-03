@@ -13,7 +13,7 @@ func TestAddAndList(t *testing.T) {
 	withTempConfig(t)
 
 	app := newApp()
-	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "-p", "secret", "--name", "dev"})
+	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "-p", "secret", "--name", "devhost"})
 	if err != nil {
 		t.Fatalf("add host: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestAddAndList(t *testing.T) {
 	if len(store.Hosts) != 1 {
 		t.Fatalf("hosts len = %d, want 1", len(store.Hosts))
 	}
-	if store.Hosts[0].Name != "dev" || store.Hosts[0].IP != "10.0.0.8" || store.Hosts[0].User != "root" {
+	if store.Hosts[0].Name != "devhost" || store.Hosts[0].IP != "10.0.0.8" || store.Hosts[0].User != "root" {
 		t.Fatalf("unexpected host: %+v", store.Hosts[0])
 	}
 }
@@ -30,7 +30,7 @@ func TestAddAndList(t *testing.T) {
 func TestRunUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -53,7 +53,7 @@ func TestRunUsesSavedHost(t *testing.T) {
 
 	app := newApp()
 
-	if err := app.RunWithArgs([]string{"run", "dev", "--", "echo", "hello"}); err != nil {
+	if err := app.RunWithArgs([]string{"run", "devhost", "--", "echo", "hello"}); err != nil {
 		t.Fatalf("run host: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -63,7 +63,7 @@ func TestRunUsesSavedHost(t *testing.T) {
 		t.Fatalf("command = %q", gotCommand)
 	}
 
-	lines, err := readRunLogs("dev", "", 10)
+	lines, err := readRunLogs("devhost", "", 10)
 	if err != nil {
 		t.Fatalf("read run logs: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -111,7 +111,7 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 		"--efile", envFile,
 		"-e", "FOO=inline",
 		"-e", "BAZ=baz",
-		"dev",
+		"devhost",
 		"--", "printenv", "FOO",
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 func TestSCPUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -152,7 +152,7 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}
 
 	app := newApp()
-	if err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "dev"}); err != nil {
+	if err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
 		t.Fatalf("scp: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -182,7 +182,7 @@ func TestSCPRequiresSavedHost(t *testing.T) {
 func TestDownloadUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -206,7 +206,7 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	}
 
 	app := newApp()
-	if err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "dev"}); err != nil {
+	if err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "devhost"}); err != nil {
 		t.Fatalf("download: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -220,7 +220,7 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 func TestDownloadAlias(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -235,7 +235,7 @@ func TestDownloadAlias(t *testing.T) {
 	downloadRemote = func(host Host, remotePath, localPath string) error { return nil }
 
 	app := newApp()
-	if err := app.RunWithArgs([]string{"dl", "-r", "/tmp/remote.txt", "-l", "local.txt", "dev"}); err != nil {
+	if err := app.RunWithArgs([]string{"dl", "-r", "/tmp/remote.txt", "-l", "local.txt", "devhost"}); err != nil {
 		t.Fatalf("dl: %v", err)
 	}
 }
@@ -382,10 +382,10 @@ func TestRemoteRelPath(t *testing.T) {
 
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
-	if err := store.Upsert(Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {
+	if err := store.Upsert(Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Upsert(Host{Name: "dev", IP: "10.0.0.9", User: "ops", Password: "two", Port: 22}); err != nil {
+	if err := store.Upsert(Host{Name: "devhost", IP: "10.0.0.9", User: "ops", Password: "two", Port: 22}); err != nil {
 		t.Fatal(err)
 	}
 	if len(store.Hosts) != 1 {
@@ -416,12 +416,12 @@ func TestStorePathDefaultsToDotConfig(t *testing.T) {
 
 func TestReadRunLogsMatchesAndTails(t *testing.T) {
 	withTempConfig(t)
-	host := Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
+	host := Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
 
 	records := []RunLogRecord{
-		{Target: "dev", Command: "echo alpha", Status: "success"},
-		{Target: "dev", Command: "echo beta", Status: "success"},
-		{Target: "dev", Command: "echo gamma", Status: "success"},
+		{Target: "devhost", Command: "echo alpha", Status: "success"},
+		{Target: "devhost", Command: "echo beta", Status: "success"},
+		{Target: "devhost", Command: "echo gamma", Status: "success"},
 	}
 	for _, rec := range records {
 		if err := appendRunLog(host, rec); err != nil {
@@ -429,7 +429,7 @@ func TestReadRunLogsMatchesAndTails(t *testing.T) {
 		}
 	}
 
-	matched, err := readRunLogs("dev", "beta", 10)
+	matched, err := readRunLogs("devhost", "beta", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestReadRunLogsMatchesAndTails(t *testing.T) {
 		t.Fatalf("matched logs = %#v", matched)
 	}
 
-	tailed, err := readRunLogs("dev", "", 2)
+	tailed, err := readRunLogs("devhost", "", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,9 +454,9 @@ func TestRunLogTimeFormatUsesMillisecondsWithoutZone(t *testing.T) {
 	now = func() time.Time { return fixed }
 	t.Cleanup(func() { now = oldNow })
 
-	host := Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
+	host := Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
 	if err := appendRunLog(host, RunLogRecord{
-		Target:    "dev",
+		Target:    "devhost",
 		Command:   "echo ok",
 		Status:    "success",
 		StartedAt: fixed,
@@ -464,7 +464,7 @@ func TestRunLogTimeFormatUsesMillisecondsWithoutZone(t *testing.T) {
 		t.Fatalf("append log: %v", err)
 	}
 
-	lines, err := readRunLogs("dev", "", 10)
+	lines, err := readRunLogs("devhost", "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +485,7 @@ func TestRunLogTimeFormatUsesMillisecondsWithoutZone(t *testing.T) {
 func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
-		Name:     "dev",
+		Name:     "devhost",
 		IP:       "10.0.0.8",
 		User:     "root",
 		Password: "secret",
@@ -499,8 +499,8 @@ func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target != "dev" {
-		t.Fatalf("target = %q, want dev", target)
+	if target != "devhost" {
+		t.Fatalf("target = %q, want devhost", target)
 	}
 }
 

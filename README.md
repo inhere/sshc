@@ -8,30 +8,30 @@ Add or update a host:
 
 ```bash
 sshc add --ip 192.168.1.10 -u root -p password
-sshc add --ip 192.168.1.10 --name dev -u root -p password --port 22
+sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 ```
 
 Run a remote command by IP or saved name:
 
 ```bash
 sshc run 192.168.1.10 -- uptime
-sshc run dev -- docker ps
-sshc run dev --timeout 30s -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
-sshc run dev --efile ./remote.env -- env
+sshc run devhost -- docker ps
+sshc run devhost --timeout 30s -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
+sshc run devhost --efile ./remote.env -- env
 ```
 
 Upload a file or directory:
 
 ```bash
-sshc scp -l ./local-file.txt -r /tmp/remote-file.txt dev
-sshc scp -l ./local-dir -r /tmp/remote-dir dev
+sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost
+sshc scp -l ./local-dir -r /tmp/remote-dir devhost
 ```
 
 Download a file or directory:
 
 ```bash
-sshc download -r /tmp/remote-file.txt -l ./local-file.txt dev
-sshc dl -r /tmp/remote-dir -l ./local-dir dev
+sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
+sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 ```
 
 List saved hosts:
@@ -44,9 +44,9 @@ Show run logs:
 
 ```bash
 sshc log
-sshc log dev
-sshc log dev --match uptime
-sshc log dev --tail 50
+sshc log devhost
+sshc log devhost --match uptime
+sshc log devhost --tail 50
 ```
 
 ## Config

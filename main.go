@@ -74,7 +74,7 @@ func newAddCmd() *capp.Cmd {
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
   sshc add --ip 192.168.1.10 -u root -p password
-  sshc add --ip 192.168.1.10 --name dev -u root -p password --port 2222
+  sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 2222
 
 Notes:
   - If --name is empty, the IP is used as the host name.
@@ -137,11 +137,11 @@ func newRunCmd() *capp.Cmd {
 	cmd.Aliases = []string{"exec"}
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
-  sshc run dev -- uptime
+  sshc run devhost -- uptime
   sshc run 192.168.1.10 -- docker ps
-  sshc run dev --timeout 30s -- systemctl status nginx
-  sshc run dev -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
-  sshc run dev --efile ./remote.env -- env
+  sshc run devhost --timeout 30s -- systemctl status nginx
+  sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
+  sshc run devhost --efile ./remote.env -- env
 
 Options:
   --timeout accepts Go duration values like 500ms, 30s, 2m.
@@ -228,9 +228,9 @@ func newSCPCmd() *capp.Cmd {
 	cmd.Aliases = []string{"upload"}
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
-  sshc scp -l ./local-file.txt -r /tmp/remote-file.txt dev
-  sshc scp -l ./local-dir -r /tmp/remote-dir dev
-  sshc upload -l ./dist -r /opt/app/dist dev
+  sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost
+  sshc scp -l ./local-dir -r /tmp/remote-dir devhost
+  sshc upload -l ./dist -r /opt/app/dist devhost
 
 Path rules:
   - -l/--local can be a file or directory.
@@ -282,9 +282,9 @@ func newDownloadCmd() *capp.Cmd {
 	cmd.Aliases = []string{"dl"}
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
-  sshc download -r /tmp/remote-file.txt -l ./local-file.txt dev
-  sshc download -r /tmp/remote-file.txt -l ./downloads/ dev
-  sshc dl -r /tmp/remote-dir -l ./local-dir dev
+  sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost
+  sshc download -r /tmp/remote-file.txt -l ./downloads/ devhost
+  sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 
 Path rules:
   - -r/--remote can be a remote file or directory.
@@ -356,10 +356,10 @@ func newLogCmd() *capp.Cmd {
 	cmd.LongHelp = strings.TrimSpace(`
 Examples:
   sshc log
-  sshc log dev
+  sshc log devhost
   sshc log 192.168.1.10
-  sshc log dev --match uptime
-  sshc log dev -m error --tail 50
+  sshc log devhost --match uptime
+  sshc log devhost -m error --tail 50
 
 Log files:
   ~/.config/sshc/logs/<host>.log
