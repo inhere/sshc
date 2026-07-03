@@ -18,6 +18,8 @@ const logDirName = "logs"
 
 var now = time.Now
 
+const logTimeLayout = "2006-01-02T15:04:05.000"
+
 type RunLogRecord struct {
 	Target     string
 	Command    string
@@ -43,7 +45,9 @@ func appendRunLog(host Host, rec RunLogRecord) error {
 	}
 	defer file.Close()
 
-	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{}))
+	handler := slog.NewJSONHandler(file, &slog.HandlerOptions{
+		ReplaceAttr: replaceLogTimeAttr,
+	})
 	attrs := []slog.Attr{
 		slog.String("target", rec.Target),
 		slog.String("host", hostLogName(host)),
@@ -52,7 +56,7 @@ func appendRunLog(host Host, rec RunLogRecord) error {
 		slog.Int("port", host.Port),
 		slog.String("command", rec.Command),
 		slog.String("status", rec.Status),
-		slog.String("started_at", rec.StartedAt.Format(time.RFC3339Nano)),
+		slog.String("started_at", formatLogTime(rec.StartedAt)),
 		slog.Int64("duration_ms", rec.DurationMS),
 	}
 	if rec.Output != "" {
@@ -62,8 +66,26 @@ func appendRunLog(host Host, rec RunLogRecord) error {
 		attrs = append(attrs, slog.String("error", rec.Error))
 	}
 
-	logger.LogAttrs(context.Background(), slog.LevelInfo, "run", attrs...)
-	return nil
+	logTime := rec.StartedAt
+	if logTime.IsZero() {
+		logTime = now()
+	}
+	record := slog.NewRecord(logTime, slog.LevelInfo, "run", 0)
+	record.AddAttrs(attrs...)
+	return handler.Handle(context.Background(), record)
+}
+
+func replaceLogTimeAttr(groups []string, attr slog.Attr) slog.Attr {
+	if attr.Key == slog.TimeKey {
+		if value, ok := attr.Value.Any().(time.Time); ok {
+			attr.Value = slog.StringValue(formatLogTime(value))
+		}
+	}
+	return attr
+}
+
+func formatLogTime(value time.Time) string {
+	return value.Format(logTimeLayout)
 }
 
 func readRunLogs(target, match string, tail int) ([]string, error) {

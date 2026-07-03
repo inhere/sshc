@@ -446,6 +446,42 @@ func TestReadRunLogsMatchesAndTails(t *testing.T) {
 	}
 }
 
+func TestRunLogTimeFormatUsesMillisecondsWithoutZone(t *testing.T) {
+	withTempConfig(t)
+	loc := time.FixedZone("CST", 8*60*60)
+	fixed := time.Date(2026, 7, 3, 17, 16, 14, 350724100, loc)
+	oldNow := now
+	now = func() time.Time { return fixed }
+	t.Cleanup(func() { now = oldNow })
+
+	host := Host{Name: "dev", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}
+	if err := appendRunLog(host, RunLogRecord{
+		Target:    "dev",
+		Command:   "echo ok",
+		Status:    "success",
+		StartedAt: fixed,
+	}); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+
+	lines, err := readRunLogs("dev", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("log lines len = %d, want 1", len(lines))
+	}
+	line := lines[0]
+	for _, want := range []string{`"time":"2026-07-03T17:16:14.350"`, `"started_at":"2026-07-03T17:16:14.350"`} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("log line %q does not contain %q", line, want)
+		}
+	}
+	if strings.Contains(line, "+08") || strings.Contains(line, "3507241") {
+		t.Fatalf("log line has unwanted zone or sub-millisecond precision: %q", line)
+	}
+}
+
 func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &Store{Hosts: []Host{{
