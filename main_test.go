@@ -108,9 +108,9 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	err := app.RunWithArgs([]string{
 		"run",
 		"--timeout", "3s",
-		"--env-file", envFile,
-		"--env", "FOO=inline",
-		"--env", "BAZ=baz",
+		"--efile", envFile,
+		"-e", "FOO=inline",
+		"-e", "BAZ=baz",
 		"dev",
 		"--", "printenv", "FOO",
 	})
@@ -240,7 +240,7 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env, err := loadRunEnv([]string{envFile}, []string{"FOO=inline", "QUOTE=a'b"})
+	env, err := loadRunEnv(envFile, []string{"FOO=inline", "QUOTE=a'b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,6 +256,24 @@ func TestLoadRunEnvAndBuildRemoteCommand(t *testing.T) {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command %q does not contain %q", command, want)
 		}
+	}
+}
+
+func TestNormalizeEnvFile(t *testing.T) {
+	got, err := normalizeEnvFile("a.env", "")
+	if err != nil || got != "a.env" {
+		t.Fatalf("normalizeEnvFile env-file = %q, %v", got, err)
+	}
+	got, err = normalizeEnvFile("", "b.env")
+	if err != nil || got != "b.env" {
+		t.Fatalf("normalizeEnvFile efile = %q, %v", got, err)
+	}
+	got, err = normalizeEnvFile("same.env", "same.env")
+	if err != nil || got != "same.env" {
+		t.Fatalf("normalizeEnvFile same = %q, %v", got, err)
+	}
+	if _, err = normalizeEnvFile("a.env", "b.env"); err == nil {
+		t.Fatal("expected different env-file aliases to fail")
 	}
 }
 

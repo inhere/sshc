@@ -35,9 +35,21 @@ func parseTimeout(value string) (time.Duration, error) {
 	return d, nil
 }
 
-func loadRunEnv(files []string, inline []string) (map[string]string, error) {
+func normalizeEnvFile(envFile, efile string) (string, error) {
+	envFile = strings.TrimSpace(envFile)
+	efile = strings.TrimSpace(efile)
+	if envFile != "" && efile != "" && envFile != efile {
+		return "", errors.New("--env-file and --efile cannot be different")
+	}
+	if envFile != "" {
+		return envFile, nil
+	}
+	return efile, nil
+}
+
+func loadRunEnv(file string, inline []string) (map[string]string, error) {
 	env := make(map[string]string)
-	for _, file := range files {
+	if strings.TrimSpace(file) != "" {
 		if err := loadEnvFile(env, file); err != nil {
 			return nil, err
 		}

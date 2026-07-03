@@ -125,7 +125,9 @@ func newRunCmd() *capp.Cmd {
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
 		c.Var(&opts.Env, "env", "environment variable k=v, repeatable")
-		c.Var(&opts.EnvFiles, "env-file", "load environment variables from file, repeatable")
+		c.AddShortcuts("env", "e")
+		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file")
+		c.StringVar(&opts.EFile, "efile", "", "alias of --env-file")
 		c.AddArg("target", "host ip or name", true)
 		c.AddArg("command", "remote command after --", true, nil, true)
 	}
@@ -133,9 +135,10 @@ func newRunCmd() *capp.Cmd {
 }
 
 type runFlagOptions struct {
-	Timeout  string
-	Env      cflag.Strings
-	EnvFiles cflag.Strings
+	Timeout string
+	Env     cflag.Strings
+	EnvFile string
+	EFile   string
 }
 
 type RunOptions struct {
@@ -148,7 +151,11 @@ func buildRunOptions(flags runFlagOptions) (RunOptions, error) {
 	if err != nil {
 		return RunOptions{}, err
 	}
-	env, err := loadRunEnv(flags.EnvFiles.Strings(), flags.Env.Strings())
+	envFile, err := normalizeEnvFile(flags.EnvFile, flags.EFile)
+	if err != nil {
+		return RunOptions{}, err
+	}
+	env, err := loadRunEnv(envFile, flags.Env.Strings())
 	if err != nil {
 		return RunOptions{}, err
 	}
