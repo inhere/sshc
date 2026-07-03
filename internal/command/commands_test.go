@@ -43,6 +43,24 @@ func TestAddAndList(t *testing.T) {
 	}
 }
 
+func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
+	withTempConfig(t)
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "--name", "devhost", "--key", "~/.ssh/id_rsa"})
+	if err != nil {
+		t.Fatalf("add host with key: %v", err)
+	}
+
+	store := readTestStore(t)
+	if len(store.Hosts) != 1 {
+		t.Fatalf("hosts len = %d, want 1", len(store.Hosts))
+	}
+	if store.Hosts[0].Password != "" || store.Hosts[0].KeyPath != "~/.ssh/id_rsa" {
+		t.Fatalf("unexpected auth fields: %+v", store.Hosts[0])
+	}
+}
+
 func TestRunUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

@@ -1,6 +1,10 @@
 package core
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -324,6 +328,53 @@ func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	if store.Hosts[0].IP != "10.0.0.9" || store.Hosts[0].User != "ops" {
 		t.Fatalf("unexpected replacement: %+v", store.Hosts[0])
 	}
+}
+
+func TestValidateHostAllowsKeyPathWithoutPassword(t *testing.T) {
+	err := validateHost(Host{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22})
+	if err != nil {
+		t.Fatalf("validateHost with key path: %v", err)
+	}
+	err = validateHost(Host{Name: "devhost", IP: "10.0.0.8", User: "root", Port: 22})
+	if err == nil || !strings.Contains(err.Error(), "password or key_path") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExpandUserPath(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
+
+	got := expandUserPath("~/.ssh/id_rsa")
+	want := filepath.Join(home, ".ssh", "id_rsa")
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestHostAuthUsesKeyAndPassword(t *testing.T) {
+	keyPath := writeTestPrivateKey(t)
+	auth, err := hostAuth(Host{KeyPath: keyPath, Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auth) != 3 {
+		t.Fatalf("auth methods = %d, want 3", len(auth))
+	}
+}
+
+func writeTestPrivateKey(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	path := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestStoreResolveHostUsesExactMatchFirst(t *testing.T) {

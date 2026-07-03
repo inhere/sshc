@@ -412,14 +412,54 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 }
 
 func newSSHClient(host Host) (*goph.Client, error) {
+	auth, err := hostAuth(host)
+	if err != nil {
+		return nil, err
+	}
 	return goph.NewConn(&goph.Config{
 		User:     host.User,
 		Addr:     host.IP,
 		Port:     uint(host.Port),
-		Auth:     goph.KeyboardInteractive(host.Password),
+		Auth:     auth,
 		Timeout:  20 * time.Second,
 		Callback: ssh.InsecureIgnoreHostKey(),
 	})
+}
+
+func hostAuth(host Host) (goph.Auth, error) {
+	var auth goph.Auth
+	if strings.TrimSpace(host.KeyPath) != "" {
+		keyAuth, err := goph.Key(expandUserPath(host.KeyPath), "")
+		if err != nil {
+			return nil, err
+		}
+		auth = append(auth, keyAuth...)
+	}
+	if host.Password != "" {
+		auth = append(auth, goph.KeyboardInteractive(host.Password)...)
+	}
+	if len(auth) == 0 {
+		return nil, fmt.Errorf("password or key_path is required")
+	}
+	return auth, nil
+}
+
+func expandUserPath(filePath string) string {
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "~" {
+		home, err := userHomeDir()
+		if err == nil {
+			return home
+		}
+		return filePath
+	}
+	if strings.HasPrefix(filePath, "~/") || strings.HasPrefix(filePath, `~\`) {
+		home, err := userHomeDir()
+		if err == nil {
+			return filepath.Join(home, filePath[2:])
+		}
+	}
+	return filePath
 }
 
 func RemoteFilePath(localPath, remotePath string) string {

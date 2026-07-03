@@ -123,8 +123,8 @@ func validateHost(host Host) error {
 	if strings.TrimSpace(host.User) == "" {
 		return errors.New("user is required")
 	}
-	if host.Password == "" {
-		return errors.New("password is required")
+	if host.Password == "" && strings.TrimSpace(host.KeyPath) == "" {
+		return errors.New("password or key_path is required")
 	}
 	if host.Port < 1 || host.Port > 65535 {
 		return fmt.Errorf("invalid ssh port %d", host.Port)
