@@ -15,6 +15,7 @@ var (
 	scpOpts = struct {
 		LocalPath  string
 		RemotePath string
+		SHA256     bool
 	}{}
 
 	scpUpload = core.UploadRemote
@@ -44,12 +45,13 @@ func NewUploadCmd() *capp.Cmd {
 			return fmt.Errorf("host %q not found", target)
 		}
 
-		result, err := scpUpload(host, localPath, remotePath)
+		result, err := scpUpload(host, localPath, remotePath, core.TransferOptions{SHA256: scpOpts.SHA256})
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(c.Output(), "uploaded %s to %s:%s\n", localPath, core.HostLogName(host), remotePath)
 		fmt.Fprintf(c.Output(), "size=%d files=%d dirs=%d elapsed=%s\n", result.Bytes, result.Files, result.Directories, formatElapsed(result.Elapsed))
+		writeSHA256Result(c, result)
 		return nil
 	})
 	cmd.Aliases = []string{"upload"}
@@ -65,10 +67,12 @@ Path rules:
   - File upload creates remote parent directories when needed.
   - If remote path ends with / for file upload, the local file name is appended.
   - Directory upload recursively creates directories and files under the remote path.
+  - --sha256 verifies file uploads with local and remote sha256 hashes.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&scpOpts.LocalPath, "local", "", "local file or directory path;true;l")
 		c.StringVar(&scpOpts.RemotePath, "remote", "", "remote file or directory path;true;r")
+		c.BoolVar(&scpOpts.SHA256, "sha256", false, "verify file transfer with sha256")
 		c.AddArg("target", "host ip or name", true)
 	}
 	return cmd
@@ -79,4 +83,13 @@ func formatElapsed(value time.Duration) string {
 		value = 0
 	}
 	return value.Round(time.Millisecond).String()
+}
+
+func writeSHA256Result(c *capp.Cmd, result core.TransferResult) {
+	if result.LocalSHA256 == "" && result.RemoteSHA256 == "" {
+		return
+	}
+	fmt.Fprintf(c.Output(), "sha256.local=%s\n", result.LocalSHA256)
+	fmt.Fprintf(c.Output(), "sha256.remote=%s\n", result.RemoteSHA256)
+	fmt.Fprintf(c.Output(), "sha256.ok=%v\n", result.SHA256OK)
 }

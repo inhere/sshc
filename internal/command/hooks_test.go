@@ -8,13 +8,13 @@ func setRunRemoteForTest(fn func(core.Host, string, core.RunOptions) ([]byte, er
 	return func() { runRemote = old }
 }
 
-func setUploadRemoteForTest(fn func(core.Host, string, string) (core.TransferResult, error)) func() {
+func setUploadRemoteForTest(fn func(core.Host, string, string, core.TransferOptions) (core.TransferResult, error)) func() {
 	old := scpUpload
 	scpUpload = fn
 	return func() { scpUpload = old }
 }
 
-func setDownloadRemoteForTest(fn func(core.Host, string, string) (core.TransferResult, error)) func() {
+func setDownloadRemoteForTest(fn func(core.Host, string, string, core.TransferOptions) (core.TransferResult, error)) func() {
 	old := downloadRemote
 	downloadRemote = fn
 	return func() { downloadRemote = old }

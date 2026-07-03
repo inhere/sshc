@@ -217,6 +217,42 @@ func TestRemoteRelPath(t *testing.T) {
 	}
 }
 
+func TestFileSHA256(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "data.txt")
+	if err := os.WriteFile(file, []byte("hello\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := fileSHA256(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+	if got != want {
+		t.Fatalf("sha256 = %q, want %q", got, want)
+	}
+}
+
+func TestParseSHA256SumOutput(t *testing.T) {
+	got, err := parseSHA256SumOutput("ABCDEFabcdefABCDEFabcdefABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD  /tmp/a.txt\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+	if got != want {
+		t.Fatalf("sha256 = %q, want %q", got, want)
+	}
+	if _, err := parseSHA256SumOutput("bad /tmp/a.txt"); err == nil {
+		t.Fatal("expected invalid sha256sum output error")
+	}
+}
+
+func TestVerifySHA256Mismatch(t *testing.T) {
+	err := verifySHA256("aaa", "bbb")
+	if err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
 	if err := store.Upsert(Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {

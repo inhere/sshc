@@ -354,15 +354,17 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	var gotHost core.Host
 	var gotLocal string
 	var gotRemote string
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) (core.TransferResult, error) {
+	var gotOpts core.TransferOptions
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string, opts core.TransferOptions) (core.TransferResult, error) {
 		gotHost = host
 		gotLocal = localPath
 		gotRemote = remotePath
+		gotOpts = opts
 		return core.TransferResult{Bytes: 123, Files: 1, Directories: 0, Elapsed: 1500 * time.Millisecond}, nil
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"scp", "--sha256", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
 		t.Fatalf("scp: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -371,11 +373,14 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	if gotLocal != "local.txt" || gotRemote != "/tmp/remote.txt" {
 		t.Fatalf("paths = %q -> %q", gotLocal, gotRemote)
 	}
+	if !gotOpts.SHA256 {
+		t.Fatal("sha256 option = false, want true")
+	}
 }
 
 func TestSCPRequiresSavedHost(t *testing.T) {
 	withTempConfig(t)
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string) (core.TransferResult, error) {
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string, opts core.TransferOptions) (core.TransferResult, error) {
 		t.Fatal("upload should not be called")
 		return core.TransferResult{}, nil
 	}))
@@ -412,15 +417,17 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	var gotHost core.Host
 	var gotRemote string
 	var gotLocal string
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
+	var gotOpts core.TransferOptions
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
 		gotHost = host
 		gotRemote = remotePath
 		gotLocal = localPath
+		gotOpts = opts
 		return core.TransferResult{Bytes: 456, Files: 2, Directories: 1, Elapsed: 2 * time.Second}, nil
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"download", "--sha256", "-r", "/tmp/remote.txt", "-l", "local.txt", "devhost"}); err != nil {
 		t.Fatalf("download: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
@@ -428,6 +435,9 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	}
 	if gotRemote != "/tmp/remote.txt" || gotLocal != "local.txt" {
 		t.Fatalf("paths = %q -> %q", gotRemote, gotLocal)
+	}
+	if !gotOpts.SHA256 {
+		t.Fatal("sha256 option = false, want true")
 	}
 }
 
@@ -444,7 +454,7 @@ func TestDownloadAlias(t *testing.T) {
 		t.Fatalf("save store: %v", err)
 	}
 
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
 		return core.TransferResult{}, nil
 	}))
 
@@ -456,7 +466,7 @@ func TestDownloadAlias(t *testing.T) {
 
 func TestDownloadRequiresSavedHost(t *testing.T) {
 	withTempConfig(t)
-	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string) (core.TransferResult, error) {
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
 		t.Fatal("download should not be called")
 		return core.TransferResult{}, nil
 	}))

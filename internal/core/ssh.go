@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -34,10 +36,17 @@ type RunOptions struct {
 }
 
 type TransferResult struct {
-	Bytes       int64
-	Files       int
-	Directories int
-	Elapsed     time.Duration
+	Bytes        int64
+	Files        int
+	Directories  int
+	Elapsed      time.Duration
+	LocalSHA256  string
+	RemoteSHA256 string
+	SHA256OK     bool
+}
+
+type TransferOptions struct {
+	SHA256 bool
 }
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
@@ -171,7 +180,7 @@ func NewRemoteScriptPath(value time.Time) string {
 	return fmt.Sprintf("/tmp/sshc-run-%d-%x.sh", value.UnixNano(), suffix[:])
 }
 
-func UploadRemote(host Host, localPath, remotePath string) (result TransferResult, err error) {
+func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions) (result TransferResult, err error) {
 	started := time.Now()
 	defer func() {
 		result.Elapsed = time.Since(started)
@@ -198,13 +207,32 @@ func UploadRemote(host Host, localPath, remotePath string) (result TransferResul
 		if err := mkdirRemoteParent(sftpClient, remoteFile); err != nil {
 			return result, err
 		}
+		if opts.SHA256 {
+			result.LocalSHA256, err = fileSHA256(localPath)
+			if err != nil {
+				return result, err
+			}
+		}
 		bytes, err := uploadFileWithSFTP(sftpClient, localPath, remoteFile)
 		if err != nil {
 			return result, err
 		}
 		result.Bytes += bytes
 		result.Files++
+		if opts.SHA256 {
+			result.RemoteSHA256, err = remoteSHA256(client, remoteFile)
+			if err != nil {
+				return result, err
+			}
+			if err := verifySHA256(result.LocalSHA256, result.RemoteSHA256); err != nil {
+				return result, err
+			}
+			result.SHA256OK = true
+		}
 		return result, nil
+	}
+	if opts.SHA256 {
+		return result, fmt.Errorf("--sha256 is only supported for file transfers")
 	}
 
 	root := filepath.Clean(localPath)
@@ -240,7 +268,7 @@ func UploadRemote(host Host, localPath, remotePath string) (result TransferResul
 	return result, err
 }
 
-func FetchRemote(host Host, remotePath, localPath string) (result TransferResult, err error) {
+func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) (result TransferResult, err error) {
 	started := time.Now()
 	defer func() {
 		result.Elapsed = time.Since(started)
@@ -263,13 +291,33 @@ func FetchRemote(host Host, remotePath, localPath string) (result TransferResult
 		return result, err
 	}
 	if !info.IsDir() {
-		bytes, err := downloadFileWithSFTP(sftpClient, remotePath, LocalFilePath(remotePath, localPath))
+		localFile := LocalFilePath(remotePath, localPath)
+		if opts.SHA256 {
+			result.RemoteSHA256, err = remoteSHA256(client, remotePath)
+			if err != nil {
+				return result, err
+			}
+		}
+		bytes, err := downloadFileWithSFTP(sftpClient, remotePath, localFile)
 		if err != nil {
 			return result, err
 		}
 		result.Bytes += bytes
 		result.Files++
+		if opts.SHA256 {
+			result.LocalSHA256, err = fileSHA256(localFile)
+			if err != nil {
+				return result, err
+			}
+			if err := verifySHA256(result.LocalSHA256, result.RemoteSHA256); err != nil {
+				return result, err
+			}
+			result.SHA256OK = true
+		}
 		return result, nil
+	}
+	if opts.SHA256 {
+		return result, fmt.Errorf("--sha256 is only supported for file transfers")
 	}
 
 	root := strings.TrimRight(remotePath, "/")
@@ -402,4 +450,49 @@ func JoinRemotePath(base, elem string) string {
 		return path.Clean(base + elem)
 	}
 	return path.Join(base, elem)
+}
+
+func fileSHA256(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func remoteSHA256(client *goph.Client, remotePath string) (string, error) {
+	command := "command -v sha256sum >/dev/null 2>&1 || { echo 'sshc: remote sha256sum command not found' >&2; exit 127; }; sha256sum " + shellQuote(remotePath)
+	out, err := client.Run(command)
+	if err != nil {
+		return "", err
+	}
+	return parseSHA256SumOutput(string(out))
+}
+
+func parseSHA256SumOutput(output string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(output))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty sha256sum output")
+	}
+	hash := fields[0]
+	if len(hash) != sha256.Size*2 {
+		return "", fmt.Errorf("invalid sha256sum output %q", strings.TrimSpace(output))
+	}
+	if _, err := hex.DecodeString(hash); err != nil {
+		return "", fmt.Errorf("invalid sha256sum output %q", strings.TrimSpace(output))
+	}
+	return strings.ToLower(hash), nil
+}
+
+func verifySHA256(localHash, remoteHash string) error {
+	if localHash != remoteHash {
+		return fmt.Errorf("sha256 mismatch: local=%s remote=%s", localHash, remoteHash)
+	}
+	return nil
 }
