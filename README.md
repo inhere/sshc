@@ -9,6 +9,9 @@ Add or update a host:
 ```bash
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
+sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
+sshc add -I
+sshc add --from-clipboard
 ```
 
 Run a remote command by IP or saved name:

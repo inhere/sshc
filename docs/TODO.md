@@ -7,12 +7,13 @@
   - [x] 新增 --sudo / --sudo-user 支持 sudo 或切换远端执行用户
   - [x] 新增参数支持 --timeout 远端超时设置; --kill-after 超时后强制清理延迟; --env k=v 可以多次设置; --env-file 从文件加载ENV
 - add 命令
-  - -I, --interactive 交互录入信息(引入 githu.com/gookit/cliui 包)
-  - add pwd 加密
-  - add 支持从clipboard 读取指定格式的 ip,user,pwd
-  - 支持 keypath file
-  - 新增备注字段 --remark; 新增 --group 配置 server group，默认 "default"
-- [ ] 支持读取 ~/.ssh/ 的相关配置 config, password 文件
+  - [x] -I, --interactive 交互录入信息(引入 github.com/gookit/cliui 包)
+  - [ ] add pwd 加密，已补 docs/password-encryption-design.md 设计边界
+  - [x] add 支持从clipboard 读取指定格式的 ip,user,pwd
+  - [x] 支持 keypath file
+  - [x] 新增备注字段 --remark; 新增 --group 配置 server group，默认 "default"
+- [x] 支持读取 ~/.ssh/config 中带 IdentityFile 的 Host 配置
+- [ ] 支持读取 ~/.ssh/ 的 password 文件
 - [x] 新增 scp -l local-path -r remote-path hostname 命令上传文件到remote
   - [x] 输出 size/files/dirs/elapsed 传输统计
   - [x] 新增 --sha256 文件级校验
