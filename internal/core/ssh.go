@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"context"
@@ -14,14 +14,19 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func executeRemote(host Host, command string, opts RunOptions) ([]byte, error) {
+type RunOptions struct {
+	Timeout time.Duration
+	Env     map[string]string
+}
+
+func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	client, err := newSSHClient(host)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
 
-	remoteCommand, err := buildRemoteCommand(command, opts.Env)
+	remoteCommand, err := BuildRemoteCommand(command, opts.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +39,7 @@ func executeRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	return client.RunContext(ctx, remoteCommand)
 }
 
-func uploadRemote(host Host, localPath, remotePath string) error {
+func UploadRemote(host Host, localPath, remotePath string) error {
 	client, err := newSSHClient(host)
 	if err != nil {
 		return err
@@ -52,7 +57,7 @@ func uploadRemote(host Host, localPath, remotePath string) error {
 	defer sftpClient.Close()
 
 	if !info.IsDir() {
-		remoteFile := remoteFilePath(localPath, remotePath)
+		remoteFile := RemoteFilePath(localPath, remotePath)
 		if err := mkdirRemoteParent(sftpClient, remoteFile); err != nil {
 			return err
 		}
@@ -71,7 +76,7 @@ func uploadRemote(host Host, localPath, remotePath string) error {
 
 		remoteCurrent := remotePath
 		if rel != "." {
-			remoteCurrent = joinRemotePath(remotePath, filepath.ToSlash(rel))
+			remoteCurrent = JoinRemotePath(remotePath, filepath.ToSlash(rel))
 		}
 		if entry.IsDir() {
 			return sftpClient.MkdirAll(remoteCurrent)
@@ -84,7 +89,7 @@ func uploadRemote(host Host, localPath, remotePath string) error {
 	})
 }
 
-func fetchRemote(host Host, remotePath, localPath string) error {
+func FetchRemote(host Host, remotePath, localPath string) error {
 	client, err := newSSHClient(host)
 	if err != nil {
 		return err
@@ -102,11 +107,11 @@ func fetchRemote(host Host, remotePath, localPath string) error {
 		return err
 	}
 	if !info.IsDir() {
-		return downloadFileWithSFTP(sftpClient, remotePath, localFilePath(remotePath, localPath))
+		return downloadFileWithSFTP(sftpClient, remotePath, LocalFilePath(remotePath, localPath))
 	}
 
 	root := strings.TrimRight(remotePath, "/")
-	localRoot := localDirPath(root, localPath)
+	localRoot := LocalDirPath(root, localPath)
 	walker := sftpClient.Walk(root)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
@@ -115,7 +120,7 @@ func fetchRemote(host Host, remotePath, localPath string) error {
 
 		remoteCurrent := walker.Path()
 		localCurrent := localRoot
-		if rel := remoteRelPath(root, remoteCurrent); rel != "" {
+		if rel := RemoteRelPath(root, remoteCurrent); rel != "" {
 			localCurrent = filepath.Join(localRoot, filepath.FromSlash(rel))
 		}
 		if walker.Stat().IsDir() {
@@ -142,9 +147,9 @@ func newSSHClient(host Host) (*goph.Client, error) {
 	})
 }
 
-func remoteFilePath(localPath, remotePath string) string {
+func RemoteFilePath(localPath, remotePath string) string {
 	if strings.HasSuffix(remotePath, "/") {
-		return joinRemotePath(remotePath, filepath.Base(localPath))
+		return JoinRemotePath(remotePath, filepath.Base(localPath))
 	}
 	return remotePath
 }
@@ -194,14 +199,14 @@ func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) err
 	return err
 }
 
-func localFilePath(remotePath, localPath string) string {
+func LocalFilePath(remotePath, localPath string) string {
 	if isLocalDirTarget(localPath) {
 		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
 	}
 	return localPath
 }
 
-func localDirPath(remotePath, localPath string) string {
+func LocalDirPath(remotePath, localPath string) string {
 	if isLocalDirTarget(localPath) {
 		return filepath.Join(localPath, path.Base(strings.TrimRight(remotePath, "/")))
 	}
@@ -216,7 +221,7 @@ func isLocalDirTarget(localPath string) bool {
 	return err == nil && info.IsDir()
 }
 
-func remoteRelPath(root, current string) string {
+func RemoteRelPath(root, current string) string {
 	root = strings.TrimRight(root, "/")
 	current = strings.TrimRight(current, "/")
 	if current == root {
@@ -225,7 +230,7 @@ func remoteRelPath(root, current string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(current, root), "/")
 }
 
-func joinRemotePath(base, elem string) string {
+func JoinRemotePath(base, elem string) string {
 	if base == "" || base == "." {
 		return elem
 	}

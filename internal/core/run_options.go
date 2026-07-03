@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 
 var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func parseTimeout(value string) (time.Duration, error) {
+func ParseTimeout(value string) (time.Duration, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, nil
@@ -35,7 +35,7 @@ func parseTimeout(value string) (time.Duration, error) {
 	return d, nil
 }
 
-func loadRunEnv(file string, inline []string) (map[string]string, error) {
+func LoadRunEnv(file string, inline []string) (map[string]string, error) {
 	env := make(map[string]string)
 	if strings.TrimSpace(file) != "" {
 		if err := loadEnvFile(env, file); err != nil {
@@ -103,7 +103,7 @@ func trimEnvValue(value string) string {
 	return value
 }
 
-func buildRemoteCommand(command string, env map[string]string) (string, error) {
+func BuildRemoteCommand(command string, env map[string]string) (string, error) {
 	if len(env) == 0 {
 		return command, nil
 	}

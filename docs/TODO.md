@@ -14,10 +14,10 @@
 - [x] 新增 scp -l local-path -r remote-path hostname 命令上传文件到remote
   - [ ] local-path 支持使用 *通配符, 逗号分隔多个文件
   - [ ] 新增选项 --remove-dir 是否上传前先删除远程目录
-- [ ] 新增 download/dl 从远程下载 文件/目录 到本地路径下
+- [x] 新增 download/dl 从远程下载 文件/目录 到本地路径下
 - [ ] 新增 login/connect 命令，连接并打开 pty 可以连续操作(这种可以记录到命令执行日志吗？)
 
-## [ ] 整理项目结构
+## [x] 整理项目结构
 
 ```txt
 sshc/

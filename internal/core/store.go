@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	defaultSSHPort = 22
-	configEnvKey   = "SSHC_CONFIG"
+	DefaultSSHPort = 22
+	ConfigEnvKey   = "SSHC_CONFIG"
 )
 
 var userHomeDir = os.UserHomeDir
@@ -73,8 +73,8 @@ func validateHost(host Host) error {
 	return nil
 }
 
-func loadStore() (*Store, error) {
-	path, err := storePath()
+func LoadStore() (*Store, error) {
+	path, err := StorePath()
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +96,8 @@ func loadStore() (*Store, error) {
 	return &store, nil
 }
 
-func saveStore(store *Store) error {
-	path, err := storePath()
+func SaveStore(store *Store) error {
+	path, err := StorePath()
 	if err != nil {
 		return err
 	}
@@ -118,8 +118,8 @@ func saveStore(store *Store) error {
 	return os.Rename(tmp, path)
 }
 
-func storePath() (string, error) {
-	if path := strings.TrimSpace(os.Getenv(configEnvKey)); path != "" {
+func StorePath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv(ConfigEnvKey)); path != "" {
 		return path, nil
 	}
 	dir, err := configRoot()
@@ -127,4 +127,10 @@ func storePath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "hosts.json"), nil
+}
+
+func SetUserHomeDirForTest(fn func() (string, error)) func() {
+	old := userHomeDir
+	userHomeDir = fn
+	return func() { userHomeDir = old }
 }

@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"bufio"
@@ -30,7 +30,17 @@ type RunLogRecord struct {
 	Error      string
 }
 
-func appendRunLog(host Host, rec RunLogRecord) error {
+func Now() time.Time {
+	return now()
+}
+
+func SetNowForTest(fn func() time.Time) func() {
+	old := now
+	now = fn
+	return func() { now = old }
+}
+
+func AppendRunLog(host Host, rec RunLogRecord) error {
 	path, err := runLogPath(host)
 	if err != nil {
 		return err
@@ -50,7 +60,7 @@ func appendRunLog(host Host, rec RunLogRecord) error {
 	})
 	attrs := []slog.Attr{
 		slog.String("target", rec.Target),
-		slog.String("host", hostLogName(host)),
+		slog.String("host", HostLogName(host)),
 		slog.String("ip", host.IP),
 		slog.String("user", host.User),
 		slog.Int("port", host.Port),
@@ -88,7 +98,7 @@ func formatLogTime(value time.Time) string {
 	return value.Format(logTimeLayout)
 }
 
-func readRunLogs(target, match string, tail int) ([]string, error) {
+func ReadRunLogs(target, match string, tail int) ([]string, error) {
 	if tail < 1 {
 		return nil, errors.New("tail must be greater than 0")
 	}
@@ -179,7 +189,7 @@ func runLogPath(host Host) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, safeLogName(hostLogName(host))+".log"), nil
+	return filepath.Join(dir, safeLogName(HostLogName(host))+".log"), nil
 }
 
 func runLogDir() (string, error) {
@@ -198,28 +208,28 @@ func configRoot() (string, error) {
 	return filepath.Join(dir, ".config", "sshc"), nil
 }
 
-func hostLogName(host Host) string {
+func HostLogName(host Host) string {
 	if strings.TrimSpace(host.Name) != "" {
 		return strings.TrimSpace(host.Name)
 	}
 	return strings.TrimSpace(host.IP)
 }
 
-func runStatus(err error) string {
+func RunStatus(err error) string {
 	if err != nil {
 		return "error"
 	}
 	return "success"
 }
 
-func errorString(err error) string {
+func ErrorString(err error) string {
 	if err == nil {
 		return ""
 	}
 	return err.Error()
 }
 
-func sinceMS(start time.Time) int64 {
+func SinceMS(start time.Time) int64 {
 	return time.Since(start).Milliseconds()
 }
 
