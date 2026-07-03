@@ -65,7 +65,14 @@ Open an interactive remote shell:
 ```bash
 sshc login devhost
 sshc connect devhost
+sshc login --term xterm-256color devhost
 ```
+
+`login` and `connect` open an interactive remote PTY. The terminal type defaults
+to the local `TERM` value and falls back to `xterm-256color`; use `--term` when a
+remote full-screen program or color handling needs a specific terminal type.
+Session logs only record connection metadata, not typed commands or terminal
+output.
 
 Deployment examples:
 

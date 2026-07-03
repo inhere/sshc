@@ -606,17 +606,22 @@ func TestLoginUsesSavedHostAndWritesLog(t *testing.T) {
 	}
 
 	var gotHost core.Host
-	t.Cleanup(setLoginRemoteForTest(func(host core.Host) error {
+	var gotOpts core.LoginOptions
+	t.Cleanup(setLoginRemoteForTest(func(host core.Host, opts core.LoginOptions) error {
 		gotHost = host
+		gotOpts = opts
 		return nil
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"connect", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"connect", "--term", "vt100", "devhost"}); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
 		t.Fatalf("host ip = %q", gotHost.IP)
+	}
+	if gotOpts.Term != "vt100" {
+		t.Fatalf("term = %q, want vt100", gotOpts.Term)
 	}
 	lines, err := core.ReadRunLogs("devhost", "", 10)
 	if err != nil {

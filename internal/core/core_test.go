@@ -592,6 +592,20 @@ func TestRunLogTimeFormatUsesMillisecondsWithoutZone(t *testing.T) {
 	}
 }
 
+func TestLoginTermName(t *testing.T) {
+	t.Setenv("TERM", "screen-256color")
+	if got := loginTermName(""); got != "screen-256color" {
+		t.Fatalf("term = %q, want screen-256color", got)
+	}
+	if got := loginTermName(" vt100 "); got != "vt100" {
+		t.Fatalf("explicit term = %q, want vt100", got)
+	}
+	t.Setenv("TERM", "")
+	if got := loginTermName(""); got != defaultPTYTerm {
+		t.Fatalf("default term = %q, want %s", got, defaultPTYTerm)
+	}
+}
+
 func withTempConfig(t *testing.T) string {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")

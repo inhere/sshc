@@ -26,7 +26,7 @@ func setReadClipboardForTest(fn func() (string, error)) func() {
 	return func() { readClipboard = old }
 }
 
-func setLoginRemoteForTest(fn func(core.Host) error) func() {
+func setLoginRemoteForTest(fn func(core.Host, core.LoginOptions) error) func() {
 	old := loginRemote
 	loginRemote = fn
 	return func() { loginRemote = old }

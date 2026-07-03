@@ -20,6 +20,9 @@ import (
 const (
 	defaultRemoteKillAfter = 30 * time.Second
 	clientTimeoutBuffer    = 5 * time.Second
+	defaultPTYWidth        = 120
+	defaultPTYHeight       = 40
+	defaultPTYTerm         = "xterm-256color"
 )
 
 type TransferResult struct {
@@ -35,6 +38,13 @@ type TransferResult struct {
 type TransferOptions struct {
 	SHA256    bool
 	RemoveDir bool
+}
+
+type LoginOptions struct {
+	Stdin  *os.File
+	Stdout io.Writer
+	Stderr io.Writer
+	Term   string
 }
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
@@ -65,6 +75,17 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 }
 
 func LoginRemote(host Host) error {
+	return LoginRemoteWithOptions(host, LoginOptions{})
+}
+
+func LoginRemoteWithOptions(host Host, opts LoginOptions) error {
+	opts = normalizeLoginOptions(opts)
+	fd := int(opts.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return fmt.Errorf("interactive login requires terminal stdin")
+	}
+	width, height := loginTerminalSize(fd)
+
 	client, err := newSSHClient(host)
 	if err != nil {
 		return err
@@ -77,31 +98,63 @@ func LoginRemote(host Host) error {
 	}
 	defer session.Close()
 
-	fd := int(os.Stdin.Fd())
-	width, height := 120, 40
-	if term.IsTerminal(fd) {
-		if w, h, err := term.GetSize(fd); err == nil {
-			width, height = w, h
-		}
-		oldState, err := term.MakeRaw(fd)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = term.Restore(fd, oldState)
-		}()
-	}
-
-	if err := session.RequestPty("xterm-256color", height, width, ssh.TerminalModes{}); err != nil {
+	if err := session.RequestPty(loginTermName(opts.Term), height, width, ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}); err != nil {
 		return err
 	}
-	session.Stdin = os.Stdin
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
+	session.Stdin = opts.Stdin
+	session.Stdout = opts.Stdout
+	session.Stderr = opts.Stderr
+
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = term.Restore(fd, oldState)
+	}()
+	stopResize := startPTYResizeLoop(fd, session)
+	defer stopResize()
+
 	if err := session.Shell(); err != nil {
 		return err
 	}
 	return session.Wait()
+}
+
+func normalizeLoginOptions(opts LoginOptions) LoginOptions {
+	if opts.Stdin == nil {
+		opts.Stdin = os.Stdin
+	}
+	if opts.Stdout == nil {
+		opts.Stdout = os.Stdout
+	}
+	if opts.Stderr == nil {
+		opts.Stderr = os.Stderr
+	}
+	return opts
+}
+
+func loginTerminalSize(fd int) (width int, height int) {
+	width, height = defaultPTYWidth, defaultPTYHeight
+	if w, h, err := term.GetSize(fd); err == nil && w > 0 && h > 0 {
+		width, height = w, h
+	}
+	return width, height
+}
+
+func loginTermName(explicit string) string {
+	name := strings.TrimSpace(explicit)
+	if name == "" {
+		name = strings.TrimSpace(os.Getenv("TERM"))
+	}
+	if name == "" {
+		return defaultPTYTerm
+	}
+	return name
 }
 
 func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {

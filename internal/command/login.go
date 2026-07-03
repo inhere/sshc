@@ -9,9 +9,11 @@ import (
 	"github.com/gookit/goutil/cflag/capp"
 )
 
-var loginRemote = core.LoginRemote
+var loginRemote = core.LoginRemoteWithOptions
 
 func NewLoginCmd() *capp.Cmd {
+	var termName string
+
 	cmd := capp.NewCmd("login", "connect to a remote shell", func(c *capp.Cmd) error {
 		target := strings.TrimSpace(c.Arg("target").String())
 		store, err := core.LoadStoreWithSSHConfig()
@@ -27,7 +29,8 @@ func NewLoginCmd() *capp.Cmd {
 		}
 
 		startedAt := core.Now()
-		err = loginRemote(host)
+		fmt.Fprintf(c.Output(), "connecting to %s (%s@%s:%d)\n", core.HostLogName(host), host.User, host.IP, host.Port)
+		err = loginRemote(host, core.LoginOptions{Term: termName})
 		logErr := core.AppendRunLog(host, core.RunLogRecord{
 			Target:     target,
 			Command:    "login",
@@ -46,14 +49,18 @@ func NewLoginCmd() *capp.Cmd {
 Examples:
   sshc login devhost
   sshc connect devhost
+  sshc login devhost --term xterm-256color
 
 Notes:
   - Opens an interactive PTY shell on the remote host.
+  - The requested terminal type defaults to local TERM, or xterm-256color when TERM is empty.
+  - Terminal resize is forwarded on Unix-like systems; Windows uses the startup terminal size.
   - By default, sshc only logs connection metadata, not full session input/output.
   - Use run for non-interactive commands that need full stdout/stderr logs.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.AddArg("target", "host ip or name", true)
+		c.StringVar(&termName, "term", "", "remote terminal type, defaults to TERM or xterm-256color")
 	}
 	return cmd
 }
