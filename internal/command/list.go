@@ -11,7 +11,7 @@ import (
 
 func NewListCmd() *capp.Cmd {
 	cmd := capp.NewCmd("list", "list saved ssh hosts", func(c *capp.Cmd) error {
-		store, err := core.LoadStore()
+		store, err := core.LoadStoreWithSSHConfig()
 		if err != nil {
 			return err
 		}

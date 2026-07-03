@@ -1,12 +1,15 @@
 package core
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -165,6 +168,146 @@ func LoadStore() (*Store, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 	return &store, nil
+}
+
+func LoadStoreWithSSHConfig() (*Store, error) {
+	store, err := LoadStore()
+	if err != nil {
+		return nil, err
+	}
+	hosts, err := LoadSSHConfigHosts()
+	if err != nil {
+		return nil, err
+	}
+	for _, host := range hosts {
+		if _, ok := store.Find(host.Name); ok {
+			continue
+		}
+		if _, ok := store.Find(host.IP); ok {
+			continue
+		}
+		store.Hosts = append(store.Hosts, host)
+	}
+	return store, nil
+}
+
+func LoadSSHConfigHosts() ([]Host, error) {
+	configPath, err := sshConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+	return ParseSSHConfig(file)
+}
+
+func ParseSSHConfig(reader io.Reader) ([]Host, error) {
+	return parseSSHConfig(reader)
+}
+
+func parseSSHConfig(reader io.Reader) ([]Host, error) {
+	scanner := bufio.NewScanner(reader)
+	var hosts []Host
+	var current *Host
+	flush := func() {
+		if current == nil {
+			return
+		}
+		normalizeSSHConfigHost(current)
+		if current.Name != "" && current.IP != "" && current.User != "" && current.KeyPath != "" {
+			hosts = append(hosts, *current)
+		}
+		current = nil
+	}
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		key := strings.ToLower(fields[0])
+		values := fields[1:]
+		if key == "host" {
+			flush()
+			if len(values) != 1 || hasSSHHostPattern(values[0]) {
+				current = nil
+				continue
+			}
+			current = &Host{Name: values[0], Port: DefaultSSHPort, Group: "ssh-config"}
+			continue
+		}
+		if current == nil {
+			continue
+		}
+		value := strings.Join(values, " ")
+		switch key {
+		case "hostname":
+			current.IP = value
+		case "user":
+			current.User = value
+		case "port":
+			if port, err := strconv.Atoi(value); err == nil {
+				current.Port = port
+			}
+		case "identityfile":
+			if current.KeyPath == "" {
+				current.KeyPath = value
+			}
+		}
+	}
+	flush()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return hosts, nil
+}
+
+func normalizeSSHConfigHost(host *Host) {
+	host.Name = strings.TrimSpace(host.Name)
+	host.IP = strings.TrimSpace(host.IP)
+	host.User = strings.TrimSpace(host.User)
+	host.KeyPath = strings.TrimSpace(host.KeyPath)
+	if host.IP == "" {
+		host.IP = host.Name
+	}
+	if host.User == "" {
+		host.User = currentUserName()
+	}
+	if host.Group == "" {
+		host.Group = "ssh-config"
+	}
+	if host.Port == 0 {
+		host.Port = DefaultSSHPort
+	}
+}
+
+func hasSSHHostPattern(value string) bool {
+	return strings.ContainsAny(value, "*?!")
+}
+
+func currentUserName() string {
+	if user := strings.TrimSpace(os.Getenv("USER")); user != "" {
+		return user
+	}
+	return strings.TrimSpace(os.Getenv("USERNAME"))
+}
+
+func sshConfigPath() (string, error) {
+	home, err := userHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".ssh", "config"), nil
 }
 
 func SaveStore(store *Store) error {

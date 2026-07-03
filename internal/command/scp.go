@@ -34,7 +34,7 @@ func NewUploadCmd() *capp.Cmd {
 			return errors.New("remote path is required")
 		}
 
-		store, err := core.LoadStore()
+		store, err := core.LoadStoreWithSSHConfig()
 		if err != nil {
 			return err
 		}

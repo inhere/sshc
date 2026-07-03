@@ -59,7 +59,7 @@ func resolveLogTarget(target string) (string, error) {
 	if target == "" {
 		return "", nil
 	}
-	store, err := core.LoadStore()
+	store, err := core.LoadStoreWithSSHConfig()
 	if err != nil {
 		return "", err
 	}

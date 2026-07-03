@@ -30,7 +30,7 @@ func NewRunCmd() *capp.Cmd {
 			return err
 		}
 
-		store, err := core.LoadStore()
+		store, err := core.LoadStoreWithSSHConfig()
 		if err != nil {
 			return err
 		}
