@@ -61,6 +61,31 @@ func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
 	}
 }
 
+func TestCollectInteractiveHost(t *testing.T) {
+	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\n")
+	host, err := collectInteractiveHost(input, &strings.Builder{})
+	if err != nil {
+		t.Fatalf("collect interactive host: %v", err)
+	}
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.Port != 2222 {
+		t.Fatalf("host = %+v", host)
+	}
+	if host.Password != "" || host.KeyPath != "~/.ssh/id_rsa" || host.Remark != "testing host" || host.Group != "testing" {
+		t.Fatalf("host metadata = %+v", host)
+	}
+}
+
+func TestCollectInteractiveHostDefaults(t *testing.T) {
+	input := strings.NewReader("\n10.0.0.8\n\nsecret\n\n\n\n\n")
+	host, err := collectInteractiveHost(input, &strings.Builder{})
+	if err != nil {
+		t.Fatalf("collect interactive host: %v", err)
+	}
+	if host.Name != "10.0.0.8" || host.User != "root" || host.Port != core.DefaultSSHPort || host.Group != core.DefaultGroup {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
 func TestRunUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{
