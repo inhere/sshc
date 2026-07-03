@@ -35,6 +35,8 @@ sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost --sha256
 sshc scp -l ./local-dir -r /tmp/remote-dir devhost
 sshc scp -l ./dist -r /opt/app/dist devhost --remove-dir
 sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
+sshc scp -l ./a.jar -l ./b.jar -r /opt/app/lib/ devhost
+sshc scp --map ./config/app.yml=/etc/app/app.yml --map ./scripts/deploy.sh=/opt/app/deploy.sh devhost
 ```
 
 Download a file or directory:

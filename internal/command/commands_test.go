@@ -446,13 +446,11 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}
 
 	var gotHost core.Host
-	var gotLocal string
-	var gotRemote string
+	var gotJobs []core.TransferJob
 	var gotOpts core.TransferOptions
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string, opts core.TransferOptions) (core.TransferResult, error) {
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
 		gotHost = host
-		gotLocal = localPath
-		gotRemote = remotePath
+		gotJobs = jobs
 		gotOpts = opts
 		return core.TransferResult{Bytes: 123, Files: 1, Directories: 0, Elapsed: 1500 * time.Millisecond}, nil
 	}))
@@ -464,8 +462,8 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	if gotHost.IP != "10.0.0.8" {
 		t.Fatalf("host ip = %q", gotHost.IP)
 	}
-	if gotLocal != "local.txt" || gotRemote != "/tmp/remote.txt" {
-		t.Fatalf("paths = %q -> %q", gotLocal, gotRemote)
+	if len(gotJobs) != 1 || gotJobs[0].LocalPath != "local.txt" || gotJobs[0].RemotePath != "/tmp/remote.txt" {
+		t.Fatalf("jobs = %+v", gotJobs)
 	}
 	if !gotOpts.SHA256 {
 		t.Fatal("sha256 option = false, want true")
@@ -475,9 +473,127 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestSCPUsesRepeatedLocalPaths(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotJobs []core.TransferJob
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		gotJobs = jobs
+		return core.TransferResult{Bytes: 2, Files: 2, Elapsed: time.Second}, nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"upload", "-l", "a.jar", "-l", "b.jar", "-r", "/opt/app/lib", "devhost"}); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if len(gotJobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2: %+v", len(gotJobs), gotJobs)
+	}
+	for i, want := range []string{"a.jar", "b.jar"} {
+		if gotJobs[i].LocalPath != want || gotJobs[i].RemotePath != "/opt/app/lib" || !gotJobs[i].RemoteDir {
+			t.Fatalf("job[%d] = %+v", i, gotJobs[i])
+		}
+	}
+}
+
+func TestSCPUsesUploadMaps(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotJobs []core.TransferJob
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		gotJobs = jobs
+		return core.TransferResult{Bytes: 2, Files: 2, Elapsed: time.Second}, nil
+	}))
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{
+		"upload",
+		"--map", "./config/app.yml=/etc/app/app.yml",
+		"--map", "./scripts/deploy.sh=/opt/app/deploy.sh",
+		"devhost",
+	})
+	if err != nil {
+		t.Fatalf("upload map: %v", err)
+	}
+	if len(gotJobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2: %+v", len(gotJobs), gotJobs)
+	}
+	if gotJobs[0].LocalPath != "./config/app.yml" || gotJobs[0].RemotePath != "/etc/app/app.yml" || gotJobs[0].RemoteDir {
+		t.Fatalf("job[0] = %+v", gotJobs[0])
+	}
+	if gotJobs[1].LocalPath != "./scripts/deploy.sh" || gotJobs[1].RemotePath != "/opt/app/deploy.sh" || gotJobs[1].RemoteDir {
+		t.Fatalf("job[1] = %+v", gotJobs[1])
+	}
+}
+
+func TestSCPRejectsInvalidMultiPathOptions(t *testing.T) {
+	withTempConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "map with local",
+			args: []string{"upload", "--map", "a=b", "-l", "a", "devhost"},
+			want: "--map cannot be used with --local or --remote",
+		},
+		{
+			name: "map with remove dir",
+			args: []string{"upload", "--map", "a=b", "--remove-dir", "devhost"},
+			want: "--remove-dir cannot be used with --map",
+		},
+		{
+			name: "invalid map",
+			args: []string{"upload", "--map", "a", "devhost"},
+			want: "invalid --map",
+		},
+		{
+			name: "glob map",
+			args: []string{"upload", "--map", "*.jar=/opt/app/lib", "devhost"},
+			want: "--map does not support local glob",
+		},
+		{
+			name: "remove dir with repeated local",
+			args: []string{"upload", "-l", "a", "-l", "b", "-r", "/opt/app", "--remove-dir", "devhost"},
+			want: "--remove-dir is only supported for a single directory upload",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApp()
+			err := app.RunWithArgs(tt.args)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSCPRequiresSavedHost(t *testing.T) {
 	withTempConfig(t)
-	t.Cleanup(setUploadRemoteForTest(func(host core.Host, localPath, remotePath string, opts core.TransferOptions) (core.TransferResult, error) {
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
 		t.Fatal("upload should not be called")
 		return core.TransferResult{}, nil
 	}))

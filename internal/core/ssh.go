@@ -40,6 +40,12 @@ type TransferOptions struct {
 	RemoveDir bool
 }
 
+type TransferJob struct {
+	LocalPath  string
+	RemotePath string
+	RemoteDir  bool
+}
+
 type LoginOptions struct {
 	Stdin  *os.File
 	Stdout io.Writer
@@ -221,21 +227,22 @@ func NewRemoteScriptPath(value time.Time) string {
 }
 
 func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions) (result TransferResult, err error) {
+	return UploadRemoteBatch(host, []TransferJob{{
+		LocalPath:  localPath,
+		RemotePath: remotePath,
+		RemoteDir:  isLocalGlob(localPath),
+	}}, opts)
+}
+
+func UploadRemoteBatch(host Host, jobs []TransferJob, opts TransferOptions) (result TransferResult, err error) {
 	started := time.Now()
 	defer func() {
 		result.Elapsed = time.Since(started)
 	}()
 
-	if isLocalGlob(localPath) {
-		return uploadRemoteGlob(host, localPath, remotePath, opts, started)
-	}
-
-	info, err := os.Stat(localPath)
+	expandedJobs, err := expandUploadJobs(jobs, opts)
 	if err != nil {
 		return result, err
-	}
-	if !info.IsDir() && opts.RemoveDir {
-		return result, fmt.Errorf("--remove-dir is only supported for directory uploads")
 	}
 
 	client, err := newSSHClient(host)
@@ -250,25 +257,103 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 	}
 	defer sftpClient.Close()
 
+	if opts.RemoveDir {
+		if err := validateRemoteRemoveDirPath(expandedJobs[0].RemotePath); err != nil {
+			return result, err
+		}
+		if _, err := client.Run("rm -rf -- " + shellQuote(expandedJobs[0].RemotePath)); err != nil {
+			return result, err
+		}
+	}
+
+	for _, job := range expandedJobs {
+		partial, err := uploadPreparedJob(client, sftpClient, job, opts)
+		if err != nil {
+			return result, err
+		}
+		result.add(partial)
+	}
+	if opts.SHA256 && result.Files > 0 {
+		result.SHA256OK = true
+	}
+	return result, nil
+}
+
+func expandUploadJobs(jobs []TransferJob, opts TransferOptions) ([]TransferJob, error) {
+	if len(jobs) == 0 {
+		return nil, fmt.Errorf("upload job is required")
+	}
+	if opts.RemoveDir && len(jobs) != 1 {
+		return nil, fmt.Errorf("--remove-dir is only supported for a single directory upload")
+	}
+
+	expanded := make([]TransferJob, 0, len(jobs))
+	for _, job := range jobs {
+		localPath := strings.TrimSpace(job.LocalPath)
+		remotePath := strings.TrimSpace(job.RemotePath)
+		if localPath == "" {
+			return nil, fmt.Errorf("local path is required")
+		}
+		if remotePath == "" {
+			return nil, fmt.Errorf("remote path is required")
+		}
+		if isLocalGlob(localPath) {
+			if opts.RemoveDir {
+				return nil, fmt.Errorf("--remove-dir is only supported for directory uploads")
+			}
+			matches, err := expandLocalGlob(localPath)
+			if err != nil {
+				return nil, err
+			}
+			for _, localFile := range matches {
+				expanded = append(expanded, TransferJob{LocalPath: localFile, RemotePath: JoinRemotePath(remotePath, filepath.Base(localFile))})
+			}
+			continue
+		}
+
+		info, err := os.Stat(localPath)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() && opts.RemoveDir {
+			return nil, fmt.Errorf("--remove-dir is only supported for directory uploads")
+		}
+		if info.IsDir() && opts.SHA256 {
+			return nil, fmt.Errorf("--sha256 is only supported for file transfers")
+		}
+		if job.RemoteDir {
+			remotePath = JoinRemotePath(remotePath, filepath.Base(localPath))
+		} else if !info.IsDir() {
+			remotePath = RemoteFilePath(localPath, remotePath)
+		}
+		expanded = append(expanded, TransferJob{LocalPath: localPath, RemotePath: remotePath})
+	}
+	return expanded, nil
+}
+
+func uploadPreparedJob(client *goph.Client, sftpClient *sftp.Client, job TransferJob, opts TransferOptions) (result TransferResult, err error) {
+	info, err := os.Stat(job.LocalPath)
+	if err != nil {
+		return result, err
+	}
 	if !info.IsDir() {
-		remoteFile := RemoteFilePath(localPath, remotePath)
-		if err := mkdirRemoteParent(sftpClient, remoteFile); err != nil {
+		if err := mkdirRemoteParent(sftpClient, job.RemotePath); err != nil {
 			return result, err
 		}
 		if opts.SHA256 {
-			result.LocalSHA256, err = fileSHA256(localPath)
+			result.LocalSHA256, err = fileSHA256(job.LocalPath)
 			if err != nil {
 				return result, err
 			}
 		}
-		bytes, err := uploadFileWithSFTP(sftpClient, localPath, remoteFile)
+		bytes, err := uploadFileWithSFTP(sftpClient, job.LocalPath, job.RemotePath)
 		if err != nil {
 			return result, err
 		}
 		result.Bytes += bytes
 		result.Files++
 		if opts.SHA256 {
-			result.RemoteSHA256, err = remoteSHA256(client, remoteFile)
+			result.RemoteSHA256, err = remoteSHA256(client, job.RemotePath)
 			if err != nil {
 				return result, err
 			}
@@ -279,19 +364,8 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 		}
 		return result, nil
 	}
-	if opts.SHA256 {
-		return result, fmt.Errorf("--sha256 is only supported for file transfers")
-	}
-	if opts.RemoveDir {
-		if err := validateRemoteRemoveDirPath(remotePath); err != nil {
-			return result, err
-		}
-		if _, err := client.Run("rm -rf -- " + shellQuote(remotePath)); err != nil {
-			return result, err
-		}
-	}
 
-	root := filepath.Clean(localPath)
+	root := filepath.Clean(job.LocalPath)
 	err = filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -301,9 +375,9 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 			return err
 		}
 
-		remoteCurrent := remotePath
+		remoteCurrent := job.RemotePath
 		if rel != "." {
-			remoteCurrent = JoinRemotePath(remotePath, filepath.ToSlash(rel))
+			remoteCurrent = JoinRemotePath(job.RemotePath, filepath.ToSlash(rel))
 		}
 		if entry.IsDir() {
 			result.Directories++
@@ -324,47 +398,19 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 	return result, err
 }
 
-func uploadRemoteGlob(host Host, pattern, remotePath string, opts TransferOptions, started time.Time) (result TransferResult, err error) {
-	defer func() {
-		result.Elapsed = time.Since(started)
-	}()
-	if opts.SHA256 {
-		return result, fmt.Errorf("--sha256 is only supported for single file transfers")
+func (result *TransferResult) add(partial TransferResult) {
+	result.Bytes += partial.Bytes
+	result.Files += partial.Files
+	result.Directories += partial.Directories
+	if partial.LocalSHA256 != "" {
+		result.LocalSHA256 = partial.LocalSHA256
 	}
-	if opts.RemoveDir {
-		return result, fmt.Errorf("--remove-dir is only supported for directory uploads")
+	if partial.RemoteSHA256 != "" {
+		result.RemoteSHA256 = partial.RemoteSHA256
 	}
-
-	matches, err := expandLocalGlob(pattern)
-	if err != nil {
-		return result, err
+	if partial.SHA256OK {
+		result.SHA256OK = true
 	}
-
-	client, err := newSSHClient(host)
-	if err != nil {
-		return result, err
-	}
-	defer client.Close()
-
-	sftpClient, err := client.NewSftp()
-	if err != nil {
-		return result, err
-	}
-	defer sftpClient.Close()
-
-	if err := sftpClient.MkdirAll(remotePath); err != nil {
-		return result, err
-	}
-	for _, localFile := range matches {
-		remoteFile := JoinRemotePath(remotePath, filepath.Base(localFile))
-		bytes, err := uploadFileWithSFTP(sftpClient, localFile, remoteFile)
-		if err != nil {
-			return result, err
-		}
-		result.Bytes += bytes
-		result.Files++
-	}
-	return result, nil
 }
 
 func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) (result TransferResult, err error) {

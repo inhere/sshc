@@ -314,6 +314,73 @@ func TestUploadRemoteRejectsRemoveDirForFileBeforeConnect(t *testing.T) {
 	}
 }
 
+func TestExpandUploadJobsRepeatedLocalUsesRemoteDirectory(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.jar")
+	fileB := filepath.Join(dir, "b.jar")
+	for _, file := range []string{fileA, fileB} {
+		if err := os.WriteFile(file, []byte("data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	jobs, err := expandUploadJobs([]TransferJob{
+		{LocalPath: fileA, RemotePath: "/opt/app/lib", RemoteDir: true},
+		{LocalPath: fileB, RemotePath: "/opt/app/lib", RemoteDir: true},
+	}, TransferOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2", len(jobs))
+	}
+	if jobs[0].RemotePath != "/opt/app/lib/a.jar" || jobs[1].RemotePath != "/opt/app/lib/b.jar" {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+}
+
+func TestExpandUploadJobsKeepsMappedRemotePath(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "app.yml")
+	if err := os.WriteFile(file, []byte("data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := expandUploadJobs([]TransferJob{{LocalPath: file, RemotePath: "/etc/app/app.yml"}}, TransferOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].RemotePath != "/etc/app/app.yml" {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+}
+
+func TestExpandUploadJobsExpandsGlobToRemoteDirectory(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.jar", "b.jar"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	jobs, err := expandUploadJobs([]TransferJob{{LocalPath: filepath.Join(dir, "*.jar"), RemotePath: "/opt/app/lib"}}, TransferOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2", len(jobs))
+	}
+	if jobs[0].RemotePath != "/opt/app/lib/a.jar" || jobs[1].RemotePath != "/opt/app/lib/b.jar" {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+}
+
+func TestExpandUploadJobsRejectsSHA256Directory(t *testing.T) {
+	_, err := expandUploadJobs([]TransferJob{{LocalPath: t.TempDir(), RemotePath: "/opt/app/dist"}}, TransferOptions{SHA256: true})
+	if err == nil || !strings.Contains(err.Error(), "--sha256 is only supported for file transfers") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestStoreUpsertReplacesByNameOrIP(t *testing.T) {
 	store := &Store{}
 	if err := store.Upsert(Host{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "one", Port: 22}); err != nil {
