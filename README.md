@@ -19,22 +19,15 @@ remote operations where a full automation platform would be too heavy.
 - Upload and download files or directories over SFTP
 - Verify single-file transfers with SHA256
 - Keep per-host JSONL run logs under `~/.config/sshc/logs/`
-- Open an interactive remote PTY with `login` or `connect`
+- Open an interactive remote PTY with `login/connect`
 
 ## Installation
 
 ### Download a release
 
-Download the archive for your platform from GitHub Releases, extract it, and put
-the `sshc` binary on your `PATH`.
-
-Release builds are generated for:
-
-- Linux amd64
-- Linux arm64
-- macOS amd64
-- macOS arm64
-- Windows amd64
+1. **Recommanded** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
+2. Install by Golang: `go install github.com/inhere/sshc@latest`
+3. Download the archive for your platform from GitHub Releases, extract it, and put the `sshc` binary on your `PATH`.
 
 ### Build from source
 

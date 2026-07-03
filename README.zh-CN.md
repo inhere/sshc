@@ -2,11 +2,9 @@
 
 [English](README.md)
 
-`sshc` 是一个轻量 SSH 辅助 CLI，用于管理主机、执行远程命令、传输文件、
-在远端执行本地脚本，并按主机保存执行日志。
+`sshc` 是一个轻量 SSH 辅助 CLI，用于管理主机、执行远程命令、传输文件、在远端执行本地脚本，并按主机保存执行日志。
 
-它适合轻量部署、问题排查和日常远程运维。对于这些场景，引入完整自动化平台
-通常过重，`sshc` 提供的是更直接的命令行工作流。
+它适合轻量部署、问题排查和日常远程运维。对于这些场景，引入完整自动化平台通常过重，`sshc` 提供的是更直接的命令行工作流。
 
 ## 功能特性
 
@@ -18,22 +16,15 @@
 - 通过 SFTP 上传和下载文件或目录
 - 支持单文件传输 SHA256 校验
 - 在 `~/.config/sshc/logs/` 下按主机保存 JSONL 执行日志
-- 通过 `login` 或 `connect` 打开交互式远端 PTY
+- 通过 `login/connect` 打开交互式远端 PTY
 
 ## 安装
 
 ### 下载 Release
 
-从 GitHub Releases 下载对应平台的归档文件，解压后将 `sshc` 二进制放到
-`PATH` 中。
-
-Release 构建目标包括：
-
-- Linux amd64
-- Linux arm64
-- macOS amd64
-- macOS arm64
-- Windows amd64
+1. **Recommanded** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
+2. 通过 Golang 安装: `go install github.com/inhere/sshc@latest`
+3. 从 GitHub Releases 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
 
 ### 从源码构建
 
@@ -64,29 +55,19 @@ sshc log devhost --tail 20
 ## 命令概览
 
 ```text
-sshc add       新增或更新主机
-sshc list      查看已保存主机
-sshc run       执行远程命令
-sshc login     打开交互式 SSH shell
-sshc scp       上传文件或目录
-sshc download  下载文件或目录
-sshc log       查看或搜索执行日志
+sshc add             新增或更新主机
+sshc list|ls         查看已保存主机
+sshc run|exec        执行远程命令
+sshc login           打开交互式 SSH shell
+sshc scp|upload      上传文件或目录
+sshc download|dl     下载文件或目录
+sshc log             查看或搜索执行日志
 ```
 
 查看某个命令的完整参数：
 
 ```bash
 sshc <command> --help
-```
-
-命令别名：
-
-```text
-list      ls
-run       exec
-login     connect
-scp       upload
-download  dl
 ```
 
 ## 常用示例
