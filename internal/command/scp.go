@@ -19,7 +19,7 @@ var (
 	scpUpload = core.UploadRemote
 )
 
-func NewSCPCmd() *capp.Cmd {
+func NewUploadCmd() *capp.Cmd {
 	cmd := capp.NewCmd("scp", "upload a file or directory to remote host", func(c *capp.Cmd) error {
 		target := strings.TrimSpace(c.Arg("target").String())
 		localPath := strings.TrimSpace(scpOpts.LocalPath)

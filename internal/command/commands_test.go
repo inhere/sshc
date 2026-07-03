@@ -265,7 +265,7 @@ func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 
 func newTestApp() *capp.App {
 	app := capp.NewWith("sshc", "test", "simple ssh command runner")
-	app.Add(NewAddCmd(), NewRunCmd(), NewSCPCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd())
+	app.Add(NewAddCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd())
 	return app
 }
 
