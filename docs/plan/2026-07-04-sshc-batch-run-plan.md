@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-04 | Codex | 初版，基于后续能力设计拆分 batch-run/brun 的实现阶段、提交边界和验收项 |
 | v0.2 | 2026-07-04 | Codex | 补充 `--hosts-file` 批量临时 IP/hostname 场景，通过共享 auth/defaults 执行初始化脚本，不要求先保存所有 host |
 | v0.3 | 2026-07-04 | Codex | 根据 TODO 的 host 日志优化补充 batch-run 前置日志阶段：`task_id`、大输出外置文件、`log --id` 查看输出 |
+| v0.4 | 2026-07-04 | Codex | 调整 output 内联阈值为 1024 bytes，优先保证 JSONL 可读性 |
 
 ## 关联文档
 
@@ -261,6 +262,7 @@ JSONL 记录字段建议：
 - `status`: `success/error`。
 - `script`、`remote_script`、`cwd`、`duration_ms` 沿用现有字段。
 - `output`: 小输出继续内联，便于 `sshc log -m keyword` 快速查看。
+- `output_preview`: 大输出外置时的短预览，最多 512 bytes，用于快速判断内容。
 - `output_file`: 大输出外置文件路径，建议记录相对 `logs_path` 的路径。
 - `output_bytes`: 原始输出字节数。
 - `output_sha256`: 大输出文件内容 SHA256，便于确认文件完整性。
@@ -271,7 +273,8 @@ JSONL 记录字段建议：
 建议常量：
 
 ```go
-const maxInlineRunOutputBytes = 64 * 1024
+const maxInlineRunOutputBytes = 1024
+const maxRunOutputPreviewBytes = 512
 ```
 
 规则：
@@ -284,6 +287,8 @@ const maxInlineRunOutputBytes = 64 * 1024
 ```
 
 - JSONL 不再写完整 `output`，只写 `output_file/output_bytes/output_sha256/output_inline=false`。
+- 外置输出时 JSONL 可写入 `output_preview`，最多 `maxRunOutputPreviewBytes`，并确保不会截断出非法 UTF-8。
+- 阈值以“人工查看 JSONL 可读性”为优先，不以减少小文件数量为优先；1024 bytes 已经足够覆盖 `uptime/hostname/whoami` 这类短输出。
 - 输出文件目录权限沿用 run log 目录策略，建议目录 `0700`，文件 `0600`。
 - `logs_path` 为空时仍使用 `~/.config/sshc/logs`。
 - 记录 `output_file` 时优先使用相对路径，例如 `20260704/20260704-173012-a1b2c3.out.log`，避免配置目录迁移后 JSONL 中保留旧绝对路径。
@@ -536,6 +541,7 @@ docs/TODO.md
    - `OutputBytes int64`
    - `OutputSHA256 string`
    - `OutputInline bool`
+   - `OutputPreview string`
 2. 新增 `NewRunTaskID(startedAt, host, rec)`。
 3. `AppendRunLog` 内部保证 task_id：
    - 调用方传入则使用调用方传入值。
@@ -558,6 +564,7 @@ docs/TODO.md
 TestAppendRunLogWritesTaskID
 TestAppendRunLogKeepsSmallOutputInline
 TestAppendRunLogStoresLargeOutputFile
+TestAppendRunLogLargeOutputStoresShortPreview
 TestAppendRunLogOutputFileUsesDateDirectory
 TestAppendRunLogOutputFileRecordsSHA256
 TestReadRunLogOutputByIDFromInlineOutput
