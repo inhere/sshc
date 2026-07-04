@@ -297,6 +297,53 @@ func TestRunPassesTimeoutAndEnvOptions(t *testing.T) {
 	}
 }
 
+func TestRunUsesEffectiveHostDefaultsAndAuthRef(t *testing.T) {
+	withTempConfig(t)
+	config := &core.Config{
+		Defaults: core.Defaults{
+			User:            "root",
+			Port:            2200,
+			RunTimeout:      "7s",
+			RemoteScriptDir: "/opt/app/tmp",
+			HostKeyCheck:    core.HostKeyCheckInsecure,
+		},
+		AuthProfiles: []core.AuthProfile{{
+			Name:     "dev-root",
+			Password: "secret",
+		}},
+		Hosts: []core.Host{{
+			Name:    "devhost",
+			IP:      "10.0.0.8",
+			AuthRef: "dev-root",
+		}},
+	}
+	if err := core.SaveConfig(config); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	var gotHost core.Host
+	var gotOpts core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		gotOpts = opts
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "devhost", "--", "uptime"}); err != nil {
+		t.Fatalf("run host: %v", err)
+	}
+	if gotHost.User != "root" || gotHost.Password != "secret" || gotHost.Port != 2200 {
+		t.Fatalf("host = %+v", gotHost)
+	}
+	if gotHost.HostKeyCheck != core.HostKeyCheckInsecure {
+		t.Fatalf("host key check = %q", gotHost.HostKeyCheck)
+	}
+	if gotOpts.Timeout != 7*time.Second || gotOpts.RemoteScriptDir != "/opt/app/tmp" {
+		t.Fatalf("opts = %+v", gotOpts)
+	}
+}
+
 func TestRunPassesCWDOption(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

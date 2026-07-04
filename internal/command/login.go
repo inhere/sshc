@@ -35,16 +35,9 @@ Notes:
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
-			store, err := core.LoadStoreWithSSHConfig()
+			host, err := resolveCommandHost(target)
 			if err != nil {
 				return err
-			}
-			host, ok, err := store.ResolveHost(target)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("host %q not found", target)
 			}
 
 			startedAt := core.Now()

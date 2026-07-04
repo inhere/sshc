@@ -145,7 +145,7 @@ docs: update config and auth documentation
 | --- | --- | --- | --- |
 | P0 | 迁移到 gcli/v3，保持现有命令兼容 | `refactor: migrate cli to gcli v3` | 已完成 |
 | P1 | 新增 versioned config 模型和兼容读取保存 | `feat(config): add versioned config model` | 已完成 |
-| P2 | 新增 effective host 解析并接入现有命令 | `feat(config): resolve effective host settings` | 待实施 |
+| P2 | 新增 effective host 解析并接入现有命令 | `feat(config): resolve effective host settings` | 已完成 |
 | P3 | 扩展密码加密、mask 和 doctor 基础能力 | `feat(auth): encrypt and mask credential profiles` | 待实施 |
 | P4 | 新增 `cfg` 管理命令 | `feat(config): add cfg management commands` | 待实施 |
 | P5 | 新增 `auth` 凭证命令 | `feat(auth): add credential profile commands` | 待实施 |

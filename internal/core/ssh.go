@@ -14,6 +14,7 @@ import (
 	"github.com/melbahja/goph"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/term"
 )
 
@@ -515,14 +516,53 @@ func newSSHClient(host Host) (*goph.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	timeout, err := clientConnectTimeout(host)
+	if err != nil {
+		return nil, err
+	}
+	callback, err := hostKeyCallback(host)
+	if err != nil {
+		return nil, err
+	}
 	return goph.NewConn(&goph.Config{
 		User:     host.User,
 		Addr:     host.IP,
 		Port:     uint(host.Port),
 		Auth:     auth,
-		Timeout:  20 * time.Second,
-		Callback: ssh.InsecureIgnoreHostKey(),
+		Timeout:  timeout,
+		Callback: callback,
 	})
+}
+
+func clientConnectTimeout(host Host) (time.Duration, error) {
+	timeout, err := ParseTimeout(host.ConnectTimeout)
+	if err != nil {
+		return 0, err
+	}
+	if timeout <= 0 {
+		return 20 * time.Second, nil
+	}
+	return timeout, nil
+}
+
+func hostKeyCallback(host Host) (ssh.HostKeyCallback, error) {
+	switch strings.TrimSpace(host.HostKeyCheck) {
+	case "", HostKeyCheckKnownHosts:
+		path := strings.TrimSpace(host.KnownHostsPath)
+		if path == "" {
+			path = DefaultKnownHostsPath
+		}
+		path = expandUserPath(path)
+		callback, err := knownhosts.New(path)
+		if err != nil {
+			return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
+		}
+		return callback, nil
+	case HostKeyCheckInsecure:
+		return ssh.InsecureIgnoreHostKey(), nil
+	default:
+		return nil, fmt.Errorf("invalid host_key_check %q, want known_hosts or insecure", host.HostKeyCheck)
+	}
 }
 
 func hostAuth(host Host) (goph.Auth, error) {

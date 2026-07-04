@@ -79,17 +79,12 @@ Notes:
 			if err != nil {
 				return err
 			}
-
-			store, err := core.LoadStoreWithSSHConfig()
+			host, err := resolveCommandHost(target)
 			if err != nil {
 				return err
 			}
-			host, ok, err := store.ResolveHost(target)
-			if err != nil {
+			if err := applyHostRunDefaults(&runOptions, host); err != nil {
 				return err
-			}
-			if !ok {
-				return fmt.Errorf("host %q not found", target)
 			}
 
 			startedAt := core.Now()
@@ -123,6 +118,20 @@ Notes:
 		},
 	}
 	return cmd
+}
+
+func applyHostRunDefaults(opts *core.RunOptions, host core.Host) error {
+	if opts.Timeout <= 0 && strings.TrimSpace(host.RunTimeout) != "" {
+		timeout, err := core.ParseTimeout(host.RunTimeout)
+		if err != nil {
+			return err
+		}
+		opts.Timeout = timeout
+	}
+	if strings.TrimSpace(opts.RemoteScriptDir) == "" {
+		opts.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
+	}
+	return nil
 }
 
 func remoteCommandArgs(args []string) []string {

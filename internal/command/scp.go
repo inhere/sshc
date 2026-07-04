@@ -55,16 +55,9 @@ Path rules:
 				return err
 			}
 
-			store, err := core.LoadStoreWithSSHConfig()
+			host, err := resolveCommandHost(target)
 			if err != nil {
 				return err
-			}
-			host, ok, err := store.ResolveHost(target)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("host %q not found", target)
 			}
 
 			result, err := scpUpload(host, jobs, core.TransferOptions{

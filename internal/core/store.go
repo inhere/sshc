@@ -36,6 +36,12 @@ type Host struct {
 	Group       string `json:"group,omitempty"`
 	Port        int    `json:"port,omitempty"`
 	Jump        string `json:"jump,omitempty"`
+
+	ConnectTimeout  string `json:"connect_timeout,omitempty"`
+	RunTimeout      string `json:"run_timeout,omitempty"`
+	RemoteScriptDir string `json:"remote_script_dir,omitempty"`
+	HostKeyCheck    string `json:"host_key_check,omitempty"`
+	KnownHostsPath  string `json:"known_hosts_path,omitempty"`
 }
 
 type Store struct {
@@ -210,7 +216,16 @@ func LoadConfig() (*Config, error) {
 }
 
 func LoadStoreWithSSHConfig() (*Store, error) {
-	store, err := LoadStore()
+	config, err := LoadConfigWithSSHConfig()
+	if err != nil {
+		return nil, err
+	}
+	store := storeFromConfig(*config)
+	return &store, nil
+}
+
+func LoadConfigWithSSHConfig() (*Config, error) {
+	config, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -219,15 +234,16 @@ func LoadStoreWithSSHConfig() (*Store, error) {
 		return nil, err
 	}
 	for _, host := range hosts {
+		store := storeFromConfig(*config)
 		if _, ok := store.Find(host.Name); ok {
 			continue
 		}
 		if _, ok := store.Find(host.IP); ok {
 			continue
 		}
-		store.Hosts = append(store.Hosts, host)
+		config.Hosts = append(config.Hosts, host)
 	}
-	return store, nil
+	return config, nil
 }
 
 func LoadConfigSettings() (Store, error) {

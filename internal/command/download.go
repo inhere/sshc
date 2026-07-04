@@ -56,16 +56,9 @@ Path rules:
 				return errors.New("remote path is required")
 			}
 
-			store, err := core.LoadStoreWithSSHConfig()
+			host, err := resolveCommandHost(target)
 			if err != nil {
 				return err
-			}
-			host, ok, err := store.ResolveHost(target)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("host %q not found", target)
 			}
 
 			result, err := downloadRemote(host, remotePath, localPath, core.TransferOptions{SHA256: downloadOpts.SHA256})
