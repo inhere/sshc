@@ -54,7 +54,7 @@ go build -o sshc.exe ./cmd/sshc
 sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
-sshc auth add dev-root -u root -p
+sshc auth add dev-root -u root -p --remark "共享 root 登录"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
@@ -120,7 +120,7 @@ port=22
 多台主机复用同一个用户、密码或 key 时，可以使用 `auth`：
 
 ```bash
-sshc auth add dev-root -u root -p
+sshc auth add dev-root -u root -p --remark "共享 root 登录"
 sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
 sshc auth list
 sshc auth show dev-root
@@ -369,7 +369,8 @@ sshc run "testing gpu" -- uptime
     {
       "name": "dev-root",
       "user": "root",
-      "password_enc": "v1:..."
+      "password_enc": "v1:...",
+      "remark": "共享 root 登录"
     }
   ],
   "hosts": [

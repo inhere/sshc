@@ -65,6 +65,7 @@ type AuthProfile struct {
 	Password    string `json:"password,omitempty"`
 	PasswordEnc string `json:"password_enc,omitempty"`
 	KeyPath     string `json:"key_path,omitempty"`
+	Remark      string `json:"remark,omitempty"`
 }
 
 type Config struct {

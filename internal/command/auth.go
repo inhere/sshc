@@ -23,7 +23,7 @@ func NewAuthCmd() *gcli.Command {
 		Category: managementCategory,
 		Help: strings.TrimSpace(`
 Examples:
-  sshc auth add dev-root -u root -p
+  sshc auth add dev-root -u root -p --remark "shared root login"
   sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
   sshc auth list
   sshc auth show dev-root
@@ -50,6 +50,7 @@ func newAuthAddCmd() *gcli.Command {
 		User           string
 		PasswordPrompt bool
 		KeyPath        string
+		Remark         string
 	}{}
 	return &gcli.Command{
 		Name: "add",
@@ -58,6 +59,7 @@ func newAuthAddCmd() *gcli.Command {
 			c.StrOpt(&opts.User, "user", "u", "", "ssh username")
 			c.BoolOpt(&opts.PasswordPrompt, "password", "p", false, "prompt for hidden password")
 			c.StrOpt(&opts.KeyPath, "key", "", "", "ssh private key path")
+			c.StrOpt(&opts.Remark, "remark", "", "", "auth profile remark")
 			c.AddArg("name", "auth profile name", true)
 		},
 		Func: func(c *gcli.Command, args []string) error {
@@ -69,6 +71,7 @@ func newAuthAddCmd() *gcli.Command {
 				Name:    name,
 				User:    strings.TrimSpace(opts.User),
 				KeyPath: strings.TrimSpace(opts.KeyPath),
+				Remark:  strings.TrimSpace(opts.Remark),
 			}
 			if opts.PasswordPrompt {
 				profile.Password = strings.TrimSpace(readInteractivePassword("Password: "))
@@ -208,13 +211,17 @@ func buildAuthListTable(profiles []core.AuthProfile) string {
 		return ""
 	}
 	tb := table.New("", table.WithBorderFlags(table.BorderDefault), table.WithOverflowFlag(table.OverflowWrap))
-	tb.SetHeads("Name", "User", "Auth")
+	tb.SetHeads("Name", "User", "Auth", "Remark")
 	for _, profile := range profiles {
 		user := strings.TrimSpace(profile.User)
 		if user == "" {
 			user = "-"
 		}
-		tb.AddRow(profile.Name, user, authProfileType(profile))
+		remark := strings.TrimSpace(profile.Remark)
+		if remark == "" {
+			remark = "-"
+		}
+		tb.AddRow(profile.Name, user, authProfileType(profile), remark)
 	}
 	return tb.String()
 }

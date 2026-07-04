@@ -14,7 +14,7 @@ func TestAuthAddPasswordProfile(t *testing.T) {
 	t.Cleanup(setReadInteractivePasswordForTest(func(...string) string { return " secret " }))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"auth", "add", "dev-root", "-u", "root", "-p"}); err != nil {
+	if err := app.RunWithArgs([]string{"auth", "add", "dev-root", "-u", "root", "-p", "--remark", "shared root login"}); err != nil {
 		t.Fatalf("auth add: %v", err)
 	}
 
@@ -36,6 +36,9 @@ func TestAuthAddPasswordProfile(t *testing.T) {
 	}
 	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].Password != "secret" {
 		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+	if config.AuthProfiles[0].Remark != "shared root login" {
+		t.Fatalf("auth remark = %q", config.AuthProfiles[0].Remark)
 	}
 }
 
@@ -72,6 +75,7 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 		Name:     "dev-root",
 		User:     "root",
 		Password: "secret",
+		Remark:   "shared root login",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +86,7 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	if err := app.RunWithArgs([]string{"auth", "list"}); err != nil {
 		t.Fatalf("auth list: %v", err)
 	}
-	if !strings.Contains(out.String(), "dev-root") || strings.Contains(out.String(), "secret") {
+	if !strings.Contains(out.String(), "dev-root") || !strings.Contains(out.String(), "shared root login") || strings.Contains(out.String(), "secret") {
 		t.Fatalf("list output = %q", out.String())
 	}
 
@@ -90,7 +94,7 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	if err := app.RunWithArgs([]string{"auth", "show", "dev-root"}); err != nil {
 		t.Fatalf("auth show: %v", err)
 	}
-	if strings.Contains(out.String(), "secret") || !strings.Contains(out.String(), `"password_enc": "***"`) {
+	if strings.Contains(out.String(), "secret") || !strings.Contains(out.String(), `"password_enc": "***"`) || !strings.Contains(out.String(), `"remark": "shared root login"`) {
 		t.Fatalf("show output = %q", out.String())
 	}
 }

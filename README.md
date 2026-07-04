@@ -56,7 +56,7 @@ go build -o sshc.exe ./cmd/sshc
 sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
-sshc auth add dev-root -u root -p
+sshc auth add dev-root -u root -p --remark "shared root login"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
@@ -122,7 +122,7 @@ port=22
 Use `auth` profiles when multiple hosts share the same user, password, or key:
 
 ```bash
-sshc auth add dev-root -u root -p
+sshc auth add dev-root -u root -p --remark "shared root login"
 sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
 sshc auth list
 sshc auth show dev-root
@@ -378,7 +378,8 @@ Example config:
     {
       "name": "dev-root",
       "user": "root",
-      "password_enc": "v1:..."
+      "password_enc": "v1:...",
+      "remark": "shared root login"
     }
   ],
   "hosts": [
