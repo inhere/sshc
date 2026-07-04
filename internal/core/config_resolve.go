@@ -26,6 +26,10 @@ type HostOverrides struct {
 	KnownHostsPath  string
 }
 
+type ResolveConnectionOptions struct {
+	Jump string
+}
+
 type EffectiveHost struct {
 	Host
 	ConnectTimeout  string
@@ -33,6 +37,11 @@ type EffectiveHost struct {
 	RemoteScriptDir string
 	HostKeyCheck    string
 	KnownHostsPath  string
+}
+
+type ResolvedConnection struct {
+	Target Host
+	Jump   *Host
 }
 
 func (h EffectiveHost) ToHost() Host {
@@ -71,6 +80,34 @@ func ResolveHostWithSSHConfig(target string, overrides HostOverrides) (Host, boo
 	return host.ToHost(), true, nil
 }
 
+func ResolveConnectionWithSSHConfig(target string, opts ResolveConnectionOptions) (ResolvedConnection, bool, error) {
+	config, err := LoadConfigWithSSHConfig()
+	if err != nil {
+		return ResolvedConnection{}, false, err
+	}
+	effective, ok, err := config.ResolveEffectiveHost(target, HostOverrides{})
+	if err != nil || !ok {
+		return ResolvedConnection{}, ok, err
+	}
+	host := effective.ToHost()
+	if jump := strings.TrimSpace(opts.Jump); jump != "" {
+		host.Jump = jump
+	}
+	conn, err := config.ResolveConnection(host)
+	if err != nil {
+		return ResolvedConnection{}, false, err
+	}
+	return conn, true, nil
+}
+
+func ResolveConnectionForHost(host Host) (ResolvedConnection, error) {
+	config, err := LoadConfigWithSSHConfig()
+	if err != nil {
+		return ResolvedConnection{}, err
+	}
+	return config.ResolveConnection(host)
+}
+
 func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost, bool, error) {
 	effective := EffectiveHost{
 		Host:            host,
@@ -99,6 +136,31 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 		return EffectiveHost{}, false, err
 	}
 	return effective, true, nil
+}
+
+func (c Config) ResolveConnection(host Host) (ResolvedConnection, error) {
+	conn := ResolvedConnection{Target: host}
+	jumpName := strings.TrimSpace(host.Jump)
+	if jumpName == "" {
+		return conn, nil
+	}
+
+	jumpEffective, ok, err := c.ResolveEffectiveHost(jumpName, HostOverrides{})
+	if err != nil {
+		return ResolvedConnection{}, err
+	}
+	if !ok {
+		return ResolvedConnection{}, fmt.Errorf("jump host %q not found for host %q", jumpName, HostLogName(host))
+	}
+	jump := jumpEffective.ToHost()
+	if sameHostIdentity(host, jump) {
+		return ResolvedConnection{}, fmt.Errorf("host %q cannot jump through itself", HostLogName(host))
+	}
+	if nested := strings.TrimSpace(jump.Jump); nested != "" {
+		return ResolvedConnection{}, fmt.Errorf("jump host %q also has jump %q; multi-level jump is not supported", HostLogName(jump), nested)
+	}
+	conn.Jump = &jump
+	return conn, nil
 }
 
 func (c Config) FindAuthProfile(name string) (AuthProfile, bool) {
@@ -211,6 +273,27 @@ func applyOverrides(host *EffectiveHost, overrides HostOverrides) {
 	if value := strings.TrimSpace(overrides.KnownHostsPath); value != "" {
 		host.KnownHostsPath = value
 	}
+}
+
+func sameHostIdentity(a, b Host) bool {
+	aName := strings.TrimSpace(a.Name)
+	bName := strings.TrimSpace(b.Name)
+	if aName != "" && bName != "" && aName == bName {
+		return true
+	}
+	aIP := strings.TrimSpace(a.IP)
+	bIP := strings.TrimSpace(b.IP)
+	if aIP != "" && bIP != "" && aIP == bIP && effectivePort(a) == effectivePort(b) {
+		return true
+	}
+	return false
+}
+
+func effectivePort(host Host) int {
+	if host.Port > 0 {
+		return host.Port
+	}
+	return DefaultSSHPort
 }
 
 func validateEffectiveHost(host EffectiveHost) error {
