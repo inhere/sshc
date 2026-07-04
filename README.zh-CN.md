@@ -33,7 +33,7 @@
 
 ### 下载 Release
 
-1. **Recommended** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
+1. **Recommended** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install inhere/sshc`
 2. 通过 Golang 安装: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. 从 [GitHub Releases](https://github.com/inhere/sshc/releases) 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
 
@@ -54,7 +54,7 @@ sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
-sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
@@ -99,7 +99,7 @@ sshc add --from-clipboard
 
 `sshc add -I` 会交互式输入主机字段，并隐藏密码输入。
 
-`--from-clipboard` 支持 `key=value` 多行格式，也支持一行 CSV：
+`--from-clipboard` 支持 `key=value`/`key: value` 多行格式，也支持一行 CSV：
 
 ```text
 ip=192.168.1.10
