@@ -16,6 +16,7 @@ import (
 const (
 	DefaultSSHPort       = 22
 	DefaultGroup         = "default"
+	ConfigVersion        = 1
 	ConfigEnvKey         = "SSHC_CONFIG"
 	ConfigFileName       = "sshc.config.json"
 	LegacyConfigFileName = "hosts.json"
@@ -26,18 +27,46 @@ var userHomeDir = os.UserHomeDir
 type Host struct {
 	Name        string `json:"name"`
 	IP          string `json:"ip"`
+	AuthRef     string `json:"auth_ref,omitempty"`
 	User        string `json:"user"`
 	Password    string `json:"password,omitempty"`
 	PasswordEnc string `json:"password_enc,omitempty"`
 	KeyPath     string `json:"key_path,omitempty"`
 	Remark      string `json:"remark,omitempty"`
 	Group       string `json:"group,omitempty"`
-	Port        int    `json:"port"`
+	Port        int    `json:"port,omitempty"`
+	Jump        string `json:"jump,omitempty"`
 }
 
 type Store struct {
 	LogsPath string `json:"logs_path,omitempty"`
 	Hosts    []Host `json:"hosts"`
+}
+
+type Defaults struct {
+	User            string `json:"user,omitempty"`
+	Port            int    `json:"port,omitempty"`
+	ConnectTimeout  string `json:"connect_timeout,omitempty"`
+	RunTimeout      string `json:"run_timeout,omitempty"`
+	RemoteScriptDir string `json:"remote_script_dir,omitempty"`
+	HostKeyCheck    string `json:"host_key_check,omitempty"`
+	KnownHostsPath  string `json:"known_hosts_path,omitempty"`
+}
+
+type AuthProfile struct {
+	Name        string `json:"name"`
+	User        string `json:"user,omitempty"`
+	Password    string `json:"password,omitempty"`
+	PasswordEnc string `json:"password_enc,omitempty"`
+	KeyPath     string `json:"key_path,omitempty"`
+}
+
+type Config struct {
+	Version      int           `json:"version"`
+	LogsPath     string        `json:"logs_path,omitempty"`
+	Defaults     Defaults      `json:"defaults,omitempty"`
+	AuthProfiles []AuthProfile `json:"auth_profiles"`
+	Hosts        []Host        `json:"hosts"`
 }
 
 func (s *Store) Upsert(host Host) error {
@@ -152,25 +181,32 @@ func HostGroupName(host Host) string {
 }
 
 func LoadStore() (*Store, error) {
+	config, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	store := storeFromConfig(*config)
+	return &store, nil
+}
+
+func LoadConfig() (*Config, error) {
 	path, data, err := readConfigFile()
 	if err != nil {
 		return nil, err
 	}
-	if len(data) == 0 {
-		return &Store{}, nil
-	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return &Store{}, nil
+		return newEmptyConfig(), nil
 	}
 
-	var store Store
-	if err := json.Unmarshal(data, &store); err != nil {
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
-	if err := decryptStorePasswords(&store); err != nil {
+	normalizeConfig(&config)
+	if err := decryptConfigPasswords(&config); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
-	return &store, nil
+	return &config, nil
 }
 
 func LoadStoreWithSSHConfig() (*Store, error) {
@@ -195,19 +231,11 @@ func LoadStoreWithSSHConfig() (*Store, error) {
 }
 
 func LoadConfigSettings() (Store, error) {
-	path, data, err := readConfigFile()
+	config, err := LoadConfig()
 	if err != nil {
 		return Store{}, err
 	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return Store{}, nil
-	}
-
-	var store Store
-	if err := json.Unmarshal(data, &store); err != nil {
-		return Store{}, fmt.Errorf("read config %s: %w", path, err)
-	}
-	return store, nil
+	return storeFromConfig(*config), nil
 }
 
 func LoadSSHConfigHosts() ([]Host, error) {
@@ -330,6 +358,14 @@ func sshConfigPath() (string, error) {
 }
 
 func SaveStore(store *Store) error {
+	config := configFromStore(*store)
+	return SaveConfig(&config)
+}
+
+func SaveConfig(config *Config) error {
+	if config == nil {
+		return errors.New("config is nil")
+	}
 	path, err := StorePath()
 	if err != nil {
 		return err
@@ -338,11 +374,12 @@ func SaveStore(store *Store) error {
 		return err
 	}
 
-	saveStore, err := encryptStorePasswords(*store)
+	saveConfig, err := encryptConfigPasswords(*config)
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(saveStore, "", "  ")
+	normalizeConfigForSave(&saveConfig)
+	data, err := json.MarshalIndent(saveConfig, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -353,6 +390,47 @@ func SaveStore(store *Store) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func newEmptyConfig() *Config {
+	return &Config{
+		Version:      ConfigVersion,
+		AuthProfiles: []AuthProfile{},
+		Hosts:        []Host{},
+	}
+}
+
+func normalizeConfig(config *Config) {
+	if config.Version == 0 {
+		config.Version = ConfigVersion
+	}
+	if config.AuthProfiles == nil {
+		config.AuthProfiles = []AuthProfile{}
+	}
+	if config.Hosts == nil {
+		config.Hosts = []Host{}
+	}
+}
+
+func normalizeConfigForSave(config *Config) {
+	config.Version = ConfigVersion
+	normalizeConfig(config)
+}
+
+func storeFromConfig(config Config) Store {
+	return Store{
+		LogsPath: strings.TrimSpace(config.LogsPath),
+		Hosts:    config.Hosts,
+	}
+}
+
+func configFromStore(store Store) Config {
+	return Config{
+		Version:      ConfigVersion,
+		LogsPath:     strings.TrimSpace(store.LogsPath),
+		AuthProfiles: []AuthProfile{},
+		Hosts:        store.Hosts,
+	}
 }
 
 func StorePath() (string, error) {

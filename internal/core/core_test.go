@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -484,6 +485,168 @@ func TestLoadStoreSupportsLegacyPlaintextPassword(t *testing.T) {
 	}
 	if len(store.Hosts) != 1 || store.Hosts[0].Password != "secret" {
 		t.Fatalf("loaded store = %+v", store.Hosts)
+	}
+}
+
+func TestLoadConfigLegacyStoreShape(t *testing.T) {
+	path := withTempConfig(t)
+	data := []byte(`{"logs_path":"runtime/logs","hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}` + "\n")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Version != ConfigVersion || config.LogsPath != "runtime/logs" {
+		t.Fatalf("config = %+v", config)
+	}
+	if len(config.AuthProfiles) != 0 {
+		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Password != "secret" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestLoadConfigVersionedShape(t *testing.T) {
+	path := withTempConfig(t)
+	data := []byte(`{
+  "version": 1,
+  "logs_path": "logs",
+  "defaults": {"user":"root","port":22},
+  "auth_profiles": [{"name":"dev-root","user":"root","password":"secret"}],
+  "hosts": [{"name":"devhost","ip":"10.0.0.8","auth_ref":"dev-root","port":22}]
+}` + "\n")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Version != ConfigVersion || config.Defaults.User != "root" {
+		t.Fatalf("config = %+v", config)
+	}
+	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].Name != "dev-root" || config.AuthProfiles[0].Password != "secret" {
+		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestLoadConfigFromLegacyHostsFile(t *testing.T) {
+	t.Setenv(ConfigEnvKey, "")
+	home := filepath.Join(t.TempDir(), "home")
+	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
+
+	legacyPath := filepath.Join(home, ".config", "sshc", LegacyConfigFileName)
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Version != ConfigVersion || len(config.Hosts) != 1 || config.Hosts[0].Name != "devhost" {
+		t.Fatalf("config = %+v", config)
+	}
+}
+
+func TestLoadConfigWithEnvPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-config.json")
+	t.Setenv(ConfigEnvKey, path)
+	if err := os.WriteFile(path, []byte(`{"logs_path":"custom/logs","hosts":[]}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.LogsPath != "custom/logs" {
+		t.Fatalf("logs_path = %q", config.LogsPath)
+	}
+}
+
+func TestSaveConfigWritesVersionOne(t *testing.T) {
+	path := withTempConfig(t)
+	config := &Config{
+		LogsPath:     "runtime/logs",
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}
+	if err := SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Config
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Version != ConfigVersion {
+		t.Fatalf("version = %d, want %d; json=%s", saved.Version, ConfigVersion, string(data))
+	}
+	if config.Version != 0 {
+		t.Fatalf("SaveConfig mutated source version: %+v", config)
+	}
+}
+
+func TestLoadStoreStillDecryptsHostPasswordEnc(t *testing.T) {
+	path := withTempConfig(t)
+	encrypted, err := EncryptPassword("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"version":1,"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password_enc":"` + encrypted + `","port":22}]}` + "\n")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := LoadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Hosts) != 1 || store.Hosts[0].Password != "secret" {
+		t.Fatalf("store = %+v", store)
+	}
+}
+
+func TestLoadConfigSettingsReadsLogsPath(t *testing.T) {
+	path := withTempConfig(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"version":1,"logs_path":"runtime/logs","hosts":[]}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := LoadConfigSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.LogsPath != "runtime/logs" {
+		t.Fatalf("logs_path = %q", settings.LogsPath)
 	}
 }
 

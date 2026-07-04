@@ -20,36 +20,81 @@ const (
 )
 
 func encryptStorePasswords(store Store) (Store, error) {
-	if len(store.Hosts) > 0 {
-		hosts := make([]Host, len(store.Hosts))
-		copy(hosts, store.Hosts)
-		store.Hosts = hosts
+	config, err := encryptConfigPasswords(configFromStore(store))
+	if err != nil {
+		return Store{}, err
 	}
-	for i := range store.Hosts {
-		password := store.Hosts[i].Password
+	return storeFromConfig(config), nil
+}
+
+func encryptConfigPasswords(config Config) (Config, error) {
+	if len(config.AuthProfiles) > 0 {
+		profiles := make([]AuthProfile, len(config.AuthProfiles))
+		copy(profiles, config.AuthProfiles)
+		config.AuthProfiles = profiles
+	}
+	for i := range config.AuthProfiles {
+		password := config.AuthProfiles[i].Password
 		if password == "" {
 			continue
 		}
 		encrypted, err := EncryptPassword(password)
 		if err != nil {
-			return Store{}, err
+			return Config{}, err
 		}
-		store.Hosts[i].Password = ""
-		store.Hosts[i].PasswordEnc = encrypted
+		config.AuthProfiles[i].Password = ""
+		config.AuthProfiles[i].PasswordEnc = encrypted
 	}
-	return store, nil
+
+	if len(config.Hosts) > 0 {
+		hosts := make([]Host, len(config.Hosts))
+		copy(hosts, config.Hosts)
+		config.Hosts = hosts
+	}
+	for i := range config.Hosts {
+		password := config.Hosts[i].Password
+		if password == "" {
+			continue
+		}
+		encrypted, err := EncryptPassword(password)
+		if err != nil {
+			return Config{}, err
+		}
+		config.Hosts[i].Password = ""
+		config.Hosts[i].PasswordEnc = encrypted
+	}
+	return config, nil
 }
 
 func decryptStorePasswords(store *Store) error {
-	for i := range store.Hosts {
-		if store.Hosts[i].Password != "" || store.Hosts[i].PasswordEnc == "" {
+	config := configFromStore(*store)
+	if err := decryptConfigPasswords(&config); err != nil {
+		return err
+	}
+	*store = storeFromConfig(config)
+	return nil
+}
+
+func decryptConfigPasswords(config *Config) error {
+	for i := range config.AuthProfiles {
+		if config.AuthProfiles[i].Password != "" || config.AuthProfiles[i].PasswordEnc == "" {
 			continue
 		}
-		password, err := DecryptPassword(store.Hosts[i].PasswordEnc)
+		password, err := DecryptPassword(config.AuthProfiles[i].PasswordEnc)
 		if err != nil {
 			return err
 		}
-		store.Hosts[i].Password = password
+		config.AuthProfiles[i].Password = password
+	}
+	for i := range config.Hosts {
+		if config.Hosts[i].Password != "" || config.Hosts[i].PasswordEnc == "" {
+			continue
+		}
+		password, err := DecryptPassword(config.Hosts[i].PasswordEnc)
+		if err != nil {
+			return err
+		}
+		config.Hosts[i].Password = password
 	}
 	return nil
 }
