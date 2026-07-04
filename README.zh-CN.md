@@ -21,11 +21,11 @@
 - 从 `~/.ssh/config` 读取简单主机配置
 - 默认使用 `known_hosts` 校验 SSH host key
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
-- 将本地 shell 脚本上传到远端执行
+  - 将本地 shell 脚本上传到远端执行
 - 通过 `batch-run/brun` 在多台主机上批量执行命令或脚本
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
-- 通过 SFTP 上传和下载文件或目录
-- 支持单文件传输 SHA256 校验
+- 通过 `upload` 使用 SFTP 上传和 `download` 下载文件或目录
+  - 支持单文件传输 SHA256 校验
 - 在 `~/.config/sshc/logs/` 下按主机保存 JSONL 执行日志
 - 通过 `login/connect` 打开交互式远端 PTY
 
@@ -43,12 +43,8 @@
 git clone https://github.com/inhere/sshc.git
 cd sshc
 go build -o sshc ./cmd/sshc
-```
-
-Windows 本地开发时，可以构建到 `tmp`：
-
-```powershell
-go build -o tmp\sshc.exe ./cmd/sshc
+# Windows
+go build -o sshc.exe ./cmd/sshc
 ```
 
 ## 快速开始

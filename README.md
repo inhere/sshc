@@ -45,12 +45,8 @@ remote operations where a full automation platform would be too heavy.
 git clone https://github.com/inhere/sshc.git
 cd sshc
 go build -o sshc ./cmd/sshc
-```
-
-For local development on Windows, you can build into `tmp`:
-
-```powershell
-go build -o tmp\sshc.exe ./cmd/sshc
+# Windows
+go build -o sshc.exe ./cmd/sshc
 ```
 
 ## Quick Start
