@@ -17,17 +17,17 @@ remote operations where a full automation platform would be too heavy.
 ## Features
 
 - Manage SSH hosts in `~/.config/sshc/sshc.config.json`
+  - Encrypt saved passwords before writing to disk
 - Manage shared credential profiles with `auth`
 - Inspect and edit local settings with `cfg`
 - Read simple host entries from `~/.ssh/config`
-- Encrypt saved passwords before writing `sshc.config.json`
 - Verify SSH host keys with `known_hosts` by default
 - Run remote commands by saved host name, IP, or unique partial match
-- Execute local shell scripts on remote hosts
+  - Execute local shell scripts on remote hosts
 - Run commands or scripts across multiple hosts with `batch-run/brun`
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
-- Upload and download files or directories over SFTP
-- Verify single-file transfers with SHA256
+- Upload files with `upload` and download files with `download` over SFTP
+  - Verify single-file transfers with SHA256
 - Keep per-host JSONL run logs under `~/.config/sshc/logs/`
 - Open an interactive remote PTY with `login/connect`
 
@@ -35,7 +35,7 @@ remote operations where a full automation platform would be too heavy.
 
 ### Download a release
 
-1. **Recommended** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
+1. **Recommended** Install by [eget](https://github.com/inherelab/eget): `eget install inhere/sshc`
 2. Install by Golang: `go install github.com/inhere/sshc/cmd/sshc@latest`
 3. Download the archive for your platform from [GitHub Releases](https://github.com/inhere/sshc/releases), extract it, and put the `sshc` binary on your `PATH`.
 
@@ -56,7 +56,7 @@ sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
-sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
@@ -70,8 +70,8 @@ sshc log devhost --tail 20
 sshc add                Add or update a host
 sshc list|ls            List saved hosts
 sshc cfg|config         Manage config
-sshc auth               Manage credential profiles
-sshc host|h|hosts       Manage hosts
+sshc auth|cred          Manage credential profiles
+sshc host|hosts         Manage hosts
 sshc run|exec           Run a remote command
 sshc batch-run|brun     Run a command or script on multiple hosts
 sshc login              Open an interactive SSH shell
@@ -101,7 +101,7 @@ sshc add --from-clipboard
 
 `sshc add -I` prompts for host fields interactively and hides password input.
 
-`--from-clipboard` accepts either `key=value` lines or one CSV line:
+`--from-clipboard` accepts either `key=value`/`key: value` lines or one CSV line:
 
 ```text
 ip=192.168.1.10
@@ -160,6 +160,7 @@ sshc list --show-ip
 `sshc list` shows the host name, group, address, authentication type, and remark.
 IPv4 addresses are masked by default, for example `10.*.*.8`. Use `--show-ip`
 when you need the full address.
+
 Hosts from `~/.ssh/config` are also listed when they have `HostName`, `User`, and
 `IdentityFile`.
 
@@ -306,7 +307,7 @@ If multiple hosts match, `sshc` returns the candidate list instead of guessing.
 
 ## Configuration
 
-Default config:
+Default config file:
 
 ```text
 ~/.config/sshc/sshc.config.json
@@ -347,7 +348,7 @@ Example config:
 `logs_path` can be absolute, start with `~`, or be relative to
 `~/.config/sshc`.
 
-Default run logs:
+Default run log directory:
 
 ```text
 ~/.config/sshc/logs/<host>.log
