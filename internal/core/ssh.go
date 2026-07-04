@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -65,6 +66,7 @@ type RemoteClient interface {
 type remoteClient struct {
 	*goph.Client
 	closeAll func() error
+	dial     func(network, addr string) (net.Conn, error)
 }
 
 func (client *remoteClient) Close() error {
@@ -76,6 +78,22 @@ func (client *remoteClient) Close() error {
 	}
 	return client.Client.Close()
 }
+
+func (client *remoteClient) Dial(network, addr string) (net.Conn, error) {
+	if remoteClientDialForTest != nil {
+		return remoteClientDialForTest(client, network, addr)
+	}
+	if client.dial != nil {
+		return client.dial(network, addr)
+	}
+	return client.Client.Dial(network, addr)
+}
+
+var (
+	newGophConn             = goph.NewConn
+	newSSHClientConn        = ssh.NewClientConn
+	remoteClientDialForTest func(*remoteClient, string, string) (net.Conn, error)
+)
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	client, err := newSSHClient(host)
@@ -535,6 +553,89 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 }
 
 func newSSHClient(host Host) (RemoteClient, error) {
+	if strings.TrimSpace(host.Jump) == "" {
+		return newDirectSSHClient(host)
+	}
+	conn, err := ResolveConnectionForHost(host)
+	if err != nil {
+		return nil, err
+	}
+	return newSSHClientForConnection(conn)
+}
+
+func newSSHClientForConnection(conn ResolvedConnection) (RemoteClient, error) {
+	if conn.Jump == nil {
+		return newDirectSSHClient(conn.Target)
+	}
+
+	jump, err := newDirectSSHClient(*conn.Jump)
+	if err != nil {
+		return nil, fmt.Errorf("connect jump host %s: %w", HostLogName(*conn.Jump), err)
+	}
+
+	targetAddr := net.JoinHostPort(conn.Target.IP, fmt.Sprint(conn.Target.Port))
+	rawConn, err := jump.Dial("tcp", targetAddr)
+	if err != nil {
+		_ = jump.Close()
+		return nil, fmt.Errorf("connect target host %s via jump %s: %w", HostLogName(conn.Target), HostLogName(*conn.Jump), err)
+	}
+
+	config, err := sshClientConfig(conn.Target)
+	if err != nil {
+		_ = rawConn.Close()
+		_ = jump.Close()
+		return nil, err
+	}
+	sshConn, chans, reqs, err := newSSHClientConn(rawConn, targetAddr, config)
+	if err != nil {
+		_ = rawConn.Close()
+		_ = jump.Close()
+		return nil, fmt.Errorf("connect target host %s via jump %s: %w", HostLogName(conn.Target), HostLogName(*conn.Jump), err)
+	}
+
+	target := &goph.Client{
+		Client: ssh.NewClient(sshConn, chans, reqs),
+		Config: gophConfig(conn.Target, goph.Auth(config.Auth), config.Timeout, config.HostKeyCallback),
+	}
+	return &remoteClient{
+		Client: target,
+		closeAll: func() error {
+			var targetErr error
+			if target.Client != nil {
+				targetErr = target.Close()
+			}
+			jumpErr := jump.Close()
+			if targetErr != nil {
+				return targetErr
+			}
+			return jumpErr
+		},
+		dial: target.Dial,
+	}, nil
+}
+
+func newDirectSSHClient(host Host) (*remoteClient, error) {
+	config, err := gophClientConfig(host)
+	if err != nil {
+		return nil, err
+	}
+	client, err := newGophConn(config)
+	if err != nil {
+		return nil, err
+	}
+	return &remoteClient{
+		Client: client,
+		closeAll: func() error {
+			if client.Client == nil {
+				return nil
+			}
+			return client.Close()
+		},
+		dial: client.Dial,
+	}, nil
+}
+
+func gophClientConfig(host Host) (*goph.Config, error) {
 	auth, err := hostAuth(host)
 	if err != nil {
 		return nil, err
@@ -547,20 +648,31 @@ func newSSHClient(host Host) (RemoteClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := goph.NewConn(&goph.Config{
+	return gophConfig(host, auth, timeout, callback), nil
+}
+
+func gophConfig(host Host, auth goph.Auth, timeout time.Duration, callback ssh.HostKeyCallback) *goph.Config {
+	return &goph.Config{
 		User:     host.User,
 		Addr:     host.IP,
 		Port:     uint(host.Port),
 		Auth:     auth,
 		Timeout:  timeout,
 		Callback: callback,
-	})
+	}
+}
+
+func sshClientConfig(host Host) (*ssh.ClientConfig, error) {
+	gophConfig, err := gophClientConfig(host)
 	if err != nil {
 		return nil, err
 	}
-	return &remoteClient{
-		Client:   client,
-		closeAll: client.Close,
+	return &ssh.ClientConfig{
+		User:            gophConfig.User,
+		Auth:            gophConfig.Auth,
+		Timeout:         gophConfig.Timeout,
+		HostKeyCallback: gophConfig.Callback,
+		BannerCallback:  gophConfig.BannerCallback,
 	}, nil
 }
 
