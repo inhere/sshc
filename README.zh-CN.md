@@ -238,9 +238,16 @@ sshc log devhost
 sshc log devhost --match uptime
 sshc log devhost --tail 50
 sshc log devhost -m error --tail 50
+sshc log --id 20260704-173012-a1b2c3
+sshc log --id 20260704-173012-a1b2c3 --tail 80
+sshc log --id 20260704-173012-a1b2c3 --lines 120,180
+sshc log devhost --lines 20,80
 ```
 
 每次 `run` 默认都会向 `~/.config/sshc/logs/<host>.log` 写入一行 JSON 日志。
+每次执行都有 `task_id`。短输出会内联在 JSONL 中，较大的输出会保存到
+`~/.config/sshc/logs/yyyyMMdd/<task_id>.out.log`，可以通过
+`sshc log --id <task_id>` 查看。
 交互式 `login` 只记录连接元信息。
 
 ### 交互式登录

@@ -36,6 +36,14 @@
 - [ ] 安全增强
   - [ ] 后续可考虑配置级解锁机制：设置有效期，过期后本机验证，验证后短期缓存解锁态
 
+## 优化增强
+
+- [x] host 日志优化： 现在 host 日志 jsonl 完整记录了输入输出内容，但是果输出内容很大时音响json日志文件的查看/审计
+  - [x] 为每个执行任务都生成 task_id(format=yyyymmdd-hhmmss-shorthash，jsonl 里要记录下来
+  - [x] 输出大时，使用独立的文件来保存，文件名(`{task_id}.out.log`) , jsonl 里不再记录完整输出
+  - [x] `{task_id}.out.log` 存放到配置的 {logs_path}/yyyymmdd/ 下面
+  - [x] sshc log --id {task_id} 查看详细输出
+
 ## [x] 整理项目结构
 
 ```txt

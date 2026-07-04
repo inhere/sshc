@@ -257,10 +257,16 @@ sshc log devhost
 sshc log devhost --match uptime
 sshc log devhost --tail 50
 sshc log devhost -m error --tail 50
+sshc log --id 20260704-173012-a1b2c3
+sshc log --id 20260704-173012-a1b2c3 --tail 80
+sshc log --id 20260704-173012-a1b2c3 --lines 120,180
+sshc log devhost --lines 20,80
 ```
 
 Every `run` writes one JSON log line to `~/.config/sshc/logs/<host>.log` by
-default.
+default. Each run has a `task_id`. Short output is kept inline in JSONL; larger
+output is stored under `~/.config/sshc/logs/yyyyMMdd/<task_id>.out.log` and can
+be opened with `sshc log --id <task_id>`.
 Interactive `login` sessions only record connection metadata.
 
 ### Interactive Login

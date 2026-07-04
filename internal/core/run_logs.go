@@ -3,30 +3,49 @@ package core
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const logDirName = "logs"
 
 var now = time.Now
 
-const logTimeLayout = "2006-01-02T15:04:05.000"
+const (
+	logTimeLayout            = "2006-01-02T15:04:05.000"
+	runTaskTimeLayout        = "20060102-150405"
+	runOutputDateLayout      = "20060102"
+	maxInlineRunOutputBytes  = 1024
+	maxRunOutputPreviewBytes = 512
+)
 
 type RunLogRecord struct {
 	Target           string
+	TaskID           string
 	Command          string
 	Status           string
 	StartedAt        time.Time
 	DurationMS       int64
 	Output           string
+	OutputFile       string
+	OutputBytes      int64
+	OutputSHA256     string
+	OutputInline     bool
+	OutputPreview    string
 	Error            string
 	CWD              string
 	Script           string
@@ -45,6 +64,20 @@ func SetNowForTest(fn func() time.Time) func() {
 }
 
 func AppendRunLog(host Host, rec RunLogRecord) error {
+	logTime := rec.StartedAt
+	if logTime.IsZero() {
+		logTime = now()
+	}
+	rec.StartedAt = logTime
+	if strings.TrimSpace(rec.TaskID) == "" {
+		rec.TaskID = NewRunTaskID(logTime, host, rec)
+	} else {
+		rec.TaskID = safeLogName(rec.TaskID)
+	}
+	if err := prepareRunLogOutput(&rec, logTime); err != nil {
+		return err
+	}
+
 	path, err := runLogPath(host)
 	if err != nil {
 		return err
@@ -64,6 +97,7 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 	})
 	attrs := []slog.Attr{
 		slog.String("target", rec.Target),
+		slog.String("task_id", rec.TaskID),
 		slog.String("host", HostLogName(host)),
 		slog.String("ip", host.IP),
 		slog.String("user", host.User),
@@ -72,9 +106,20 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 		slog.String("status", rec.Status),
 		slog.String("started_at", formatLogTime(rec.StartedAt)),
 		slog.Int64("duration_ms", rec.DurationMS),
+		slog.Int64("output_bytes", rec.OutputBytes),
+		slog.Bool("output_inline", rec.OutputInline),
 	}
 	if rec.Output != "" {
 		attrs = append(attrs, slog.String("output", rec.Output))
+	}
+	if rec.OutputPreview != "" {
+		attrs = append(attrs, slog.String("output_preview", rec.OutputPreview))
+	}
+	if rec.OutputFile != "" {
+		attrs = append(attrs, slog.String("output_file", rec.OutputFile))
+	}
+	if rec.OutputSHA256 != "" {
+		attrs = append(attrs, slog.String("output_sha256", rec.OutputSHA256))
 	}
 	if rec.Error != "" {
 		attrs = append(attrs, slog.String("error", rec.Error))
@@ -90,13 +135,98 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 		)
 	}
 
-	logTime := rec.StartedAt
-	if logTime.IsZero() {
-		logTime = now()
-	}
 	record := slog.NewRecord(logTime, slog.LevelInfo, "run", 0)
 	record.AddAttrs(attrs...)
 	return handler.Handle(context.Background(), record)
+}
+
+func NewRunTaskID(startedAt time.Time, host Host, rec RunLogRecord) string {
+	if startedAt.IsZero() {
+		startedAt = now()
+	}
+	seed := fmt.Sprintf("%s|%s|%s|%d|%s|%s|%d|",
+		startedAt.Format(time.RFC3339Nano),
+		HostLogName(host),
+		host.IP,
+		host.Port,
+		rec.Command,
+		rec.Script,
+		now().UnixNano(),
+	)
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err == nil {
+		seed += hex.EncodeToString(random)
+	}
+	sum := sha256.Sum256([]byte(seed))
+	return startedAt.Format(runTaskTimeLayout) + "-" + hex.EncodeToString(sum[:])[:8]
+}
+
+func prepareRunLogOutput(rec *RunLogRecord, startedAt time.Time) error {
+	output := rec.Output
+	rec.OutputBytes = int64(len(output))
+	if output == "" {
+		rec.OutputInline = false
+		return nil
+	}
+
+	sum := sha256.Sum256([]byte(output))
+	rec.OutputSHA256 = hex.EncodeToString(sum[:])
+	if len(output) <= maxInlineRunOutputBytes {
+		rec.OutputInline = true
+		return nil
+	}
+
+	absPath, relPath, err := RunOutputPath(rec.TaskID, startedAt)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(absPath), 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := file.WriteString(output); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	rec.Output = ""
+	rec.OutputInline = false
+	rec.OutputFile = relPath
+	rec.OutputPreview = safeUTF8Prefix(output, maxRunOutputPreviewBytes)
+	return nil
+}
+
+func RunOutputPath(taskID string, startedAt time.Time) (string, string, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return "", "", errors.New("task_id is required")
+	}
+	taskID = safeLogName(taskID)
+	if startedAt.IsZero() {
+		startedAt = now()
+	}
+	dir, err := runLogDir()
+	if err != nil {
+		return "", "", err
+	}
+	dateDir := startedAt.Format(runOutputDateLayout)
+	relPath := filepath.ToSlash(filepath.Join(dateDir, taskID+".out.log"))
+	return filepath.Join(dir, filepath.FromSlash(relPath)), relPath, nil
+}
+
+func safeUTF8Prefix(value string, limit int) string {
+	if limit < 1 || len(value) <= limit {
+		return value
+	}
+	cut := limit
+	for cut > 0 && !utf8.ValidString(value[:cut]) {
+		cut--
+	}
+	return value[:cut]
 }
 
 func replaceLogTimeAttr(groups []string, attr slog.Attr) slog.Attr {
@@ -113,7 +243,13 @@ func formatLogTime(value time.Time) string {
 }
 
 func ReadRunLogs(target, match string, tail int) ([]string, error) {
-	if tail < 1 {
+	return ReadRunLogsSelected(target, match, tail, "")
+}
+
+func ReadRunLogsSelected(target, match string, tail int, rangeSpec string) ([]string, error) {
+	if strings.TrimSpace(rangeSpec) != "" {
+		tail = 0
+	} else if tail < 1 {
 		return nil, errors.New("tail must be greater than 0")
 	}
 
@@ -133,10 +269,7 @@ func ReadRunLogs(target, match string, tail int) ([]string, error) {
 		}
 		lines = append(lines, readLines...)
 	}
-	if len(lines) > tail {
-		lines = lines[len(lines)-tail:]
-	}
-	return lines, nil
+	return SelectLogLines(lines, rangeSpec, tail)
 }
 
 func runLogFiles(target string) ([]string, error) {
@@ -196,6 +329,130 @@ func readMatchingLines(path, match string) ([]string, error) {
 		return nil, err
 	}
 	return lines, nil
+}
+
+func ReadRunLogOutputByID(target, taskID string) ([]byte, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	files, err := runLogFiles(target)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		record, ok, err := findRunLogRecordByID(file, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		if record.OutputInline {
+			return []byte(record.Output), nil
+		}
+		if strings.TrimSpace(record.OutputFile) == "" {
+			return nil, fmt.Errorf("task %s has no output", taskID)
+		}
+		dir, err := runLogDir()
+		if err != nil {
+			return nil, err
+		}
+		path := record.OutputFile
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, filepath.FromSlash(path))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read output for task %s: %w", taskID, err)
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("task %s not found", taskID)
+}
+
+type runLogJSONRecord struct {
+	TaskID       string `json:"task_id"`
+	Output       string `json:"output"`
+	OutputFile   string `json:"output_file"`
+	OutputInline bool   `json:"output_inline"`
+}
+
+func findRunLogRecordByID(path, taskID string) (runLogJSONRecord, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return runLogJSONRecord{}, false, nil
+		}
+		return runLogJSONRecord{}, false, err
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadString('\n')
+		if line != "" {
+			line = strings.TrimRight(line, "\r\n")
+			var record runLogJSONRecord
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				return runLogJSONRecord{}, false, err
+			}
+			if record.TaskID == taskID {
+				return record, true, nil
+			}
+		}
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		return runLogJSONRecord{}, false, err
+	}
+	return runLogJSONRecord{}, false, nil
+}
+
+func SelectLogLines(lines []string, rangeSpec string, tail int) ([]string, error) {
+	start, end, ok, err := ParseLogLineRange(rangeSpec)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		if len(lines) == 0 || start > len(lines) {
+			return nil, nil
+		}
+		if end > len(lines) {
+			end = len(lines)
+		}
+		return lines[start-1 : end], nil
+	}
+	if tail > 0 && len(lines) > tail {
+		return lines[len(lines)-tail:], nil
+	}
+	return lines, nil
+}
+
+func ParseLogLineRange(spec string) (start int, end int, ok bool, err error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return 0, 0, false, nil
+	}
+	parts := strings.Split(spec, ",")
+	if len(parts) != 2 {
+		return 0, 0, false, fmt.Errorf("invalid lines range %q, want start,end", spec)
+	}
+	start, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || start < 1 {
+		return 0, 0, false, fmt.Errorf("invalid lines start %q", strings.TrimSpace(parts[0]))
+	}
+	end, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || end < 1 {
+		return 0, 0, false, fmt.Errorf("invalid lines end %q", strings.TrimSpace(parts[1]))
+	}
+	if start > end {
+		return 0, 0, false, fmt.Errorf("invalid lines range %q: start must be <= end", spec)
+	}
+	return start, end, true, nil
 }
 
 func runLogPath(host Host) (string, error) {
