@@ -8,6 +8,7 @@
 | v0.2 | 2026-07-04 | Codex | 补充 `--hosts-file` 批量临时 IP/hostname 场景，通过共享 auth/defaults 执行初始化脚本，不要求先保存所有 host |
 | v0.3 | 2026-07-04 | Codex | 根据 TODO 的 host 日志优化补充 batch-run 前置日志阶段：`task_id`、大输出外置文件、`log --id` 查看输出 |
 | v0.4 | 2026-07-04 | Codex | 调整 output 内联阈值为 1024 bytes，优先保证 JSONL 可读性 |
+| v0.5 | 2026-07-04 | Codex | 调整 `log --id` 仍支持 `--tail`，新增 `--lines start,end` 精确行范围 |
 
 ## 关联文档
 
@@ -299,6 +300,8 @@ const maxRunOutputPreviewBytes = 512
 
 ```bash
 sshc log --id 20260704-173012-a1b2c3
+sshc log --id 20260704-173012-a1b2c3 --tail 80
+sshc log --id 20260704-173012-a1b2c3 --lines 120,180
 ```
 
 行为：
@@ -309,9 +312,30 @@ sshc log --id 20260704-173012-a1b2c3
 - 如果找不到 task，返回非 0。
 - 如果 output 文件缺失，打印 task 元信息后返回明确错误。
 
-`--id` 与 target/match/tail 的关系：
+### `sshc log --lines`
 
-- `--id` 是精确查看某次执行输出，设置后忽略 `--tail`。
+新增：
+
+```bash
+sshc log devhost --lines 20,80
+sshc log --id 20260704-173012-a1b2c3 --lines 120,180
+```
+
+规则：
+
+- `--lines start,end` 使用 1-based 闭区间，包含 start 和 end。
+- `start` 和 `end` 都必须是正整数，且 `start <= end`。
+- 初版不支持省略形式，例如 `10,`、`,100`、`-50`，避免和 `--tail` 语义重叠。
+- `--lines` 和 `--tail` 互斥。
+- 未设置 `--id` 时，`--lines` 作用于筛选后的 JSONL 记录行。
+- 设置 `--id` 时，`--lines` 作用于该 task 的 output 内容行。
+- 行范围超过实际行数时，只输出存在的行；完全超出范围时输出为空但不报错。
+
+`--id` 与 target/match/tail/lines 的关系：
+
+- `--id` 是精确查看某次执行输出，`--tail` 仍然有效，用于查看该 task 输出的最后 N 行。
+- `--id --lines start,end` 用于查看该 task 输出的指定行号范围。
+- `--tail` 与 `--lines` 互斥。
 - `--id` 可以和 target 同用，用于只在某个 host log 中查找。
 - `--id` 不建议和 `--match` 同用；初版可直接互斥，避免用户以为匹配的是 output 文件内容。
 
@@ -390,6 +414,8 @@ ReadHostsFile(path string) ([]string, error)
 NewRunTaskID(startedAt time.Time, host Host, rec RunLogRecord) string
 RunOutputPath(taskID string, startedAt time.Time) (string, string, error)
 ReadRunLogOutputByID(target, taskID string) ([]byte, error)
+SelectLogLines(lines []string, rangeSpec string, tail int) ([]string, error)
+ParseLogLineRange(spec string) (start int, end int, ok bool, err error)
 ```
 
 说明：
@@ -554,9 +580,15 @@ docs/TODO.md
 9. `log` 增加 `--id`：
    - `sshc log --id <task_id>` 查找所有 host。
    - `sshc log devhost --id <task_id>` 限定单 host。
+   - `--id --tail N` 输出该 task 输出内容的最后 N 行。
+   - `--id --lines start,end` 输出该 task 输出内容的指定行号范围。
    - `--id` 与 `--match` 互斥。
-10. README/中文 README 增加简短说明。
-11. TODO 标记 host 日志优化完成。
+10. `log` 增加 `--lines start,end`：
+   - 不设置 `--id` 时作用于 JSONL 记录行。
+   - 设置 `--id` 时作用于 task output 内容行。
+   - `--lines` 与 `--tail` 互斥。
+11. README/中文 README 增加简短说明。
+12. TODO 标记 host 日志优化完成。
 
 测试：
 
@@ -571,7 +603,12 @@ TestReadRunLogOutputByIDFromInlineOutput
 TestReadRunLogOutputByIDFromOutputFile
 TestReadRunLogOutputByIDReturnsErrorWhenMissing
 TestLogCommandShowsOutputByID
+TestLogCommandShowsOutputByIDWithTail
+TestLogCommandShowsOutputByIDWithLines
 TestLogCommandRejectsIDWithMatch
+TestLogCommandRejectsTailWithLines
+TestLogCommandShowsJsonLinesRange
+TestParseLogLineRange
 TestLoginWritesTaskIDWithoutOutputFile
 ```
 
