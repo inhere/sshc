@@ -889,7 +889,7 @@ func TestBuildHostListTable(t *testing.T) {
 	}}
 
 	out := buildHostListTable(hosts, false)
-	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.*.*.8:2222", "key:~/.ssh/id_rsa", "testing host"} {
+	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.*.*.8:2222", "key", "testing host"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("table output %q does not contain %q", out, want)
 		}

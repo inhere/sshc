@@ -68,7 +68,7 @@ func buildHostListTable(hosts []core.Host, showIP bool) string {
 		if remark == "" {
 			remark = "-"
 		}
-		tb.AddRow(name, core.HostGroupName(host), fmt.Sprintf("%s@%s:%d", host.User, displayHostIP(host.IP, showIP), host.Port), hostAuthLabel(host), remark)
+		tb.AddRow(name, core.HostGroupName(host), fmt.Sprintf("%s@%s:%d", host.User, displayHostIP(host.IP, showIP), host.Port), core.AuthLabel(host), remark)
 	}
 	return tb.String()
 }
@@ -86,11 +86,4 @@ func displayHostIP(ip string, showIP bool) string {
 		return ip
 	}
 	return fmt.Sprintf("%d.*.*.%d", ipv4[0], ipv4[3])
-}
-
-func hostAuthLabel(host core.Host) string {
-	if strings.TrimSpace(host.KeyPath) != "" {
-		return "key:" + strings.TrimSpace(host.KeyPath)
-	}
-	return "password"
 }

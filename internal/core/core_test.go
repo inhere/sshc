@@ -650,6 +650,121 @@ func TestLoadConfigSettingsReadsLogsPath(t *testing.T) {
 	}
 }
 
+func TestSaveConfigEncryptsAuthProfilePassword(t *testing.T) {
+	path := withTempConfig(t)
+	config := &Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", Password: "secret"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}
+	if err := SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthProfiles[0].Password != "secret" {
+		t.Fatalf("SaveConfig mutated source auth profile: %+v", config.AuthProfiles[0])
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, `"password":"secret"`) || strings.Contains(content, `"password": "secret"`) {
+		t.Fatalf("stored config contains plaintext password: %s", content)
+	}
+	if !strings.Contains(content, `"password_enc": "v1:`) {
+		t.Fatalf("stored config does not contain encrypted profile password: %s", content)
+	}
+
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.AuthProfiles) != 1 || loaded.AuthProfiles[0].Password != "secret" {
+		t.Fatalf("loaded auth profiles = %+v", loaded.AuthProfiles)
+	}
+}
+
+func TestDecryptConfigPasswordMissingKey(t *testing.T) {
+	withTempConfig(t)
+	config := &Config{AuthProfiles: []AuthProfile{{Name: "dev-root", PasswordEnc: "v1:AAAA"}}}
+	err := decryptConfigPasswords(config)
+	if err == nil || !strings.Contains(err.Error(), "password key file not found") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMaskConfigHidesSensitiveFields(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", Password: "secret", PasswordEnc: "v1:secret"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", Password: "host-secret", PasswordEnc: "v1:host-secret"}},
+	}
+
+	masked := MaskConfig(config)
+	if masked.AuthProfiles[0].Password != "" || masked.AuthProfiles[0].PasswordEnc != MaskedSecret {
+		t.Fatalf("masked profile = %+v", masked.AuthProfiles[0])
+	}
+	if masked.Hosts[0].Password != "" || masked.Hosts[0].PasswordEnc != MaskedSecret {
+		t.Fatalf("masked host = %+v", masked.Hosts[0])
+	}
+	if config.AuthProfiles[0].Password != "secret" || config.Hosts[0].Password != "host-secret" {
+		t.Fatalf("MaskConfig mutated input: %+v", config)
+	}
+}
+
+func TestAuthLabel(t *testing.T) {
+	tests := []struct {
+		host Host
+		want string
+	}{
+		{host: Host{AuthRef: "dev-root", KeyPath: "~/.ssh/id_rsa"}, want: "auth:dev-root"},
+		{host: Host{KeyPath: "~/.ssh/id_rsa", Password: "secret"}, want: "key+password"},
+		{host: Host{KeyPath: "~/.ssh/id_rsa"}, want: "key"},
+		{host: Host{PasswordEnc: "v1:secret"}, want: "password"},
+		{host: Host{}, want: "-"},
+	}
+	for _, tt := range tests {
+		if got := AuthLabel(tt.host); got != tt.want {
+			t.Fatalf("AuthLabel(%+v) = %q, want %q", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestDoctorReportsDuplicateHosts(t *testing.T) {
+	issues := CheckConfig(Config{Hosts: []Host{
+		{Name: "devhost", IP: "10.0.0.8"},
+		{Name: "devhost", IP: "10.0.0.8"},
+	}})
+	if !HasDoctorErrors(issues) || !doctorMessagesContain(issues, "duplicate host name") || !doctorMessagesContain(issues, "duplicate host ip") {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestDoctorReportsMissingAuthRef(t *testing.T) {
+	issues := CheckConfig(Config{Hosts: []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "missing"}}})
+	if !HasDoctorErrors(issues) || !doctorMessagesContain(issues, `missing auth profile "missing"`) {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestDoctorReportsInvalidPortAndHostKeyCheck(t *testing.T) {
+	issues := CheckConfig(Config{
+		Defaults: Defaults{HostKeyCheck: "bad"},
+		Hosts:    []Host{{Name: "devhost", IP: "10.0.0.8", Port: 70000, HostKeyCheck: "bad"}},
+	})
+	if !HasDoctorErrors(issues) || !doctorMessagesContain(issues, "invalid port") || !doctorMessagesContain(issues, "invalid host_key_check") {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func doctorMessagesContain(issues []DoctorIssue, want string) bool {
+	for _, issue := range issues {
+		if strings.Contains(issue.Message, want) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestEncryptPasswordRoundTrip(t *testing.T) {
 	withTempConfig(t)
 	encrypted, err := EncryptPassword("secret")
