@@ -38,6 +38,7 @@ func NewApp() *gcli.App {
 		command.NewCfgCmd(),
 		command.NewHostCmd(),
 		command.NewRunCmd(),
+		command.NewBatchRunCmd(),
 		command.NewUploadCmd(),
 		command.NewDownloadCmd(),
 		command.NewListCmd(),
