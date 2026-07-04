@@ -18,18 +18,21 @@
   - [x] 输出 size/files/dirs/elapsed 传输统计
   - [x] 新增 --sha256 文件级校验
   - [x] local-path 支持使用 * 通配符上传多个文件
-  - [ ] local-path 支持逗号分隔多个文件
   - [x] 新增选项 --remove-dir 是否上传前先删除远程目录
 - [x] 新增 download/dl 从远程下载 文件/目录 到本地路径下
   - [x] 输出 size/files/dirs/elapsed 传输统计
   - [x] 新增 --sha256 文件级校验
 - [x] 新增 login/connect 命令，连接并打开 pty 可以连续操作，默认只记录连接元信息
-- [ ] 新增 cert 保存账号或凭证信息用于多个主机共享登录信息
+- [ ] 新增 config/cfg 命令，用于简单的管理 sshc 的配置
+  - [ ] 新增 cfg cert 保存账号或凭证信息用于多个主机共享登录信息
 - [ ] 新增在多个主机(逗号分隔指定多个或者从一个txt文件读取多个ip/host)批量执行指定脚本能力
 - [ ] 通过中间机器作为跳板到ssh另一个远程机器执行命令等
   - [ ] 另一种通过 pve 主机到上面的 lxc 或者 vhost 执行命令
 - [ ] login 命令
   - [ ] 未输入或未匹配到host时，使用 cliui newui 交互选择目标
+- [ ] 支持导入与导出 hosts 配置数据
+  - 导出时会加密整个文件数据，同时生成一个一次性key string
+  - 导入时需要指定导出的文件和配套的 key string 才行
 
 ## [x] 整理项目结构
 

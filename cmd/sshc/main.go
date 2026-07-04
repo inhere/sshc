@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/gookit/goutil/x/ccolor"
 	"github.com/inhere/sshc/internal/bootstrap"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	bootstrap.SetBuildInfo(Version, GitCommit, BuildDate)
 
 	if err := bootstrap.NewApp().RunWithArgs(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		ccolor.Fprintln(os.Stderr, "<err>ERROR:</>", err)
 		os.Exit(1)
 	}
 }
