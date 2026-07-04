@@ -93,6 +93,7 @@ Notes:
   - Passwords are encrypted before saving to hosts.json.
   - The local encryption key is stored at ~/.config/sshc/key.
 `)
+	cmd.Aliases = []string{"set"}
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.BoolVar(&addOpts.Interactive, "interactive", false, "interactive host entry;;I")
 		c.BoolVar(&addOpts.FromClipboard, "from-clipboard", false, "read host fields from clipboard")

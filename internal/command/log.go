@@ -45,6 +45,7 @@ Notes:
   - Without target, all host log files are read in file-name order.
   - With target, sshc resolves a saved host first, so IP can map to the host name log.
 `)
+	cmd.Aliases = []string{"logs"}
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&logOpts.Match, "match", "", "match log lines by keyword;;m")
 		c.IntVar(&logOpts.Tail, "tail", 200, "max lines to print")
