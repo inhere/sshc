@@ -211,6 +211,17 @@ func runLogDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	config, err := LoadConfigSettings()
+	if err != nil {
+		return "", err
+	}
+	if path := strings.TrimSpace(config.LogsPath); path != "" {
+		path = expandUserPath(path)
+		if filepath.IsAbs(path) {
+			return path, nil
+		}
+		return filepath.Join(root, path), nil
+	}
 	return filepath.Join(root, logDirName), nil
 }
 

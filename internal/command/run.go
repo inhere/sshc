@@ -102,7 +102,7 @@ Notes:
   - With --script --sudo-user, the uploaded script is readable by local remote users.
   - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
-  - Every run writes a JSON log line under ~/.config/sshc/logs/<host>.log.
+  - Every run writes a JSON log line under the configured logs_path or ~/.config/sshc/logs.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {
 		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")

@@ -631,9 +631,78 @@ func TestStorePathDefaultsToDotConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".config", "sshc", "hosts.json")
+	want := filepath.Join(home, ".config", "sshc", ConfigFileName)
 	if path != want {
 		t.Fatalf("store path = %q, want %q", path, want)
+	}
+}
+
+func TestLoadStoreSupportsLegacyHostsJSON(t *testing.T) {
+	t.Setenv(ConfigEnvKey, "")
+	home := filepath.Join(t.TempDir(), "home")
+	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
+
+	legacyPath := filepath.Join(home, ".config", "sshc", LegacyConfigFileName)
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}` + "\n")
+	if err := os.WriteFile(legacyPath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := LoadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Hosts) != 1 || store.Hosts[0].Name != "devhost" {
+		t.Fatalf("loaded store = %+v", store)
+	}
+}
+
+func TestRunLogDirUsesConfiguredLogsPath(t *testing.T) {
+	path := withTempConfig(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"logs_path":"runtime/logs"}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := runLogDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := userHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".config", "sshc", "runtime", "logs")
+	if dir != want {
+		t.Fatalf("log dir = %q, want %q", dir, want)
+	}
+}
+
+func TestRunLogDirExpandsConfiguredLogsPath(t *testing.T) {
+	path := withTempConfig(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"logs_path":"~/sshc-logs"}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := runLogDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := userHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "sshc-logs")
+	if dir != want {
+		t.Fatalf("log dir = %q, want %q", dir, want)
 	}
 }
 
@@ -790,7 +859,7 @@ func withTempConfig(t *testing.T) string {
 	home := filepath.Join(t.TempDir(), "home")
 	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 
-	path := filepath.Join(home, "hosts.json")
+	path := filepath.Join(home, ConfigFileName)
 	t.Setenv(ConfigEnvKey, path)
 	return path
 }

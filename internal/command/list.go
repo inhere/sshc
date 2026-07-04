@@ -40,7 +40,7 @@ Output:
 Notes:
   - IPv4 addresses are masked by default, for example 10.*.*.8.
   - Use --show-ip to print full IP addresses.
-  - Hosts are read from ~/.config/sshc/hosts.json by default.
+  - Hosts are read from ~/.config/sshc/sshc.config.json by default.
   - Set SSHC_CONFIG to use a different hosts file.
 `)
 	cmd.OnAdd = func(c *capp.Cmd) {

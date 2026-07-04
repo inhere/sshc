@@ -999,7 +999,7 @@ func withTempConfig(t *testing.T) string {
 	home := filepath.Join(t.TempDir(), "home")
 	t.Cleanup(core.SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 
-	path := filepath.Join(home, "hosts.json")
+	path := filepath.Join(home, core.ConfigFileName)
 	t.Setenv(core.ConfigEnvKey, path)
 	return path
 }

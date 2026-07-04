@@ -89,8 +89,8 @@ Notes:
   - If both password and --key are provided, key authentication is tried first.
   - --from-clipboard accepts key=value lines or one line: ip,user,password,name,port.
   - Adding the same name or IP updates the saved host.
-  - Hosts are stored in ~/.config/sshc/hosts.json by default.
-  - Passwords are encrypted before saving to hosts.json.
+  - Hosts are stored in ~/.config/sshc/sshc.config.json by default.
+  - Passwords are encrypted before saving to sshc.config.json.
   - The local encryption key is stored at ~/.config/sshc/key.
 `)
 	cmd.Aliases = []string{"set"}

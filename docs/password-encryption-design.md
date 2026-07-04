@@ -2,12 +2,12 @@
 
 ## 当前结论
 
-`sshc` 默认不再把新增或更新的主机密码明文写入 `hosts.json`。
+`sshc` 默认不再把新增或更新的主机密码明文写入 `sshc.config.json`。
 
 保存主机时：
 
 - 内存中的 `Host.Password` 仍用于本次 SSH 认证。
-- 写入 `hosts.json` 前会把 `password` 加密为 `password_enc`。
+- 写入 `sshc.config.json` 前会把 `password` 加密为 `password_enc`。
 - 落盘后的 `password` 字段为空并因 `omitempty` 不写入。
 - 旧版本已有的明文 `password` 字段仍可读取，避免升级后配置失效。
 
@@ -47,8 +47,8 @@
 
 需要明确：
 
-- 攻击者同时拿到 `~/.config/sshc/hosts.json` 和 `~/.config/sshc/key` 时，可以解密密码。
-- 跨机器迁移密码配置时，需要同时迁移 `hosts.json` 和 `key`。
+- 攻击者同时拿到 `~/.config/sshc/sshc.config.json` 和 `~/.config/sshc/key` 时，可以解密密码。
+- 跨机器迁移密码配置时，需要同时迁移 `sshc.config.json` 和 `key`。
 - 删除或丢失 `key` 后，已有 `password_enc` 无法恢复，只能重新添加密码。
 - 仍然建议优先使用 SSH key 登录，而不是密码登录。
 

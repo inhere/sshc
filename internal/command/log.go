@@ -42,6 +42,7 @@ Log files:
   ~/.config/sshc/logs/<host>.log
 
 Notes:
+  - Configure logs_path in sshc.config.json to use another log directory.
   - Without target, all host log files are read in file-name order.
   - With target, sshc resolves a saved host first, so IP can map to the host name log.
 `)

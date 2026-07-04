@@ -11,9 +11,9 @@ remote operations where a full automation platform would be too heavy.
 
 ## Features
 
-- Manage SSH hosts in `~/.config/sshc/hosts.json`
+- Manage SSH hosts in `~/.config/sshc/sshc.config.json`
 - Read simple host entries from `~/.ssh/config`
-- Encrypt saved passwords before writing `hosts.json`
+- Encrypt saved passwords before writing `sshc.config.json`
 - Run remote commands by saved host name, IP, or unique partial match
 - Execute local shell scripts on remote hosts
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
@@ -213,7 +213,8 @@ sshc log devhost --tail 50
 sshc log devhost -m error --tail 50
 ```
 
-Every `run` writes one JSON log line to `~/.config/sshc/logs/<host>.log`.
+Every `run` writes one JSON log line to `~/.config/sshc/logs/<host>.log` by
+default.
 Interactive `login` sessions only record connection metadata.
 
 ### Interactive Login
@@ -244,13 +245,25 @@ If multiple hosts match, `sshc` returns the candidate list instead of guessing.
 
 ## Configuration
 
-Default host config:
+Default config:
 
 ```text
-~/.config/sshc/hosts.json
+~/.config/sshc/sshc.config.json
 ```
 
-Run logs:
+Example config:
+
+```json
+{
+  "logs_path": "logs",
+  "hosts": []
+}
+```
+
+`logs_path` can be absolute, start with `~`, or be relative to
+`~/.config/sshc`.
+
+Default run logs:
 
 ```text
 ~/.config/sshc/logs/<host>.log
@@ -259,15 +272,17 @@ Run logs:
 Use another config file:
 
 ```bash
-SSHC_CONFIG=/path/to/hosts.json sshc list
+SSHC_CONFIG=/path/to/sshc.config.json sshc list
 ```
 
 Saved hosts override entries loaded from `~/.ssh/config` when the name or IP is
 the same.
+For compatibility, `~/.config/sshc/hosts.json` is still read when the new default
+config file does not exist.
 
 ## Security Notes
 
-- Saved passwords are encrypted before being written to `hosts.json`.
+- Saved passwords are encrypted before being written to `sshc.config.json`.
 - The local encryption key is stored at `~/.config/sshc/key`; keep both files private.
 - Legacy plaintext `password` fields are still readable for compatibility.
 - Prefer SSH keys over passwords when possible.

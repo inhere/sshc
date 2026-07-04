@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	DefaultSSHPort = 22
-	DefaultGroup   = "default"
-	ConfigEnvKey   = "SSHC_CONFIG"
+	DefaultSSHPort       = 22
+	DefaultGroup         = "default"
+	ConfigEnvKey         = "SSHC_CONFIG"
+	ConfigFileName       = "sshc.config.json"
+	LegacyConfigFileName = "hosts.json"
 )
 
 var userHomeDir = os.UserHomeDir
@@ -34,7 +36,8 @@ type Host struct {
 }
 
 type Store struct {
-	Hosts []Host `json:"hosts"`
+	LogsPath string `json:"logs_path,omitempty"`
+	Hosts    []Host `json:"hosts"`
 }
 
 func (s *Store) Upsert(host Host) error {
@@ -149,16 +152,12 @@ func HostGroupName(host Host) string {
 }
 
 func LoadStore() (*Store, error) {
-	path, err := StorePath()
+	path, data, err := readConfigFile()
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Store{}, nil
-		}
-		return nil, err
+	if len(data) == 0 {
+		return &Store{}, nil
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return &Store{}, nil
@@ -191,6 +190,22 @@ func LoadStoreWithSSHConfig() (*Store, error) {
 			continue
 		}
 		store.Hosts = append(store.Hosts, host)
+	}
+	return store, nil
+}
+
+func LoadConfigSettings() (Store, error) {
+	path, data, err := readConfigFile()
+	if err != nil {
+		return Store{}, err
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return Store{}, nil
+	}
+
+	var store Store
+	if err := json.Unmarshal(data, &store); err != nil {
+		return Store{}, fmt.Errorf("read config %s: %w", path, err)
 	}
 	return store, nil
 }
@@ -348,7 +363,45 @@ func StorePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "hosts.json"), nil
+	return filepath.Join(dir, ConfigFileName), nil
+}
+
+func LegacyStorePath() (string, error) {
+	dir, err := configRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, LegacyConfigFileName), nil
+}
+
+func readConfigFile() (string, []byte, error) {
+	path, err := StorePath()
+	if err != nil {
+		return "", nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return path, data, nil
+	}
+	if !os.IsNotExist(err) {
+		return path, nil, err
+	}
+	if strings.TrimSpace(os.Getenv(ConfigEnvKey)) != "" {
+		return path, nil, nil
+	}
+
+	legacyPath, legacyErr := LegacyStorePath()
+	if legacyErr != nil {
+		return "", nil, legacyErr
+	}
+	data, legacyErr = os.ReadFile(legacyPath)
+	if legacyErr == nil {
+		return legacyPath, data, nil
+	}
+	if os.IsNotExist(legacyErr) {
+		return path, nil, nil
+	}
+	return legacyPath, nil, legacyErr
 }
 
 func SetUserHomeDirForTest(fn func() (string, error)) func() {
