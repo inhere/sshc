@@ -3,7 +3,8 @@ module github.com/inhere/sshc
 go 1.25.0
 
 require (
-	github.com/gookit/cliui v0.3.1
+	github.com/gookit/cliui v0.3.2-0.20260624120656-906827b77d7b
+	github.com/gookit/gcli/v3 v3.8.1
 	github.com/gookit/goutil v0.8.0
 	github.com/melbahja/goph v1.5.1
 	github.com/pkg/sftp v1.13.10

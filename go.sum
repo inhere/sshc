@@ -2,10 +2,12 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gookit/assert v0.1.1 h1:lh3GcawXe/p+cU7ESTZ5Ui3Sm/x8JWpIis4/1aF0mY0=
 github.com/gookit/assert v0.1.1/go.mod h1:jS5bmIVQZTIwk42uXl4lyj4iaaxx32tqH16CFj0VX2E=
-github.com/gookit/cliui v0.3.1 h1:qyKXWTriNNvSgn42BqUBOA35lUjyp1U4Ptj5vaUSycY=
-github.com/gookit/cliui v0.3.1/go.mod h1:/Yk2UVapnENybchEgXsv4JbX2BPY2tvyT0FfdnzVpDw=
+github.com/gookit/cliui v0.3.2-0.20260624120656-906827b77d7b h1:gn4rA0sO4/vgdh55Ajm7wKpRJ1iVHlb0Tm9+p34wDsw=
+github.com/gookit/cliui v0.3.2-0.20260624120656-906827b77d7b/go.mod h1:/Yk2UVapnENybchEgXsv4JbX2BPY2tvyT0FfdnzVpDw=
 github.com/gookit/color v1.6.2-0.20260604125953-289d54c4470a h1:utlwkRKoYYXGEGyQBQSy7p/gYxOV9SQXvF9JhaRoLmA=
 github.com/gookit/color v1.6.2-0.20260604125953-289d54c4470a/go.mod h1:9ACFc7/1IpHGBW8RwuDm/0YEnhg3dwwXpoMsmtyHfjs=
+github.com/gookit/gcli/v3 v3.8.1 h1:Sr4O7Js/akzNC72TlZQxOCzJC/aLewhANxcQzxbK1d4=
+github.com/gookit/gcli/v3 v3.8.1/go.mod h1:o+bAsqwwH+XdOcmWnZmZ8GJQ7A1GluqxYCQ83H63YME=
 github.com/gookit/goutil v0.8.0 h1:efZWxfesXw8+5tQfTfRMSIC6A0ax527/H+A/aIiaSrw=
 github.com/gookit/goutil v0.8.0/go.mod h1:vJS9HXctYTCLtCsZot5L5xF+O1oR17cDYO9R0HxBmnU=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=

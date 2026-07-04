@@ -8,27 +8,19 @@ import (
 	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/cliui/show/table"
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 )
 
 var listOpts = struct {
 	ShowIP bool
 }{}
 
-func NewListCmd() *capp.Cmd {
-	cmd := capp.NewCmd("list", "list saved ssh hosts", func(c *capp.Cmd) error {
-		store, err := core.LoadStoreWithSSHConfig()
-		if err != nil {
-			return err
-		}
-		out := buildHostListTable(store.Hosts, listOpts.ShowIP)
-		if out != "" {
-			fmt.Fprint(c.Output(), out)
-		}
-		return nil
-	})
-	cmd.Aliases = []string{"ls"}
-	cmd.LongHelp = strings.TrimSpace(`
+func NewListCmd() *gcli.Command {
+	cmd := &gcli.Command{
+		Name:    "list",
+		Desc:    "list saved ssh hosts",
+		Aliases: []string{"ls"},
+		Help: strings.TrimSpace(`
 Examples:
   sshc list
   sshc ls
@@ -42,9 +34,21 @@ Notes:
   - Use --show-ip to print full IP addresses.
   - Hosts are read from ~/.config/sshc/sshc.config.json by default.
   - Set SSHC_CONFIG to use a different hosts file.
-`)
-	cmd.OnAdd = func(c *capp.Cmd) {
-		c.BoolVar(&listOpts.ShowIP, "show-ip", false, "show full host IP address")
+`),
+		Config: func(c *gcli.Command) {
+			c.BoolOpt(&listOpts.ShowIP, "show-ip", "", false, "show full host IP address")
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			store, err := core.LoadStoreWithSSHConfig()
+			if err != nil {
+				return err
+			}
+			out := buildHostListTable(store.Hosts, listOpts.ShowIP)
+			if out != "" {
+				fmt.Fprint(cmdOutput(c), out)
+			}
+			return nil
+		},
 	}
 	return cmd
 }

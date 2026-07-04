@@ -13,7 +13,7 @@ import (
 	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/cliui/cutypes"
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 	"github.com/gookit/goutil/x/termenv"
 	"golang.org/x/term"
 )
@@ -31,49 +31,12 @@ var addOpts = struct {
 	Port          int
 }{Port: core.DefaultSSHPort}
 
-func NewAddCmd() *capp.Cmd {
-	cmd := capp.NewCmd("add", "add or update an ssh host", func(c *capp.Cmd) error {
-		if addOpts.Port == 0 {
-			addOpts.Port = core.DefaultSSHPort
-		}
-		if addOpts.Interactive && addOpts.FromClipboard {
-			return fmt.Errorf("--interactive and --from-clipboard cannot be used together")
-		}
-
-		var (
-			host core.Host
-			err  error
-		)
-		if addOpts.Interactive {
-			host, err = collectInteractiveHost(cutypes.Input, c.Output())
-		} else if addOpts.FromClipboard {
-			text, readErr := readClipboard()
-			if readErr != nil {
-				return readErr
-			}
-			host, err = parseClipboardHost(text)
-		} else {
-			host, err = buildHostFromAddOptions()
-		}
-		if err != nil {
-			return err
-		}
-
-		store, err := core.LoadStore()
-		if err != nil {
-			return err
-		}
-		if err := store.Upsert(host); err != nil {
-			return err
-		}
-		if err := core.SaveStore(store); err != nil {
-			return err
-		}
-
-		fmt.Fprintf(c.Output(), "saved %s (%s:%d)\n", host.Name, host.IP, host.Port)
-		return nil
-	})
-	cmd.LongHelp = strings.TrimSpace(`
+func NewAddCmd() *gcli.Command {
+	cmd := &gcli.Command{
+		Name:    "add",
+		Desc:    "add or update an ssh host",
+		Aliases: []string{"set"},
+		Help: strings.TrimSpace(`
 Examples:
   sshc add --ip 192.168.1.10 -u root -p password
   sshc add -I
@@ -92,19 +55,60 @@ Notes:
   - Hosts are stored in ~/.config/sshc/sshc.config.json by default.
   - Passwords are encrypted before saving to sshc.config.json.
   - The local encryption key is stored at ~/.config/sshc/key.
-`)
-	cmd.Aliases = []string{"set"}
-	cmd.OnAdd = func(c *capp.Cmd) {
-		c.BoolVar(&addOpts.Interactive, "interactive", false, "interactive host entry;;I")
-		c.BoolVar(&addOpts.FromClipboard, "from-clipboard", false, "read host fields from clipboard")
-		c.StringVar(&addOpts.IP, "ip", "", "ssh host ip or hostname")
-		c.StringVar(&addOpts.Name, "name", "", "host alias")
-		c.StringVar(&addOpts.User, "user", "", "ssh username;;u")
-		c.StringVar(&addOpts.Password, "password", "", "ssh password;;p")
-		c.StringVar(&addOpts.KeyPath, "key", "", "ssh private key path")
-		c.StringVar(&addOpts.Remark, "remark", "", "host remark")
-		c.StringVar(&addOpts.Group, "group", core.DefaultGroup, "host group")
-		c.IntVar(&addOpts.Port, "port", core.DefaultSSHPort, "ssh port")
+`),
+		Config: func(c *gcli.Command) {
+			c.BoolOpt(&addOpts.Interactive, "interactive", "I", false, "interactive host entry")
+			c.BoolOpt(&addOpts.FromClipboard, "from-clipboard", "", false, "read host fields from clipboard")
+			c.StrOpt(&addOpts.IP, "ip", "", "", "ssh host ip or hostname")
+			c.StrOpt(&addOpts.Name, "name", "", "", "host alias")
+			c.StrOpt(&addOpts.User, "user", "u", "", "ssh username")
+			c.StrOpt(&addOpts.Password, "password", "p", "", "ssh password")
+			c.StrOpt(&addOpts.KeyPath, "key", "", "", "ssh private key path")
+			c.StrOpt(&addOpts.Remark, "remark", "", "", "host remark")
+			c.StrOpt(&addOpts.Group, "group", "", core.DefaultGroup, "host group")
+			c.IntOpt(&addOpts.Port, "port", "", core.DefaultSSHPort, "ssh port")
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			if addOpts.Port == 0 {
+				addOpts.Port = core.DefaultSSHPort
+			}
+			if addOpts.Interactive && addOpts.FromClipboard {
+				return fmt.Errorf("--interactive and --from-clipboard cannot be used together")
+			}
+
+			var (
+				host core.Host
+				err  error
+			)
+			if addOpts.Interactive {
+				host, err = collectInteractiveHost(cutypes.Input, cmdOutput(c))
+			} else if addOpts.FromClipboard {
+				text, readErr := readClipboard()
+				if readErr != nil {
+					return readErr
+				}
+				host, err = parseClipboardHost(text)
+			} else {
+				host, err = buildHostFromAddOptions()
+			}
+			if err != nil {
+				return err
+			}
+
+			store, err := core.LoadStore()
+			if err != nil {
+				return err
+			}
+			if err := store.Upsert(host); err != nil {
+				return err
+			}
+			if err := core.SaveStore(store); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmdOutput(c), "saved %s (%s:%d)\n", host.Name, host.IP, host.Port)
+			return nil
+		},
 	}
 	return cmd
 }

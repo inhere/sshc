@@ -8,72 +8,18 @@ import (
 
 	"github.com/inhere/sshc/internal/core"
 
-	"github.com/gookit/goutil/cflag"
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 )
 
 var runRemote = core.ExecuteRemote
 
-func NewRunCmd() *capp.Cmd {
+func NewRunCmd() *gcli.Command {
 	opts := &runFlagOptions{}
-	cmd := capp.NewCmd("run", "run a remote command", func(c *capp.Cmd) error {
-		target := strings.TrimSpace(c.Arg("target").String())
-		command := strings.TrimSpace(strings.Join(c.Arg("command").Strings(), " "))
-		if command == "" && strings.TrimSpace(opts.Script) == "" {
-			return errors.New("remote command or --script is required")
-		}
-		if command != "" && strings.TrimSpace(opts.Script) != "" {
-			return errors.New("remote command and --script cannot be used together")
-		}
-
-		runOptions, err := buildRunOptions(*opts)
-		if err != nil {
-			return err
-		}
-
-		store, err := core.LoadStoreWithSSHConfig()
-		if err != nil {
-			return err
-		}
-		host, ok, err := store.ResolveHost(target)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("host %q not found", target)
-		}
-
-		startedAt := core.Now()
-		if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
-			runOptions.RemoteScriptPath = core.NewRemoteScriptPathInDir(startedAt, runOptions.RemoteScriptDir)
-		}
-		out, err := runRemote(host, command, runOptions)
-		logErr := core.AppendRunLog(host, core.RunLogRecord{
-			Target:           target,
-			Command:          command,
-			Status:           core.RunStatus(err),
-			StartedAt:        startedAt,
-			DurationMS:       core.SinceMS(startedAt),
-			Output:           string(out),
-			Error:            core.ErrorString(err),
-			CWD:              runOptions.CWD,
-			Script:           runOptions.ScriptPath,
-			RemoteScript:     runOptions.RemoteScriptPath,
-			KeepRemoteScript: runOptions.KeepRemoteScript,
-		})
-		if len(out) > 0 {
-			fmt.Fprint(c.Output(), string(out))
-		}
-		if err != nil {
-			writeRunScriptFailureContext(c.Output(), runOptions)
-		}
-		if err == nil && logErr != nil {
-			return logErr
-		}
-		return err
-	})
-	cmd.Aliases = []string{"exec"}
-	cmd.LongHelp = strings.TrimSpace(`
+	cmd := &gcli.Command{
+		Name:    "run",
+		Desc:    "run a remote command",
+		Aliases: []string{"exec"},
+		Help: strings.TrimSpace(`
 Examples:
   sshc run devhost -- uptime
   sshc run 192.168.1.10 -- docker ps
@@ -103,28 +49,93 @@ Notes:
   - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under the configured logs_path or ~/.config/sshc/logs.
-`)
-	cmd.OnAdd = func(c *capp.Cmd) {
-		c.StringVar(&opts.Timeout, "timeout", "", "command timeout, eg: 30s, 2m, or bare seconds")
-		c.StringVar(&opts.KillAfter, "kill-after", "", "force kill delay after timeout, eg: 30s or bare seconds")
-		c.Var(&opts.Env, "env", "environment variable k=v, repeatable;;e")
-		c.StringVar(&opts.EnvFile, "env-file", "", "load environment variables from file;;efile")
-		c.StringVar(&opts.CWD, "cwd", "", "remote working directory")
-		c.BoolVar(&opts.Sudo, "sudo", false, "run remote command with sudo")
-		c.StringVar(&opts.SudoUser, "sudo-user", "", "run remote command as user via sudo")
-		c.StringVar(&opts.Script, "script", "", "local shell script to upload and run")
-		c.StringVar(&opts.RemoteScriptDir, "remote-script-dir", "", "remote directory for uploaded script")
-		c.BoolVar(&opts.KeepRemoteScript, "keep-remote-script", false, "keep uploaded remote script")
-		c.AddArg("target", "host ip or name", true)
-		c.AddArg("command", "remote command after --", false, nil, true)
+`),
+		Config: func(c *gcli.Command) {
+			c.StrOpt(&opts.Timeout, "timeout", "", "", "command timeout, eg: 30s, 2m, or bare seconds")
+			c.StrOpt(&opts.KillAfter, "kill-after", "", "", "force kill delay after timeout, eg: 30s or bare seconds")
+			c.VarOpt(&opts.Env, "env", "e", "environment variable k=v, repeatable")
+			c.StrOpt(&opts.EnvFile, "env-file", "", "", "load environment variables from file")
+			c.StrOpt(&opts.EnvFile, "efile", "", "", "load environment variables from file")
+			c.StrOpt(&opts.CWD, "cwd", "", "", "remote working directory")
+			c.BoolOpt(&opts.Sudo, "sudo", "", false, "run remote command with sudo")
+			c.StrOpt(&opts.SudoUser, "sudo-user", "", "", "run remote command as user via sudo")
+			c.StrOpt(&opts.Script, "script", "", "", "local shell script to upload and run")
+			c.StrOpt(&opts.RemoteScriptDir, "remote-script-dir", "", "", "remote directory for uploaded script")
+			c.BoolOpt(&opts.KeepRemoteScript, "keep-remote-script", "", false, "keep uploaded remote script")
+			c.AddArg("target", "host ip or name", true)
+			c.AddArg("command", "remote command after --", false, true)
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			target := strings.TrimSpace(c.Arg("target").String())
+			command := strings.TrimSpace(strings.Join(remoteCommandArgs(c.Arg("command").Strings()), " "))
+			if command == "" && strings.TrimSpace(opts.Script) == "" {
+				return errors.New("remote command or --script is required")
+			}
+			if command != "" && strings.TrimSpace(opts.Script) != "" {
+				return errors.New("remote command and --script cannot be used together")
+			}
+
+			runOptions, err := buildRunOptions(*opts)
+			if err != nil {
+				return err
+			}
+
+			store, err := core.LoadStoreWithSSHConfig()
+			if err != nil {
+				return err
+			}
+			host, ok, err := store.ResolveHost(target)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("host %q not found", target)
+			}
+
+			startedAt := core.Now()
+			if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
+				runOptions.RemoteScriptPath = core.NewRemoteScriptPathInDir(startedAt, runOptions.RemoteScriptDir)
+			}
+			out, err := runRemote(host, command, runOptions)
+			logErr := core.AppendRunLog(host, core.RunLogRecord{
+				Target:           target,
+				Command:          command,
+				Status:           core.RunStatus(err),
+				StartedAt:        startedAt,
+				DurationMS:       core.SinceMS(startedAt),
+				Output:           string(out),
+				Error:            core.ErrorString(err),
+				CWD:              runOptions.CWD,
+				Script:           runOptions.ScriptPath,
+				RemoteScript:     runOptions.RemoteScriptPath,
+				KeepRemoteScript: runOptions.KeepRemoteScript,
+			})
+			if len(out) > 0 {
+				fmt.Fprint(cmdOutput(c), string(out))
+			}
+			if err != nil {
+				writeRunScriptFailureContext(cmdOutput(c), runOptions)
+			}
+			if err == nil && logErr != nil {
+				return logErr
+			}
+			return err
+		},
 	}
 	return cmd
+}
+
+func remoteCommandArgs(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+	return args
 }
 
 type runFlagOptions struct {
 	Timeout          string
 	KillAfter        string
-	Env              cflag.Strings
+	Env              gcli.Strings
 	EnvFile          string
 	CWD              string
 	Sudo             bool

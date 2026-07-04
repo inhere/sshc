@@ -13,7 +13,7 @@ import (
 
 	"github.com/inhere/sshc/internal/core"
 
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 )
 
 func TestAddAndList(t *testing.T) {
@@ -485,12 +485,7 @@ func TestRunPrintsScriptFailureContext(t *testing.T) {
 
 	app := newTestApp()
 	var out bytes.Buffer
-	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
-		if c.Name == "run" {
-			c.SetOutput(&out)
-		}
-		return true
-	}
+	t.Cleanup(setCommandOutputForTest(&out))
 	err := app.RunWithArgs([]string{"run", "--script", scriptPath, "--sudo-user", "app", "devhost"})
 	if err == nil {
 		t.Fatal("expected run error")
@@ -528,12 +523,7 @@ func TestRunDoesNotPrintScriptFailureContextForCommandFailure(t *testing.T) {
 
 	app := newTestApp()
 	var out bytes.Buffer
-	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
-		if c.Name == "run" {
-			c.SetOutput(&out)
-		}
-		return true
-	}
+	t.Cleanup(setCommandOutputForTest(&out))
 	err := app.RunWithArgs([]string{"run", "devhost", "--", "hostname"})
 	if err == nil {
 		t.Fatal("expected run error")
@@ -883,12 +873,7 @@ func TestListCommandMasksIPByDefault(t *testing.T) {
 
 	app := newTestApp()
 	var out bytes.Buffer
-	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
-		if c.Name == "list" {
-			c.SetOutput(&out)
-		}
-		return true
-	}
+	t.Cleanup(setCommandOutputForTest(&out))
 	if err := app.RunWithArgs([]string{"list"}); err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -988,10 +973,38 @@ func TestResolveLogTargetUsesSavedHost(t *testing.T) {
 	}
 }
 
-func newTestApp() *capp.App {
-	app := capp.NewWith("sshc", "test", "simple ssh command runner")
+type testApp struct {
+	*gcli.App
+	lastErr error
+}
+
+func (a *testApp) RunWithArgs(args []string) error {
+	a.lastErr = nil
+	if code := a.Run(args); code != 0 && a.lastErr == nil {
+		return errors.New("command failed")
+	}
+	return a.lastErr
+}
+
+func newTestApp() *testApp {
+	app := gcli.NewApp()
+	app.Name = "sshc"
+	app.Desc = "simple ssh command runner"
+	ta := &testApp{App: app}
+	app.On(gcli.EvtCmdRunError, func(ctx *gcli.HookCtx) bool {
+		if err, ok := ctx.Data["err"].(error); ok {
+			ta.lastErr = err
+		}
+		return false
+	})
+	app.On(gcli.EvtAppRunError, func(ctx *gcli.HookCtx) bool {
+		if err, ok := ctx.Data["err"].(error); ok {
+			ta.lastErr = err
+		}
+		return false
+	})
 	app.Add(NewAddCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd())
-	return app
+	return ta
 }
 
 func withTempConfig(t *testing.T) string {

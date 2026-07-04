@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"github.com/inhere/sshc/internal/command"
 
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 )
 
 var (
@@ -25,8 +25,13 @@ func SetBuildInfo(versionStr, gitHashStr, buildTimeStr string) {
 	buildTime = buildTimeStr
 }
 
-func NewApp() *capp.App {
-	app := capp.NewWith("sshc", version, "simple ssh host manage and command runner")
+func NewApp() *gcli.App {
+	app := gcli.NewApp()
+	app.Name = "sshc"
+	app.Desc = "simple ssh host manage and command runner"
+	if version != "" {
+		app.Version = version
+	}
 	app.Add(
 		command.NewAddCmd(),
 		command.NewRunCmd(),

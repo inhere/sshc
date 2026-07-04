@@ -6,7 +6,7 @@ import (
 
 	"github.com/inhere/sshc/internal/core"
 
-	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/gcli/v3"
 )
 
 var logOpts = struct {
@@ -14,23 +14,12 @@ var logOpts = struct {
 	Tail  int
 }{Tail: 200}
 
-func NewLogCmd() *capp.Cmd {
-	cmd := capp.NewCmd("log", "show or search run logs", func(c *capp.Cmd) error {
-		target := strings.TrimSpace(c.Arg("target").String())
-		logTarget, err := resolveLogTarget(target)
-		if err != nil {
-			return err
-		}
-		lines, err := core.ReadRunLogs(logTarget, logOpts.Match, logOpts.Tail)
-		if err != nil {
-			return err
-		}
-		for _, line := range lines {
-			fmt.Fprintln(c.Output(), line)
-		}
-		return nil
-	})
-	cmd.LongHelp = strings.TrimSpace(`
+func NewLogCmd() *gcli.Command {
+	cmd := &gcli.Command{
+		Name:    "log",
+		Desc:    "show or search run logs",
+		Aliases: []string{"logs"},
+		Help: strings.TrimSpace(`
 Examples:
   sshc log
   sshc log devhost
@@ -45,12 +34,27 @@ Notes:
   - Configure logs_path in sshc.config.json to use another log directory.
   - Without target, all host log files are read in file-name order.
   - With target, sshc resolves a saved host first, so IP can map to the host name log.
-`)
-	cmd.Aliases = []string{"logs"}
-	cmd.OnAdd = func(c *capp.Cmd) {
-		c.StringVar(&logOpts.Match, "match", "", "match log lines by keyword;;m")
-		c.IntVar(&logOpts.Tail, "tail", 200, "max lines to print")
-		c.AddArg("target", "host ip or name, empty means all logs", false)
+`),
+		Config: func(c *gcli.Command) {
+			c.StrOpt(&logOpts.Match, "match", "m", "", "match log lines by keyword")
+			c.IntOpt(&logOpts.Tail, "tail", "", 200, "max lines to print")
+			c.AddArg("target", "host ip or name, empty means all logs", false)
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			target := strings.TrimSpace(c.Arg("target").String())
+			logTarget, err := resolveLogTarget(target)
+			if err != nil {
+				return err
+			}
+			lines, err := core.ReadRunLogs(logTarget, logOpts.Match, logOpts.Tail)
+			if err != nil {
+				return err
+			}
+			for _, line := range lines {
+				fmt.Fprintln(cmdOutput(c), line)
+			}
+			return nil
+		},
 	}
 	return cmd
 }
