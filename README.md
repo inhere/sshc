@@ -96,6 +96,8 @@ sshc add -I
 sshc add --from-clipboard
 ```
 
+`sshc add -I` prompts for host fields interactively and hides password input.
+
 `--from-clipboard` accepts either `key=value` lines or one CSV line:
 
 ```text
@@ -115,9 +117,12 @@ port=22
 ```bash
 sshc list
 sshc ls
+sshc list --show-ip
 ```
 
 `sshc list` shows the host name, group, address, authentication type, and remark.
+IPv4 addresses are masked by default, for example `10.*.*.8`. Use `--show-ip`
+when you need the full address.
 Hosts from `~/.ssh/config` are also listed when they have `HostName`, `User`, and
 `IdentityFile`.
 

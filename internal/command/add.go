@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/gookit/cliui/cutypes"
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/gookit/goutil/x/termenv"
+	"golang.org/x/term"
 )
 
 var addOpts = struct {
@@ -105,7 +108,10 @@ Notes:
 	return cmd
 }
 
-var readClipboard = readSystemClipboard
+var (
+	readClipboard           = readSystemClipboard
+	readInteractivePassword = termenv.ReadPassword
+)
 
 func buildHostFromAddOptions() (core.Host, error) {
 	host := core.Host{
@@ -235,7 +241,7 @@ func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error
 	if host.User, err = promptLine(reader, output, "User", "root"); err != nil {
 		return host, err
 	}
-	if host.Password, err = promptLine(reader, output, "Password", ""); err != nil {
+	if host.Password, err = promptPassword(reader, output, shouldReadHiddenPassword(input)); err != nil {
 		return host, err
 	}
 	if host.KeyPath, err = promptLine(reader, output, "Key path", ""); err != nil {
@@ -257,6 +263,18 @@ func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error
 	}
 	normalizeHostDefaults(&host)
 	return host, nil
+}
+
+func promptPassword(reader *bufio.Reader, output io.Writer, hidden bool) (string, error) {
+	if hidden {
+		return strings.TrimSpace(readInteractivePassword("Password: ")), nil
+	}
+	return promptLine(reader, output, "Password", "")
+}
+
+func shouldReadHiddenPassword(input io.Reader) bool {
+	file, ok := input.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
 }
 
 func promptLine(reader *bufio.Reader, output io.Writer, label, defaultValue string) (string, error) {

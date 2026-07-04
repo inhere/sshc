@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -124,6 +125,27 @@ func TestCollectInteractiveHostDefaults(t *testing.T) {
 	}
 	if host.Name != "10.0.0.8" || host.User != "root" || host.Port != core.DefaultSSHPort || host.Group != core.DefaultGroup {
 		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestPromptPasswordUsesHiddenReader(t *testing.T) {
+	var gotQuestion string
+	t.Cleanup(setReadInteractivePasswordForTest(func(question ...string) string {
+		if len(question) > 0 {
+			gotQuestion = question[0]
+		}
+		return " secret "
+	}))
+
+	password, err := promptPassword(bufio.NewReader(strings.NewReader("")), &strings.Builder{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if password != "secret" {
+		t.Fatalf("password = %q, want secret", password)
+	}
+	if gotQuestion != "Password: " {
+		t.Fatalf("question = %q, want Password: ", gotQuestion)
 	}
 }
 
@@ -819,7 +841,7 @@ func TestDownloadRequiresSavedHost(t *testing.T) {
 }
 
 func TestBuildHostListTable(t *testing.T) {
-	out := buildHostListTable([]core.Host{{
+	hosts := []core.Host{{
 		Name:    "devhost",
 		IP:      "10.0.0.8",
 		User:    "root",
@@ -827,11 +849,80 @@ func TestBuildHostListTable(t *testing.T) {
 		Remark:  "testing host",
 		Group:   "testing",
 		Port:    2222,
-	}})
-	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.0.0.8:2222", "key:~/.ssh/id_rsa", "testing host"} {
+	}}
+
+	out := buildHostListTable(hosts, false)
+	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.*.*.8:2222", "key:~/.ssh/id_rsa", "testing host"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("table output %q does not contain %q", out, want)
 		}
+	}
+	if strings.Contains(out, "10.0.0.8") {
+		t.Fatalf("table output %q should mask IPv4 address", out)
+	}
+
+	fullOut := buildHostListTable(hosts, true)
+	if !strings.Contains(fullOut, "root@10.0.0.8:2222") {
+		t.Fatalf("table output %q does not contain full IP", fullOut)
+	}
+}
+
+func TestListCommandMasksIPByDefault(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	t.Cleanup(func() { listOpts.ShowIP = false })
+
+	app := newTestApp()
+	var out bytes.Buffer
+	app.BeforeRun = func(c *capp.Cmd, cmdArgs []string) bool {
+		if c.Name == "list" {
+			c.SetOutput(&out)
+		}
+		return true
+	}
+	if err := app.RunWithArgs([]string{"list"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !strings.Contains(out.String(), "root@10.*.*.8:2222") || strings.Contains(out.String(), "root@10.0.0.8:2222") {
+		t.Fatalf("masked list output = %q", out.String())
+	}
+
+	out.Reset()
+	if err := app.RunWithArgs([]string{"list", "--show-ip"}); err != nil {
+		t.Fatalf("list --show-ip: %v", err)
+	}
+	if !strings.Contains(out.String(), "root@10.0.0.8:2222") {
+		t.Fatalf("full list output = %q", out.String())
+	}
+}
+
+func TestDisplayHostIP(t *testing.T) {
+	tests := []struct {
+		name   string
+		ip     string
+		showIP bool
+		want   string
+	}{
+		{name: "masked ipv4", ip: "10.0.0.8", want: "10.*.*.8"},
+		{name: "full ipv4", ip: "10.0.0.8", showIP: true, want: "10.0.0.8"},
+		{name: "hostname", ip: "devhost.local", want: "devhost.local"},
+		{name: "ipv6", ip: "2001:db8::1", want: "2001:db8::1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := displayHostIP(tt.ip, tt.showIP); got != tt.want {
+				t.Fatalf("displayHostIP() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -83,6 +83,8 @@ sshc add -I
 sshc add --from-clipboard
 ```
 
+`sshc add -I` 会交互式输入主机字段，并隐藏密码输入。
+
 `--from-clipboard` 支持 `key=value` 多行格式，也支持一行 CSV：
 
 ```text
@@ -102,10 +104,14 @@ port=22
 ```bash
 sshc list
 sshc ls
+sshc list --show-ip
 ```
 
-`sshc list` 会显示主机名、分组、地址、认证方式和备注。如果 `~/.ssh/config`
-中的主机同时配置了 `HostName`、`User` 和 `IdentityFile`，也会被读取展示。
+`sshc list` 会显示主机名、分组、地址、认证方式和备注。IPv4 地址默认会脱敏显示，
+例如 `10.*.*.8`。需要完整地址时使用 `--show-ip`。
+
+如果 `~/.ssh/config` 中的主机同时配置了 `HostName`、`User` 和 `IdentityFile`，
+也会被读取展示。
 
 ### 执行远程命令
 

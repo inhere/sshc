@@ -26,6 +26,12 @@ func setReadClipboardForTest(fn func() (string, error)) func() {
 	return func() { readClipboard = old }
 }
 
+func setReadInteractivePasswordForTest(fn func(...string) string) func() {
+	old := readInteractivePassword
+	readInteractivePassword = fn
+	return func() { readInteractivePassword = old }
+}
+
 func setLoginRemoteForTest(fn func(core.Host, core.LoginOptions) error) func() {
 	old := loginRemote
 	loginRemote = fn
