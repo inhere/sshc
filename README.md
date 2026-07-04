@@ -1,10 +1,15 @@
 # sshc
 
-[简体中文](README.zh-CN.md)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/inhere/sshc?style=flat-square)
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/inhere/sshc)](https://github.com/inhere/sshc)
+[![Unit-Tests](https://github.com/inhere/sshc/actions/workflows/go.yml/badge.svg)](https://github.com/inhere/sshc)
+
+---
+
+English | [简体中文](./README.zh-CN.md)
 
 `sshc` is a small SSH helper CLI for managing hosts, running remote commands,
-transferring files, executing local scripts on remote hosts, and keeping
-per-host execution logs.
+transferring files, executing local scripts on remote hosts, and keeping per-host execution logs.
 
 It is intended for lightweight deployment, troubleshooting, and day-to-day
 remote operations where a full automation platform would be too heavy.
@@ -32,7 +37,7 @@ remote operations where a full automation platform would be too heavy.
 
 1. **Recommended** Install by [eget](https://github.com/inherelab/eget): `eget install sshc`
 2. Install by Golang: `go install github.com/inhere/sshc/cmd/sshc@latest`
-3. Download the archive for your platform from GitHub Releases, extract it, and put the `sshc` binary on your `PATH`.
+3. Download the archive for your platform from [GitHub Releases](https://github.com/inhere/sshc/releases), extract it, and put the `sshc` binary on your `PATH`.
 
 ### Build from source
 
@@ -66,37 +71,23 @@ sshc log devhost --tail 20
 ## Usage
 
 ```text
-sshc add       Add or update a host
-sshc list      List saved hosts
-sshc cfg       Manage config
-sshc auth      Manage credential profiles
-sshc host      Manage hosts
-sshc run       Run a remote command
-sshc batch-run Run a command or script on multiple hosts
-sshc login     Open an interactive SSH shell
-sshc scp       Upload files or directories
-sshc download  Download files or directories
-sshc log       Show or search run logs
+sshc add                Add or update a host
+sshc list|ls            List saved hosts
+sshc cfg|config         Manage config
+sshc auth               Manage credential profiles
+sshc host|h|hosts       Manage hosts
+sshc run|exec           Run a remote command
+sshc batch-run|brun     Run a command or script on multiple hosts
+sshc login              Open an interactive SSH shell
+sshc scp|upload         Upload files or directories
+sshc download|dl        Download files or directories
+sshc log                Show or search run logs
 ```
 
 Run command-specific help for full options:
 
 ```bash
 sshc <command> --help
-```
-
-Aliases:
-
-```text
-list      ls
-run       exec
-batch-run brun
-login     connect
-scp       upload
-download  dl
-cfg       config
-auth      cred, creds
-host      hosts, h
 ```
 
 ## Examples

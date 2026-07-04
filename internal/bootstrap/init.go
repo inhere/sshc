@@ -28,7 +28,7 @@ func SetBuildInfo(versionStr, gitHashStr, buildTimeStr string) {
 func NewApp() *gcli.App {
 	app := gcli.NewApp()
 	app.Name = "sshc"
-	app.Desc = "simple ssh host manage and command runner"
+	app.Desc = "small SSH helper CLI for managing hosts, running remote commands"
 	if version != "" {
 		app.Version = version
 	}

@@ -1,6 +1,12 @@
 # sshc
 
-[English](README.md)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/inhere/sshc?style=flat-square)
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/inhere/sshc)](https://github.com/inhere/sshc)
+[![Unit-Tests](https://github.com/inhere/sshc/actions/workflows/go.yml/badge.svg)](https://github.com/inhere/sshc)
+
+---
+
+[English](./README.md) | 简体中文
 
 `sshc` 是一个轻量 SSH 辅助 CLI，用于管理主机、执行远程命令、传输文件、在远端执行本地脚本，并按主机保存执行日志。
 
@@ -9,10 +15,10 @@
 ## 功能特性
 
 - 在 `~/.config/sshc/sshc.config.json` 中管理 SSH 主机
+  - 保存主机密码前会先加密，避免明文写入
 - 通过 `auth` 管理可复用凭证配置
 - 通过 `cfg` 查看和修改本地配置
 - 从 `~/.ssh/config` 读取简单主机配置
-- 保存主机密码前会先加密，避免明文写入 `sshc.config.json`
 - 默认使用 `known_hosts` 校验 SSH host key
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
 - 将本地 shell 脚本上传到远端执行
@@ -29,7 +35,7 @@
 
 1. **Recommended** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install sshc`
 2. 通过 Golang 安装: `go install github.com/inhere/sshc/cmd/sshc@latest`
-3. 从 GitHub Releases 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
+3. 从 [GitHub Releases](https://github.com/inhere/sshc/releases) 下载对应平台的归档文件，解压后将 `sshc` 二进制放到 `PATH` 中。
 
 ### 从源码构建
 

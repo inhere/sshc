@@ -55,7 +55,7 @@ auth profile 示例：
 
 ## 安全边界
 
-这个方案解决的是“GitHub 开源工具默认把密码明文写进配置文件”的问题，但它不是 OS keyring 级别的安全模型。
+这个方案解决的是把密码明文写进配置文件不安全的问题，但它不是 OS keyring 级别的安全模型。
 
 需要明确：
 
@@ -63,8 +63,7 @@ auth profile 示例：
 - 跨机器迁移密码配置时，需要同时迁移 `sshc.config.json` 和 `key`。
 - 删除或丢失 `key` 后，已有 `password_enc` 无法恢复，只能重新添加密码。
 - 仍然建议优先使用 SSH key 登录，而不是密码登录。
-- SSH host key 默认通过 `~/.ssh/known_hosts` 校验；只有显式配置
-  `host_key_check=insecure` 时才跳过校验。
+- SSH host key 默认通过 `~/.ssh/known_hosts` 校验；只有显式配置 `host_key_check=insecure` 时才跳过校验。
 
 ## 兼容策略
 
