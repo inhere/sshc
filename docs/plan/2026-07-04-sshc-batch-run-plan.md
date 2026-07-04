@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，基于后续能力设计拆分 batch-run/brun 的实现阶段、提交边界和验收项 |
+| v0.2 | 2026-07-04 | Codex | 补充 `--hosts-file` 批量临时 IP/hostname 场景，通过共享 auth/defaults 执行初始化脚本，不要求先保存所有 host |
 
 ## 关联文档
 
@@ -28,6 +29,7 @@
 ```bash
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc batch-run --hosts-file hosts.txt --script ./deploy.sh
+sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
 sshc batch-run --group testing --parallel 5 --script ./deploy.sh
 sshc brun --hosts devhost,web-2 -- uptime
 ```
@@ -41,6 +43,7 @@ sshc brun --hosts devhost,web-2 -- uptime
   - `--hosts dev1,dev2`
   - `--hosts-file hosts.txt`
   - `--group testing`
+- 支持 `--hosts-file ips.txt` 读取未保存的临时 IP/hostname，并通过共享 `--auth` 或命令行认证覆盖执行初始化脚本。
 - 复用 `run` 的主要执行能力：
   - command after `--`
   - `--script`
@@ -58,6 +61,7 @@ sshc brun --hosts devhost,web-2 -- uptime
 - 输出按 host 分块，并在最后输出 summary。
 - 每台 host 继续写入自己的 run log。
 - 任意 host 失败时，整体退出码非 0。
+- 临时 IP/hostname 只参与本次执行，不写入 `sshc.config.json`。
 - 分阶段实现、验证和提交，避免一次大提交。
 
 ## 非目标
@@ -65,6 +69,7 @@ sshc brun --hosts devhost,web-2 -- uptime
 - 不实现完整 Ansible/playbook/inventory/role/template 能力。
 - 不实现 batch 级持久化任务记录或中心化执行历史。
 - 不实现 batch summary log 文件，初版只依赖每 host run log 和命令输出。
+- 不把 `--hosts-file` 中的临时 IP/hostname 自动保存为 host 配置。
 - 不实现 `--json` 输出，后续单独设计结构化输出。
 - 不实现跨命令批量 scp/download/login。
 - 不实现交互式 host 选择；host 来源必须由参数给定。
@@ -82,6 +87,8 @@ sshc brun --hosts devhost,web-2 -- uptime
 
 ```bash
 sshc batch-run --hosts-file hosts.txt -- hostname
+sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+sshc batch-run --hosts-file ips.txt --auth dev-root -u root --port 22 --script ./init.sh
 ```
 
 `hosts.txt` 格式：
@@ -98,6 +105,35 @@ web-2
 - 空行忽略。
 - `#` 开头的整行注释忽略。
 - 初版不支持行内注释，避免 host name 中包含 `#` 时产生歧义。
+- 已保存的 host name/IP 优先走现有配置解析。
+- 未保存但符合 IP/hostname 形态的 target，在存在共享认证信息时按临时 host 处理。
+- 临时 host 使用 `--auth`、`-u/--user`、`--key`、`-p/--password`、`--port` 和 defaults 合并出 effective host。
+- 临时 host 不写入配置文件，也不出现在 `host list`。
+
+### 临时 IP 初始化
+
+这个场景用于大量新机器初始化：不希望先把所有 IP 都 `host add` 到配置，只想复用同一套认证资料执行脚本。
+
+```bash
+sshc auth add dev-root -u root -p
+sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh --parallel 10
+```
+
+`ips.txt`：
+
+```text
+10.20.1.11
+10.20.1.12
+10.20.1.13
+```
+
+规则：
+
+- `--auth dev-root` 引用 `auth_profiles[].name`，用于这些临时 IP。
+- 如果同时设置 `-u/--user`、`--key`、`-p/--password`、`--port`，按现有 effective host 优先级覆盖 `--auth` 和 defaults。
+- `-p/--password` 建议设计为 bool prompt，隐藏读取一次共享密码，不接受 `-p secret`，避免密码进入 shell history。
+- 未保存 target 的显示名默认使用原始 IP/hostname；run log 文件名应复用现有安全文件名逻辑。
+- host key 校验仍按 defaults/命令行覆盖生效；新机器未写入 `known_hosts` 时会失败，用户需要先接受/写入 known_hosts，或显式配置 `host_key_check=insecure`。
 
 ### 分组来源
 
@@ -232,6 +268,9 @@ type BatchHostSource struct {
     Hosts     []string
     HostsFile string
     Group     string
+    Overrides HostOverrides
+    AuthRef   string
+    AllowRaw  bool
 }
 
 type BatchRunResult struct {
@@ -259,6 +298,13 @@ ResolveBatchHosts(source BatchHostSource) ([]Host, error)
 ReadHostsFile(path string) ([]string, error)
 ```
 
+说明：
+
+- `Overrides` 复用现有 `HostOverrides`，不要新增 batch 专属认证模型。
+- `AuthRef` 用于构造临时 host 的 `auth_ref`；保存的 host 仍使用自身配置。
+- `AllowRaw` 表示允许把未解析到保存配置的 target 当作临时 IP/hostname。初版建议由命令层根据 `--auth` 或认证覆盖参数自动置 true，不额外暴露 `--host-mode`。
+- `ResolveBatchHosts` 内部建议先 `LoadConfigWithSSHConfig()` 一次，再基于同一份 config 解析所有 target，避免每个 target 重复读配置。
+
 执行调度可放 command 层或 core 层。初版建议 command 层调度，因为它直接依赖 `runRemote` 测试 hook，更容易复用现有 command 测试。
 
 ## Host 解析规则
@@ -274,9 +320,13 @@ ReadHostsFile(path string) ([]string, error)
 - 按 `,` 分割。
 - trim 空白。
 - 空项报错，例如 `devhost,,web-2`。
-- 每个项使用 `ResolveHostWithSSHConfig`，支持已有的精确和唯一部分匹配。
+- 每个项优先使用现有配置解析，支持已有的精确和唯一部分匹配。
 - 多个项解析到同一 host 时去重，保持首次出现顺序。
-- 任一项未找到或匹配多项，整体参数解析失败，不执行任何 host。
+- 任一项匹配多项，整体参数解析失败，不执行任何 host。
+- 任一项未找到：
+  - 如果未开启 raw target，则整体参数解析失败。
+  - 如果开启 raw target 且 target 是合法 IP/hostname，则构造临时 host。
+  - 如果开启 raw target 但 target 包含不支持的格式，例如 `host:22`，返回错误，端口统一使用 `--port`。
 
 ### `--hosts-file`
 
@@ -286,6 +336,45 @@ ReadHostsFile(path string) ([]string, error)
 - 文件中的每一行按一个 target 处理。
 - target 解析规则同 `--hosts`。
 - 文件为空或全是注释时报错。
+- `--hosts-file ips.txt --auth dev-root` 是临时 IP 批量初始化的主要入口。
+
+### 临时 raw target
+
+临时 raw target 指未保存到 `sshc.config.json` 或 `~/.ssh/config` 的 IP/hostname。
+
+触发条件：
+
+- `--hosts` 或 `--hosts-file` 中某个 target 无法解析为保存 host。
+- 命令层检测到共享认证来源，设置 `AllowRaw=true`：
+  - `--auth NAME`
+  - `-u/--user USER`
+  - `--key PATH`
+  - `-p/--password`
+  - `--port PORT` 只作为补充，不能单独证明认证完整；但可以和 defaults/auth profile 一起使用。
+
+构造规则：
+
+```go
+raw := Host{
+    Name:    target,
+    IP:      target,
+    AuthRef: source.AuthRef,
+    User:    source.Overrides.User,
+    Password: source.Overrides.Password,
+    KeyPath: source.Overrides.KeyPath,
+    Port:    source.Overrides.Port,
+}
+effective, _, err := config.EffectiveHost(raw, source.Overrides)
+host := effective.ToHost()
+```
+
+校验规则：
+
+- final effective host 必须有 `user`。
+- final effective host 必须有 `password`、`password_enc` 或 `key_path`。
+- `host:port` 初版不支持，避免 IPv6/Windows 路径/端口语义混淆；端口用 `--port`。
+- 保存 host 和 raw host 去重时，使用最终连接地址 `ip:port` 优先，其次使用 host log name。
+- raw host 不调用任何保存函数，不修改 `sshc.config.json`。
 
 ### `--group`
 
@@ -348,6 +437,8 @@ internal/core/core_test.go
 3. 新增 `ResolveBatchHosts(source)`。
 4. 支持 `--hosts`、`--hosts-file`、`--group` 互斥校验。
 5. 支持去重并保持顺序。
+6. 支持 `--hosts-file`/`--hosts` 中未保存 IP/hostname 通过共享认证构造临时 host。
+7. raw target 不写入配置文件。
 
 测试：
 
@@ -358,6 +449,12 @@ TestResolveBatchHostsRejectsMultipleSources
 TestResolveBatchHostsFromGroup
 TestResolveBatchHostsDeduplicates
 TestResolveBatchHostsRejectsMissingHost
+TestResolveBatchHostsFileRawIPsWithAuthRef
+TestResolveBatchHostsRawIPDoesNotPersist
+TestResolveBatchHostsRejectsRawIPWithoutAuth
+TestResolveBatchHostsUsesSavedHostBeforeRaw
+TestResolveBatchHostsRawIPUsesPortOverride
+TestResolveBatchHostsRejectsHostPortRawTarget
 ```
 
 验证：
@@ -396,11 +493,18 @@ internal/command/commands_test.go
 1. 新增 `NewBatchRunCmd()`。
 2. 注册 alias `brun`。
 3. 注册到 bootstrap app，保持默认分组。
-4. 复用 `buildRunOptions` 和 `runRemote`。
-5. 串行执行每个 host。
-6. 每个 host 继续写 `AppendRunLog`。
-7. 输出 host block 和 summary。
-8. 任一 host 失败返回 error，使整体退出码非 0。
+4. 新增共享目标认证参数：
+   - `--auth NAME`
+   - `-u/--user USER`
+   - `--key PATH`
+   - `-p/--password`，隐藏读取一次共享密码。
+   - `--port PORT`
+5. 根据 `--auth` 或认证覆盖参数自动允许 raw target；不新增 `--host-mode`。
+6. 复用 `buildRunOptions` 和 `runRemote`。
+7. 串行执行每个 host。
+8. 每个 host 继续写 `AppendRunLog`。
+9. 输出 host block 和 summary。
+10. 任一 host 失败返回 error，使整体退出码非 0。
 
 测试：
 
@@ -410,6 +514,8 @@ TestBatchRunAlias
 TestBatchRunPassesRunOptions
 TestBatchRunWritesLogsPerHost
 TestBatchRunReturnsErrorWhenAnyHostFails
+TestBatchRunHostsFileRawIPsUsesSharedAuth
+TestBatchRunPasswordPromptReadsOnce
 ```
 
 验证：
@@ -494,6 +600,8 @@ internal/command/batch_run.go
 实现：
 
 1. README 增加 batch-run 示例。
+   - 保存 host 批量执行。
+   - `--hosts-file ips.txt --auth dev-root --script ./init.sh` 临时 IP 初始化。
 2. 中文 README 同步。
 3. TODO 标记批量执行完成。
 4. LongHelp 保留常用示例，不重复 option 描述。
@@ -530,6 +638,7 @@ git status --short --branch
 ```powershell
 .\tmp\sshc.exe batch-run --hosts devhost -- echo ok
 .\tmp\sshc.exe batch-run --group testing --parallel 2 -- hostname
+.\tmp\sshc.exe batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh --parallel 5
 ```
 
 如果本机没有可连接远端，至少通过 mock 测试覆盖执行路径。
@@ -541,6 +650,10 @@ git status --short --branch
 | 并发输出交错导致难读 | 初版按 host 收集输出后分块打印 |
 | 远端输出过大导致内存占用 | 初版接受限制，后续单独设计 `--stream` |
 | host partial match 多个候选 | 整体失败，不执行任何 host |
+| `--hosts-file` 中 raw IP 没有认证信息 | 明确报错，提示使用 `--auth`、`--key` 或 `-p/--password` |
+| raw IP 新机器未在 known_hosts 中 | 默认失败并提示 host key 校验；需要用户先写入 known_hosts 或显式配置 `insecure` |
+| raw target 被误认为保存 host | 保存 host 优先解析；LongHelp 说明如需强制 raw 模式后续单独设计 |
+| raw target `host:port` 语义不清 | 初版拒绝 `host:port`，端口统一使用 `--port` |
 | `--fail-fast` 中已启动任务仍在跑 | 等待已启动任务结束，只跳过未启动任务 |
 | batch-run 参数与 run 参数漂移 | 复用 `buildRunOptions`，新增 run 参数时同步测试 batch-run |
 
