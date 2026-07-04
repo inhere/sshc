@@ -13,6 +13,20 @@
 - 配置与凭证模型设计：`docs/2026-07-04-sshc-config-auth-design.md`
 - batch-run 计划：`docs/plan/2026-07-04-sshc-batch-run-plan.md`
 
+## 实施结果
+
+本轮已按阶段完成标准一级 jump host 能力：
+
+| 阶段 | 状态 | 提交 |
+| --- | --- | --- |
+| P2.1 抽象 SSH client 关闭模型 | 已完成 | `918e236 refactor(ssh): abstract remote client connection` |
+| P2.2 解析 jump host | 已完成 | `dcb9c20 feat(ssh): resolve jump host settings` |
+| P2.3 实现 jump SSH 连接 | 已完成 | `532fed8 feat(ssh): connect through jump host` |
+| P2.4 命令接入 `--jump` | 已完成 | `d801863 feat(ssh): add jump option to ssh commands` |
+| P2.5 文档和 help 收口 | 已完成 | `docs: document jump host usage` |
+
+PVE/LXC/vhost 专用执行方式仍保留为后续能力，不在本轮实现。
+
 ## 背景
 
 当前 `sshc` 已经有：

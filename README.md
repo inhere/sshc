@@ -24,6 +24,7 @@ remote operations where a full automation platform would be too heavy.
 - Verify SSH host keys with `known_hosts` by default
 - Run remote commands by saved host name, IP, or unique partial match
   - Execute local shell scripts on remote hosts
+- Connect through a single jump host with host config or `--jump`
 - Run commands or scripts across multiple hosts with `batch-run/brun`
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
 - Upload files with `upload` and download files with `download` over SFTP
@@ -58,6 +59,7 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
+sshc run inner-db --jump bastion -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -185,6 +187,51 @@ APP_ENV=prod
 export DEBUG=1
 NAME="hello world"
 ```
+
+### Jump Hosts
+
+Set `jump` on the target host when it normally needs a bastion:
+
+```json
+{
+  "hosts": [
+    {
+      "name": "bastion",
+      "ip": "1.2.3.4",
+      "auth_ref": "dev-root"
+    },
+    {
+      "name": "inner-db",
+      "ip": "10.0.0.8",
+      "auth_ref": "dev-root",
+      "jump": "bastion"
+    }
+  ]
+}
+```
+
+Then use the target host as usual:
+
+```bash
+sshc run inner-db -- hostname
+sshc login inner-db
+sshc scp -l app.jar -r /tmp/app.jar inner-db
+sshc download -r /var/log/app.log -l tmp/logs inner-db
+```
+
+Use `--jump` to override the configured jump host for one command:
+
+```bash
+sshc run inner-db --jump bastion -- hostname
+sshc login inner-db --jump bastion
+sshc scp -l app.jar -r /tmp/app.jar inner-db --jump bastion
+sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
+```
+
+The initial implementation supports one jump host. Nested jump hosts,
+`ProxyCommand`, and PVE/LXC/vhost-specific execution are not supported yet.
+Host key checking still happens on the local machine for both the jump host and
+the target host.
 
 ### Run Scripts
 
@@ -339,6 +386,13 @@ Example config:
       "name": "devhost",
       "ip": "192.168.1.10",
       "auth_ref": "dev-root",
+      "group": "testing"
+    },
+    {
+      "name": "inner-db",
+      "ip": "10.0.0.8",
+      "auth_ref": "dev-root",
+      "jump": "devhost",
       "group": "testing"
     }
   ]

@@ -22,6 +22,7 @@
 - 默认使用 `known_hosts` 校验 SSH host key
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
   - 将本地 shell 脚本上传到远端执行
+- 通过主机配置或 `--jump` 使用单级跳板机连接目标主机
 - 通过 `batch-run/brun` 在多台主机上批量执行命令或脚本
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
 - 通过 `upload` 使用 SFTP 上传和 `download` 下载文件或目录
@@ -56,6 +57,7 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc run devhost --script ./deploy.sh
+sshc run inner-db --jump bastion -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -181,6 +183,49 @@ APP_ENV=prod
 export DEBUG=1
 NAME="hello world"
 ```
+
+### 跳板机
+
+目标主机通常需要经过堡垒机访问时，可以在目标 host 上设置 `jump`：
+
+```json
+{
+  "hosts": [
+    {
+      "name": "bastion",
+      "ip": "1.2.3.4",
+      "auth_ref": "dev-root"
+    },
+    {
+      "name": "inner-db",
+      "ip": "10.0.0.8",
+      "auth_ref": "dev-root",
+      "jump": "bastion"
+    }
+  ]
+}
+```
+
+之后可以像普通主机一样使用目标 host：
+
+```bash
+sshc run inner-db -- hostname
+sshc login inner-db
+sshc scp -l app.jar -r /tmp/app.jar inner-db
+sshc download -r /var/log/app.log -l tmp/logs inner-db
+```
+
+也可以使用 `--jump` 临时覆盖当前命令使用的跳板机：
+
+```bash
+sshc run inner-db --jump bastion -- hostname
+sshc login inner-db --jump bastion
+sshc scp -l app.jar -r /tmp/app.jar inner-db --jump bastion
+sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
+```
+
+初版只支持一级跳板。暂不支持多级跳板、`ProxyCommand`，以及 PVE/LXC/vhost
+这类专用执行方式。jump host 和 target host 都会在本机执行 host key 校验。
 
 ### 执行脚本
 
@@ -332,6 +377,13 @@ sshc run "testing gpu" -- uptime
       "name": "devhost",
       "ip": "192.168.1.10",
       "auth_ref": "dev-root",
+      "group": "testing"
+    },
+    {
+      "name": "inner-db",
+      "ip": "10.0.0.8",
+      "auth_ref": "dev-root",
+      "jump": "devhost",
       "group": "testing"
     }
   ]
