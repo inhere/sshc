@@ -58,6 +58,7 @@ sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "shared root login"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
@@ -97,6 +98,7 @@ sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
 sshc add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc add -I
 sshc add --from-clipboard
 ```
@@ -136,12 +138,14 @@ Attach a profile to a host:
 
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```
 
 ### Manage Hosts
 
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
@@ -191,6 +195,13 @@ NAME="hello world"
 ### Jump Hosts
 
 Set `jump` on the target host when it normally needs a bastion:
+
+```bash
+sshc host add --ip 1.2.3.4 --name bastion --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+```
+
+Equivalent config:
 
 ```json
 {

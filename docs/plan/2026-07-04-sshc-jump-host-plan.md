@@ -24,6 +24,7 @@
 | P2.3 实现 jump SSH 连接 | 已完成 | `532fed8 feat(ssh): connect through jump host` |
 | P2.4 命令接入 `--jump` | 已完成 | `d801863 feat(ssh): add jump option to ssh commands` |
 | P2.5 文档和 help 收口 | 已完成 | `docs: document jump host usage` |
+| P2.6 add/host add 持久化 `jump` | 已完成 | `feat(host): save jump host from add` |
 
 PVE/LXC/vhost 专用执行方式仍保留为后续能力，不在本轮实现。
 
@@ -119,6 +120,8 @@ ssh -J bastion inner-db hostname
 使用：
 
 ```bash
+sshc host add --ip 1.2.3.4 --name bastion --auth ops
+sshc host add --ip 10.0.0.8 --name inner-db --auth ops --jump bastion
 sshc login inner-db
 sshc run inner-db -- hostname
 sshc scp -l app.jar -r /tmp/app.jar inner-db

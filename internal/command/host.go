@@ -19,6 +19,7 @@ func NewHostCmd() *gcli.Command {
 		Help: strings.TrimSpace(`
 Examples:
   sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+  sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
   sshc host list
   sshc host list --group testing
   sshc host list --match devhost

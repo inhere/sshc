@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，整理 TODO 后续能力、优先级和核心设计 |
 | v0.2 | 2026-07-04 | Codex | 明确 gcli/v3 迁移、命令分组、host/auth/cfg/batch-run 命名和 jump 方向 |
+| v0.3 | 2026-07-04 | Codex | 更新当前实现状态，补充 add/host add --jump 已支持持久化跳板配置 |
 
 ## 背景
 
@@ -601,6 +602,14 @@ ssh -J bastion inner-db
 ```
 
 如果 `inner-db` 配置中已有 `"jump": "bastion"`，则 `sshc login inner-db` 默认走跳板。
+
+当前已支持通过 CLI 持久化该配置：
+
+```bash
+sshc host add --ip 1.2.3.4 --name bastion --auth ops
+sshc host add --ip 10.0.0.8 --name inner-db --auth ops --jump bastion
+sshc add --ip 10.0.0.8 --name inner-db --auth ops --jump bastion
+```
 
 不要把目标反向挂在 bastion 上，例如不使用 `jump_from`。一个 bastion 往往服务多个内网目标，反挂目标列表会让配置方向混乱。
 

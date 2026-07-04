@@ -56,6 +56,7 @@ sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "共享 root 登录"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
@@ -95,6 +96,7 @@ sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
 sshc add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc add -I
 sshc add --from-clipboard
 ```
@@ -134,12 +136,14 @@ sshc auth rm old-profile --yes
 
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```
 
 ### 管理主机
 
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
@@ -187,6 +191,13 @@ NAME="hello world"
 ### 跳板机
 
 目标主机通常需要经过堡垒机访问时，可以在目标 host 上设置 `jump`：
+
+```bash
+sshc host add --ip 1.2.3.4 --name bastion --auth dev-root
+sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+```
+
+等价配置：
 
 ```json
 {

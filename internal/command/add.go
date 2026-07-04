@@ -44,12 +44,14 @@ Examples:
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 2222
   sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --remark "testing host" --group testing --key ~/.ssh/id_rsa
+  sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 
 Notes:
   - If --name is empty, the IP is used as the host name.
   - If --group is empty, "default" is used.
   - Password or --key must be provided.
   - If both password and --key are provided, key authentication is tried first.
+  - --jump stores a default jump host for run/login/scp/download.
   - --from-clipboard accepts key=value lines or one line: ip,user,password,name,port.
   - Adding the same name or IP updates the saved host.
   - Hosts are stored in ~/.config/sshc/sshc.config.json by default.
