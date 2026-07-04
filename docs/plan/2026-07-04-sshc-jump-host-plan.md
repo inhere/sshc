@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，基于后续能力设计拆分 jump host 连接实现阶段、提交边界和验收项 |
+| v0.2 | 2026-07-04 | Codex | 复核当前代码后收敛 RemoteClient wrapper 方案，更新测试文件落点、命令 hook 兼容策略和文档阶段注意事项 |
 
 ## 关联文档
 
@@ -187,24 +188,44 @@ host_key_check = known_hosts
 func newSSHClient(host Host) (*goph.Client, error)
 ```
 
-需要演进为可以基于 jump dial target。
+需要演进为可以基于 jump dial target，并且保证 jump 路径关闭 target client 时同时关闭 jump client。
 
-建议新增结构：
+复核当前依赖后，`goph.Client` 可以手动包装底层 `*ssh.Client`：
 
 ```go
-type SSHConnectOptions struct {
-    Jump *Host
+type Client struct {
+    *ssh.Client
+    Config *Config
 }
 ```
 
-或更直接：
+但如果函数仍只返回 `*goph.Client`，jump client 的 close 会丢失。因此本计划不再保留“直接返回 `*goph.Client`”的实现分叉，统一采用本地 `RemoteClient` wrapper。
 
 ```go
-func newSSHClient(host Host) (*goph.Client, error)
-func newSSHClientViaJump(host Host, jump Host) (*goph.Client, error)
+type RemoteClient interface {
+    Run(string) ([]byte, error)
+    RunContext(context.Context, string) ([]byte, error)
+    NewSession() (*ssh.Session, error)
+    NewSftp(...sftp.ClientOption) (*sftp.Client, error)
+    Close() error
+}
+
+type remoteClient struct {
+    *goph.Client
+    closeAll func() error
+}
 ```
 
-初版建议第二种，改动更小。
+`newSSHClient(host)` 返回类型调整为 `RemoteClient`。无 jump 时 wrapper 只关闭自身；有 jump 时 wrapper 的 `Close()` 按顺序关闭 target 和 jump。
+
+现有直接依赖 `*goph.Client` 的 helper 要在 P2.1 一次性改为依赖 `RemoteClient`：
+
+- `executeRemoteScript`
+- `uploadRemoteScript`
+- `uploadPreparedJob`
+- `remoteSHA256`
+
+`UploadRemoteBatch`、`FetchRemote` 内部通过 `newSSHClient` 拿到的也应是 `RemoteClient`，这样 `run/login/scp/download` 四条路径都能复用同一套 close 模型。
 
 ### 无 jump 路径
 
@@ -223,40 +244,8 @@ ssh.Dial("tcp", targetAddr, targetClientConfig)
 2. jumpClient.Dial("tcp", net.JoinHostPort(target.IP, target.Port))
 3. ssh.NewClientConn(conn, targetAddr, targetClientConfig)
 4. ssh.NewClient(clientConn, chans, reqs)
-5. 包装为 *goph.Client 或替代本地 client wrapper
+5. 包装为 remoteClient，close 时关闭 target+jump
 ```
-
-需要确认 `goph.Client` 可直接构造：
-
-```go
-type Client struct {
-    *ssh.Client
-    Config *Config
-}
-```
-
-如果可行：
-
-```go
-return &goph.Client{
-    Client: ssh.NewClient(conn, chans, reqs),
-    Config: &goph.Config{...},
-}, nil
-```
-
-如果 goph 内部限制较多，则新增本地轻量接口：
-
-```go
-type SSHClient interface {
-    Run(string) ([]byte, error)
-    RunContext(context.Context, string) ([]byte, error)
-    NewSession() (*ssh.Session, error)
-    NewSftp(...sftp.ClientOption) (*sftp.Client, error)
-    Close() error
-}
-```
-
-但初版应优先保持 `*goph.Client`，避免扩大改动。
 
 ### Close 顺序
 
@@ -267,42 +256,13 @@ target client close
 jump client close
 ```
 
-如果只返回 target client，jump client 可能泄漏。建议设计 wrapper：
+如果只返回 target client，jump client 可能泄漏。因此 `remoteClient.Close()` 必须统一调用 `closeAll`：
 
-```go
-type SSHSessionClient struct {
-    *goph.Client
-    closer func() error
-}
+```text
+1. close target client
+2. close jump client
+3. 两者都失败时优先返回 target close error
 ```
-
-但现有代码签名直接用 `*goph.Client`。更保守方案：
-
-- `newSSHClient` 返回本地接口或 wrapper。
-- P2.1 先抽象现有连接使用点，P2.2 再接 jump。
-
-推荐方案：
-
-```go
-type RemoteClient interface {
-    Run(string) ([]byte, error)
-    RunContext(context.Context, string) ([]byte, error)
-    NewSession() (*ssh.Session, error)
-    NewSftp(...sftp.ClientOption) (*sftp.Client, error)
-    Close() error
-}
-```
-
-然后：
-
-```go
-type remoteClient struct {
-    *goph.Client
-    closeAll func() error
-}
-```
-
-`Close()` 调用 `closeAll`。
 
 这样 `run/login/scp/download` 只依赖接口，jump 连接可以安全关闭两段连接。
 
@@ -319,8 +279,19 @@ sshc run devhost --jump bastion -- hostname
 实现：
 
 - `runFlagOptions` 增加 `Jump string`。
-- resolve target host 后应用 `Jump` override。
+- resolve target host 后应用 `Jump` override：`--jump` 优先级高于配置中的 `host.jump`。
 - 执行路径使用 resolved target host，host 内携带 `Jump` 字段即可。
+
+命令层当前测试 hook 仍接收 `core.Host`：
+
+```go
+runRemote func(core.Host, string, core.RunOptions) ([]byte, error)
+loginRemote func(core.Host, core.LoginOptions) error
+scpUpload func(core.Host, []core.TransferJob, core.TransferOptions) (...)
+downloadRemote func(core.Host, string, string, core.TransferOptions) (...)
+```
+
+P2.4 不应把这些 hook 改成 `ResolvedConnection`，避免扩大 command 层测试和 `batch-run` 复用成本。命令测试只需要断言传入的 `host.Jump` 是否符合预期。
 
 ### login
 
@@ -359,7 +330,7 @@ sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
 
 ```text
 internal/core/ssh.go
-internal/core/core_test.go
+internal/core/ssh_test.go
 ```
 
 实现：
@@ -369,9 +340,10 @@ internal/core/core_test.go
    - `executeRemoteScript`
    - `uploadRemoteScript`
    - `uploadPreparedJob`
-   - 其他只需要 `Run/NewSftp/NewSession/Close` 的函数。
-3. `newSSHClient(host)` 仍返回无 jump client，但返回类型可以改为 `RemoteClient`。
-4. 保证无 jump 路径行为不变。
+   - `remoteSHA256`
+3. `newSSHClient(host)` 返回类型改为 `RemoteClient`。
+4. 新增 `remoteClient` wrapper，无 jump 时 `Close()` 只关闭当前 client。
+5. 保证无 jump 路径行为不变。
 
 测试：
 
@@ -407,14 +379,13 @@ refactor(ssh): abstract remote client connection
 
 ```text
 internal/core/config_resolve.go
-internal/core/core_test.go
-internal/command/host_resolve.go
+internal/core/jump_test.go
 ```
 
 建议结构：
 
 ```go
-type ResolveHostOptions struct {
+type ResolveConnectionOptions struct {
     Jump string
 }
 
@@ -426,7 +397,7 @@ type ResolvedConnection struct {
 
 实现：
 
-1. 新增 `ResolveConnectionWithSSHConfig(target string, opts ResolveHostOptions)`。
+1. 新增 `ResolveConnectionWithSSHConfig(target string, opts ResolveConnectionOptions)`。
 2. target 使用 effective host 解析。
 3. jump name 来源：
    - opts.Jump
@@ -434,7 +405,8 @@ type ResolvedConnection struct {
 4. jump 非空时解析 jump host effective。
 5. 拒绝 target 自引用。
 6. 拒绝 jump host 自己再配置 jump。
-7. 保持现有 `ResolveHostWithSSHConfig` 兼容。
+7. 新增 `ResolveConnectionForHost(host Host)`，供 `newSSHClient(host)` 在已拿到 effective target host 时解析配置中的 jump。
+8. 保持现有 `ResolveHostWithSSHConfig` 兼容。
 
 测试：
 
@@ -472,7 +444,7 @@ feat(ssh): resolve jump host settings
 
 ```text
 internal/core/ssh.go
-internal/core/core_test.go
+internal/core/ssh_test.go
 ```
 
 实现：
@@ -488,6 +460,13 @@ internal/core/core_test.go
 5. 错误提示包含阶段：
    - `connect jump host bastion: ...`
    - `connect target host inner-db via jump bastion: ...`
+
+实现约束：
+
+- `newSSHClient(host)` 应先调用 `ResolveConnectionForHost(host)`。
+- direct path 不应重复读取配置。
+- jump path 可以读取配置来解析 jump host，但必须保留传入 target host 上已有的命令行覆盖字段。
+- `remoteClient.Close()` 要关闭 target 和 jump；两者都失败时优先返回 target close error。
 
 测试建议：
 
@@ -531,18 +510,21 @@ feat(ssh): connect through jump host
 ```text
 internal/command/run.go
 internal/command/login.go
-internal/command/scp.go
+internal/command/upload.go
 internal/command/download.go
-internal/command/host_resolve.go
-internal/command/commands_test.go
+internal/command/util.go
+internal/command/run_test.go
+internal/command/login_test.go
+internal/command/upload_dl_test.go
 ```
 
 实现：
 
 1. 给四个命令增加 `--jump`。
-2. 调整 `resolveCommandHost` 为返回 resolved connection 或把 jump 写入 target host。
-3. `runRemote/loginRemote/scpUpload/downloadRemote` 测试 hook 如果仍接收 `Host`，需要能断言 `host.Jump` 或新增 connection 类型。
-4. 不破坏无 jump 现有测试。
+2. 调整或新增 `resolveCommandHostWithOptions(target, options)`，把 jump override 写入返回的 target host。
+3. `runRemote/loginRemote/scpUpload/downloadRemote` 测试 hook 保持现有 `core.Host` 参数签名。
+4. 命令测试断言传入 hook 的 `host.Jump`。
+5. 不破坏无 jump 现有测试。
 
 测试：
 
@@ -553,6 +535,8 @@ TestSCPPassesJumpOption
 TestDownloadPassesJumpOption
 TestCommandUsesConfiguredJump
 TestCommandJumpOptionOverridesConfiguredJump
+TestRunParsesJumpBeforeTarget
+TestRunParsesJumpAfterTargetBeforeCommand
 ```
 
 验证：
@@ -591,6 +575,7 @@ internal/command/*.go
 
 实现：
 
+0. 开始前检查 `git status --short --branch` 和 README diff，避免混入用户未提交文档改动。
 1. README 增加 jump host 配置示例。
 2. 中文 README 同步。
 3. TODO 标记标准 jump host 完成，PVE/LXC/vhost 继续保留为暂缓项。
@@ -650,9 +635,11 @@ sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
 | 双 SSH client close 泄漏 | P2.1 先抽象 RemoteClient，close 时统一关闭 target+jump |
 | known_hosts 对内网 IP 不存在导致连接失败 | 文档说明先用 OpenSSH 或 ssh-keyscan 建立本机 known_hosts 信任 |
 | 多级 jump 需求出现 | 初版明确拒绝 nested jump，后续单独设计 |
-| goph.Client 构造受限 | 必要时引入本地 RemoteClient wrapper，不扩大到命令层 |
-| run/login/scp/download 接入不一致 | P2.4 用同一 resolve helper 和命令测试覆盖四类命令 |
-| `--jump` 参数位置和 gcli 解析差异 | 测试覆盖 `sshc run --jump bastion inner-db -- cmd` 和 `sshc scp ... inner-db --jump bastion` |
+| goph.Client 手动构造后 jump client 泄漏 | 不直接返回 `*goph.Client`，统一通过 `remoteClient` wrapper 管理 close |
+| run/login/scp/download 接入不一致 | P2.4 用同一 resolve helper 和命令测试覆盖四类命令，hook 签名继续接收 `core.Host` |
+| `--jump` 参数位置和 gcli 解析差异 | 测试覆盖 `sshc run --jump bastion inner-db -- cmd`、`sshc run inner-db --jump bastion -- cmd` 和 `sshc scp ... inner-db --jump bastion` |
+| 测试重新膨胀到大文件 | 新增 core 测试放入 `ssh_test.go` / `jump_test.go`，command 测试放入对应命令测试文件 |
+| 文档阶段混入用户 README 改动 | P2.5 开始前检查 `git status` 和 README diff，只提交 jump 相关文档 |
 
 ## 后续扩展
 
