@@ -498,6 +498,10 @@ func readConfigFile() (string, []byte, error) {
 	return legacyPath, nil, legacyErr
 }
 
+func ReadConfigFile() (string, []byte, error) {
+	return readConfigFile()
+}
+
 func SetUserHomeDirForTest(fn func() (string, error)) func() {
 	old := userHomeDir
 	userHomeDir = fn
