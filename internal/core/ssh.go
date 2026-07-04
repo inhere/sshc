@@ -54,6 +54,29 @@ type LoginOptions struct {
 	Term   string
 }
 
+type RemoteClient interface {
+	Run(string) ([]byte, error)
+	RunContext(context.Context, string) ([]byte, error)
+	NewSession() (*ssh.Session, error)
+	NewSftp(...sftp.ClientOption) (*sftp.Client, error)
+	Close() error
+}
+
+type remoteClient struct {
+	*goph.Client
+	closeAll func() error
+}
+
+func (client *remoteClient) Close() error {
+	if client.closeAll != nil {
+		return client.closeAll()
+	}
+	if client.Client == nil {
+		return nil
+	}
+	return client.Client.Close()
+}
+
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	client, err := newSSHClient(host)
 	if err != nil {
@@ -164,7 +187,7 @@ func loginTermName(explicit string) string {
 	return name
 }
 
-func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
+func executeRemoteScript(client RemoteClient, opts RunOptions) ([]byte, error) {
 	remoteScriptPath := opts.RemoteScriptPath
 	if remoteScriptPath == "" {
 		remoteScriptPath = NewRemoteScriptPath(Now())
@@ -197,7 +220,7 @@ func executeRemoteScript(client *goph.Client, opts RunOptions) ([]byte, error) {
 	return client.RunContext(ctx, remoteCommand)
 }
 
-func uploadRemoteScript(client *goph.Client, localPath, remotePath string) error {
+func uploadRemoteScript(client RemoteClient, localPath, remotePath string) error {
 	info, err := os.Stat(localPath)
 	if err != nil {
 		return err
@@ -347,7 +370,7 @@ func expandUploadJobs(jobs []TransferJob, opts TransferOptions) ([]TransferJob, 
 	return expanded, nil
 }
 
-func uploadPreparedJob(client *goph.Client, sftpClient *sftp.Client, job TransferJob, opts TransferOptions) (result TransferResult, err error) {
+func uploadPreparedJob(client RemoteClient, sftpClient *sftp.Client, job TransferJob, opts TransferOptions) (result TransferResult, err error) {
 	info, err := os.Stat(job.LocalPath)
 	if err != nil {
 		return result, err
@@ -511,7 +534,7 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 	return result, nil
 }
 
-func newSSHClient(host Host) (*goph.Client, error) {
+func newSSHClient(host Host) (RemoteClient, error) {
 	auth, err := hostAuth(host)
 	if err != nil {
 		return nil, err
@@ -524,7 +547,7 @@ func newSSHClient(host Host) (*goph.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return goph.NewConn(&goph.Config{
+	client, err := goph.NewConn(&goph.Config{
 		User:     host.User,
 		Addr:     host.IP,
 		Port:     uint(host.Port),
@@ -532,6 +555,13 @@ func newSSHClient(host Host) (*goph.Client, error) {
 		Timeout:  timeout,
 		Callback: callback,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &remoteClient{
+		Client:   client,
+		closeAll: client.Close,
+	}, nil
 }
 
 func clientConnectTimeout(host Host) (time.Duration, error) {
@@ -626,7 +656,7 @@ func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (in
 	return io.Copy(localFile, remoteFile)
 }
 
-func remoteSHA256(client *goph.Client, remotePath string) (string, error) {
+func remoteSHA256(client RemoteClient, remotePath string) (string, error) {
 	command := "command -v sha256sum >/dev/null 2>&1 || { echo 'sshc: remote sha256sum command not found' >&2; exit 127; }; sha256sum " + shellQuote(remotePath)
 	out, err := client.Run(command)
 	if err != nil {
