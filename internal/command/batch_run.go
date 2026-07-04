@@ -20,6 +20,8 @@ type batchRunFlagOptions struct {
 	PasswordPrompt bool
 	KeyPath        string
 	Port           int
+	Parallel       int
+	FailFast       bool
 	Run            runFlagOptions
 }
 
@@ -36,6 +38,7 @@ Examples:
   sshc batch-run --group testing --script ./deploy.sh
   sshc batch-run --hosts-file hosts.txt -- hostname
   sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+  sshc batch-run --group testing --parallel 5 --fail-fast -- uptime
   sshc batch-run --hosts-file ips.txt --auth dev-root -u root --port 22 --script ./init.sh
 
 Host sources:
@@ -57,6 +60,8 @@ Notes:
 			c.BoolOpt(&opts.PasswordPrompt, "password", "p", false, "prompt for shared hidden password")
 			c.StrOpt(&opts.KeyPath, "key", "", "", "ssh private key path for raw host targets")
 			c.IntOpt(&opts.Port, "port", "", 0, "ssh port for raw host targets")
+			c.IntOpt(&opts.Parallel, "parallel", "", 3, "max hosts to run at once")
+			c.BoolOpt(&opts.FailFast, "fail-fast", "", false, "stop starting new hosts after first failure")
 			c.StrOpt(&opts.Run.Timeout, "timeout", "", "", "command timeout, eg: 30s, 2m, or bare seconds")
 			c.StrOpt(&opts.Run.KillAfter, "kill-after", "", "", "force kill delay after timeout, eg: 30s or bare seconds")
 			c.VarOpt(&opts.Run.Env, "env", "e", "environment variable k=v, repeatable")
@@ -91,7 +96,10 @@ Notes:
 			if err != nil {
 				return err
 			}
-			return runBatchSerial(c, hosts, command, runOptions)
+			if opts.Parallel < 1 {
+				return errors.New("--parallel must be greater than 0")
+			}
+			return runBatch(c, hosts, command, runOptions, opts.Parallel, opts.FailFast)
 		},
 	}
 	return cmd
@@ -128,15 +136,43 @@ func batchAllowsRaw(opts batchRunFlagOptions) bool {
 		opts.PasswordPrompt
 }
 
-func runBatchSerial(c *gcli.Command, hosts []core.Host, command string, baseOptions core.RunOptions) error {
+func runBatch(c *gcli.Command, hosts []core.Host, command string, baseOptions core.RunOptions, parallel int, failFast bool) error {
 	startedBatch := time.Now()
 	results := make([]batchRunResult, 0, len(hosts))
-	for _, host := range hosts {
-		result := runBatchHost(host, command, baseOptions)
+	if parallel > len(hosts) {
+		parallel = len(hosts)
+	}
+	resultCh := make(chan batchRunResult, parallel)
+	started := 0
+	running := 0
+	next := 0
+	stopped := false
+	startHost := func(host core.Host) {
+		started++
+		running++
+		go func() {
+			resultCh <- runBatchHost(host, command, baseOptions)
+		}()
+	}
+	for next < len(hosts) && running < parallel {
+		startHost(hosts[next])
+		next++
+	}
+	for running > 0 {
+		result := <-resultCh
+		running--
 		results = append(results, result)
 		writeBatchRunBlock(c, result)
+		if result.Error != nil && failFast {
+			stopped = true
+		}
+		for !stopped && next < len(hosts) && running < parallel {
+			startHost(hosts[next])
+			next++
+		}
 	}
-	writeBatchRunSummary(c, results, time.Since(startedBatch))
+	skipped := len(hosts) - started
+	writeBatchRunSummary(c, results, skipped, time.Since(startedBatch))
 	if failed := failedBatchHosts(results); len(failed) > 0 {
 		return fmt.Errorf("batch-run failed on: %s", strings.Join(failed, ", "))
 	}
@@ -208,7 +244,7 @@ func writeBatchRunBlock(c *gcli.Command, result batchRunResult) {
 	fmt.Fprintln(cmdOutput(c))
 }
 
-func writeBatchRunSummary(c *gcli.Command, results []batchRunResult, elapsed time.Duration) {
+func writeBatchRunSummary(c *gcli.Command, results []batchRunResult, skipped int, elapsed time.Duration) {
 	success, failed := 0, 0
 	for _, result := range results {
 		if result.Error != nil {
@@ -217,7 +253,7 @@ func writeBatchRunSummary(c *gcli.Command, results []batchRunResult, elapsed tim
 		}
 		success++
 	}
-	fmt.Fprintf(cmdOutput(c), "Summary: total=%d success=%d failed=%d skipped=0 elapsed=%s\n", len(results), success, failed, formatElapsed(elapsed))
+	fmt.Fprintf(cmdOutput(c), "Summary: total=%d success=%d failed=%d skipped=%d elapsed=%s\n", len(results)+skipped, success, failed, skipped, formatElapsed(elapsed))
 	if failed > 0 {
 		fmt.Fprintf(cmdOutput(c), "Failed hosts: %s\n", strings.Join(failedBatchHosts(results), ", "))
 	}

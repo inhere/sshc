@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -638,7 +639,7 @@ func TestBatchRunUsesHosts(t *testing.T) {
 	t.Cleanup(setCommandOutputForTest(&out))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--", "hostname"}); err != nil {
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--parallel", "1", "--", "hostname"}); err != nil {
 		t.Fatalf("batch-run: %v", err)
 	}
 	if strings.Join(gotHosts, ",") != "devhost,web-2" {
@@ -712,7 +713,7 @@ func TestBatchRunWritesLogsPerHost(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--", "hostname"}); err != nil {
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--parallel", "1", "--", "hostname"}); err != nil {
 		t.Fatalf("batch-run: %v", err)
 	}
 	for _, target := range []string{"devhost", "web-2"} {
@@ -742,8 +743,85 @@ func TestBatchRunReturnsErrorWhenAnyHostFails(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--", "hostname"}); err == nil {
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--parallel", "1", "--", "hostname"}); err == nil {
 		t.Fatal("expected batch-run error")
+	}
+}
+
+func TestBatchRunRejectsInvalidParallel(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{{
+		Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22,
+	}}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost", "--parallel", "0", "--", "hostname"})
+	if err == nil || !strings.Contains(err.Error(), "--parallel") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBatchRunRunsWithParallelLimit(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{
+		{Name: "h1", IP: "10.0.0.1", User: "root", Password: "secret", Port: 22},
+		{Name: "h2", IP: "10.0.0.2", User: "root", Password: "secret", Port: 22},
+		{Name: "h3", IP: "10.0.0.3", User: "root", Password: "secret", Port: 22},
+	}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	var running int32
+	var maxRunning int32
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		current := atomic.AddInt32(&running, 1)
+		for {
+			max := atomic.LoadInt32(&maxRunning)
+			if current <= max || atomic.CompareAndSwapInt32(&maxRunning, max, current) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&running, -1)
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "h1,h2,h3", "--parallel", "2", "--", "hostname"}); err != nil {
+		t.Fatalf("batch-run: %v", err)
+	}
+	if max := atomic.LoadInt32(&maxRunning); max > 2 {
+		t.Fatalf("max running = %d, want <= 2", max)
+	}
+}
+
+func TestBatchRunFailFastSkipsPendingHosts(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{
+		{Name: "h1", IP: "10.0.0.1", User: "root", Password: "secret", Port: 22},
+		{Name: "h2", IP: "10.0.0.2", User: "root", Password: "secret", Port: 22},
+		{Name: "h3", IP: "10.0.0.3", User: "root", Password: "secret", Port: 22},
+	}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	var calls int32
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		atomic.AddInt32(&calls, 1)
+		return []byte("bad\n"), errors.New("exit status 1")
+	}))
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--hosts", "h1,h2,h3", "--parallel", "1", "--fail-fast", "--", "hostname"})
+	if err == nil {
+		t.Fatal("expected batch-run error")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+	if !strings.Contains(out.String(), "skipped=2") {
+		t.Fatalf("summary missing skipped count: %q", out.String())
 	}
 }
 
