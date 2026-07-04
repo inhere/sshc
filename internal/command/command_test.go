@@ -26,6 +26,7 @@ func TestAddAndList(t *testing.T) {
 		"-p", "secret",
 		"--name", "devhost",
 		"--key", "~/.ssh/id_rsa",
+		"--jump", "bastion",
 		"--remark", "testing host",
 		"--group", "testing",
 	})
@@ -40,7 +41,7 @@ func TestAddAndList(t *testing.T) {
 	if store.Hosts[0].Name != "devhost" || store.Hosts[0].IP != "10.0.0.8" || store.Hosts[0].User != "root" {
 		t.Fatalf("unexpected host: %+v", store.Hosts[0])
 	}
-	if store.Hosts[0].KeyPath != "~/.ssh/id_rsa" || store.Hosts[0].Remark != "testing host" || store.Hosts[0].Group != "testing" {
+	if store.Hosts[0].KeyPath != "~/.ssh/id_rsa" || store.Hosts[0].Jump != "bastion" || store.Hosts[0].Remark != "testing host" || store.Hosts[0].Group != "testing" {
 		t.Fatalf("unexpected host metadata: %+v", store.Hosts[0])
 	}
 }
@@ -66,7 +67,7 @@ func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
 func TestAddFromClipboard(t *testing.T) {
 	withTempConfig(t)
 	t.Cleanup(setReadClipboardForTest(func() (string, error) {
-		return "ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\nname=devhost\nremark=testing host\ngroup=testing\n", nil
+		return "ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\nname=devhost\njump=bastion\nremark=testing host\ngroup=testing\n", nil
 	}))
 
 	app := newTestApp()
@@ -80,6 +81,9 @@ func TestAddFromClipboard(t *testing.T) {
 	host := store.Hosts[0]
 	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.KeyPath != "~/.ssh/id_rsa" {
 		t.Fatalf("host = %+v", host)
+	}
+	if host.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", host.Jump)
 	}
 }
 
@@ -103,7 +107,7 @@ func TestParseClipboardHostErrors(t *testing.T) {
 }
 
 func TestCollectInteractiveHost(t *testing.T) {
-	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\n")
+	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\nbastion\n")
 	host, err := collectInteractiveHost(input, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("collect interactive host: %v", err)
@@ -111,13 +115,13 @@ func TestCollectInteractiveHost(t *testing.T) {
 	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.Port != 2222 {
 		t.Fatalf("host = %+v", host)
 	}
-	if host.Password != "" || host.KeyPath != "~/.ssh/id_rsa" || host.Remark != "testing host" || host.Group != "testing" {
+	if host.Password != "" || host.KeyPath != "~/.ssh/id_rsa" || host.Jump != "bastion" || host.Remark != "testing host" || host.Group != "testing" {
 		t.Fatalf("host metadata = %+v", host)
 	}
 }
 
 func TestCollectInteractiveHostDefaults(t *testing.T) {
-	input := strings.NewReader("\n10.0.0.8\n\nsecret\n\n\n\n\n")
+	input := strings.NewReader("\n10.0.0.8\n\nsecret\n\n\n\n\n\n")
 	host, err := collectInteractiveHost(input, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("collect interactive host: %v", err)
@@ -215,7 +219,7 @@ func TestHostAddWithAuthRef(t *testing.T) {
 	}
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"host", "add", "--ip", "10.0.0.8", "--name", "devhost", "--auth", "dev-root"}); err != nil {
+	if err := app.RunWithArgs([]string{"host", "add", "--ip", "10.0.0.8", "--name", "devhost", "--auth", "dev-root", "--jump", "bastion"}); err != nil {
 		t.Fatalf("host add: %v", err)
 	}
 	config, err := core.LoadConfig()
@@ -225,7 +229,7 @@ func TestHostAddWithAuthRef(t *testing.T) {
 	if len(config.AuthProfiles) != 1 {
 		t.Fatalf("auth profiles were not preserved: %+v", config.AuthProfiles)
 	}
-	if len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" {
+	if len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" || config.Hosts[0].Jump != "bastion" {
 		t.Fatalf("hosts = %+v", config.Hosts)
 	}
 }

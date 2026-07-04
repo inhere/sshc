@@ -28,6 +28,7 @@ var addOpts = struct {
 	Group         string
 	Port          int
 	AuthRef       string
+	Jump          string
 }{Port: core.DefaultSSHPort}
 
 func NewAddCmd() *gcli.Command {
@@ -64,6 +65,7 @@ Notes:
 			c.StrOpt(&addOpts.Password, "password", "p", "", "ssh password")
 			c.StrOpt(&addOpts.KeyPath, "key", "", "", "ssh private key path")
 			c.StrOpt(&addOpts.AuthRef, "auth", "", "", "auth profile name")
+			c.StrOpt(&addOpts.Jump, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&addOpts.Remark, "remark", "", "", "host remark")
 			c.StrOpt(&addOpts.Group, "group", "", core.DefaultGroup, "host group")
 			c.IntOpt(&addOpts.Port, "port", "", core.DefaultSSHPort, "ssh port")
@@ -128,6 +130,7 @@ func buildHostFromAddOptions() (core.Host, error) {
 		Password: addOpts.Password,
 		KeyPath:  strings.TrimSpace(addOpts.KeyPath),
 		AuthRef:  strings.TrimSpace(addOpts.AuthRef),
+		Jump:     strings.TrimSpace(addOpts.Jump),
 		Remark:   strings.TrimSpace(addOpts.Remark),
 		Group:    strings.TrimSpace(addOpts.Group),
 		Port:     addOpts.Port,
@@ -175,6 +178,9 @@ func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error
 	if host.Group, err = promptLine(reader, output, "Group", core.DefaultGroup); err != nil {
 		return host, err
 	}
+	if host.Jump, err = promptLine(reader, output, "Jump", ""); err != nil {
+		return host, err
+	}
 	normalizeHostDefaults(&host)
 	return host, nil
 }
@@ -213,6 +219,7 @@ func normalizeHostDefaults(host *core.Host) {
 	host.IP = strings.TrimSpace(host.IP)
 	host.User = strings.TrimSpace(host.User)
 	host.KeyPath = strings.TrimSpace(host.KeyPath)
+	host.Jump = strings.TrimSpace(host.Jump)
 	host.Remark = strings.TrimSpace(host.Remark)
 	host.Group = strings.TrimSpace(host.Group)
 	if host.Name == "" {

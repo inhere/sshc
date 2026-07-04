@@ -108,6 +108,8 @@ func parseClipboardKeyValues(text string) core.Host {
 			host.Password = value
 		case "key", "key_path", "keypath":
 			host.KeyPath = value
+		case "jump", "jump_host":
+			host.Jump = value
 		case "remark":
 			host.Remark = value
 		case "group":
