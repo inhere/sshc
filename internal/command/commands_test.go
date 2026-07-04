@@ -1173,6 +1173,123 @@ func TestAuthRemoveWithYes(t *testing.T) {
 	}
 }
 
+func TestHostAddWithAuthRef(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "add", "--ip", "10.0.0.8", "--name", "devhost", "--auth", "dev-root"}); err != nil {
+		t.Fatalf("host add: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 {
+		t.Fatalf("auth profiles were not preserved: %+v", config.AuthProfiles)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestTopLevelAddStillPreservesConfig(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "--name", "devhost", "--auth", "dev-root"}); err != nil {
+		t.Fatalf("top-level add: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 || len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" {
+		t.Fatalf("config = %+v", config)
+	}
+}
+
+func TestHostListFiltersByGroupAndMatch(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "testing-web", IP: "10.0.0.8", User: "root", Password: "secret", Group: "testing", Port: 22},
+		{Name: "prod-db", IP: "10.0.0.9", User: "root", Password: "secret", Group: "prod", Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	if err := app.RunWithArgs([]string{"host", "list", "--group", "testing", "--match", "web"}); err != nil {
+		t.Fatalf("host list: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "testing-web") || strings.Contains(output, "prod-db") {
+		t.Fatalf("output = %q", output)
+	}
+}
+
+func TestHostShowMasksSecrets(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	if err := app.RunWithArgs([]string{"host", "show", "devhost"}); err != nil {
+		t.Fatalf("host show: %v", err)
+	}
+	if strings.Contains(out.String(), "secret") || !strings.Contains(out.String(), `"password_enc": "***"`) {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestHostRemoveRequiresYesInNonInteractiveTest(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"host", "rm", "devhost"})
+	if err == nil || !strings.Contains(err.Error(), "use --yes") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHostRemoveWithYesAndRename(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "old-name", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "delete-me", IP: "10.0.0.9", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "rename", "old-name", "new-name"}); err != nil {
+		t.Fatalf("host rename: %v", err)
+	}
+	if err := app.RunWithArgs([]string{"host", "rm", "delete-me", "--yes"}); err != nil {
+		t.Fatalf("host rm: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Name != "new-name" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
 func TestDisplayHostIP(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1286,7 +1403,7 @@ func newTestApp() *testApp {
 		}
 		return false
 	})
-	app.Add(NewAddCmd(), NewAuthCmd(), NewCfgCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd())
+	app.Add(NewAddCmd(), NewAuthCmd(), NewCfgCmd(), NewHostCmd(), NewRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd())
 	return ta
 }
 

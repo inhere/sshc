@@ -29,6 +29,7 @@ var addOpts = struct {
 	Remark        string
 	Group         string
 	Port          int
+	AuthRef       string
 }{Port: core.DefaultSSHPort}
 
 func NewAddCmd() *gcli.Command {
@@ -64,6 +65,7 @@ Notes:
 			c.StrOpt(&addOpts.User, "user", "u", "", "ssh username")
 			c.StrOpt(&addOpts.Password, "password", "p", "", "ssh password")
 			c.StrOpt(&addOpts.KeyPath, "key", "", "", "ssh private key path")
+			c.StrOpt(&addOpts.AuthRef, "auth", "", "", "auth profile name")
 			c.StrOpt(&addOpts.Remark, "remark", "", "", "host remark")
 			c.StrOpt(&addOpts.Group, "group", "", core.DefaultGroup, "host group")
 			c.IntOpt(&addOpts.Port, "port", "", core.DefaultSSHPort, "ssh port")
@@ -95,14 +97,16 @@ Notes:
 				return err
 			}
 
-			store, err := core.LoadStore()
+			config, err := core.LoadConfig()
 			if err != nil {
 				return err
 			}
+			store := core.Store{LogsPath: config.LogsPath, Hosts: config.Hosts}
 			if err := store.Upsert(host); err != nil {
 				return err
 			}
-			if err := core.SaveStore(store); err != nil {
+			config.Hosts = store.Hosts
+			if err := core.SaveConfig(config); err != nil {
 				return err
 			}
 
@@ -125,6 +129,7 @@ func buildHostFromAddOptions() (core.Host, error) {
 		User:     strings.TrimSpace(addOpts.User),
 		Password: addOpts.Password,
 		KeyPath:  strings.TrimSpace(addOpts.KeyPath),
+		AuthRef:  strings.TrimSpace(addOpts.AuthRef),
 		Remark:   strings.TrimSpace(addOpts.Remark),
 		Group:    strings.TrimSpace(addOpts.Group),
 		Port:     addOpts.Port,

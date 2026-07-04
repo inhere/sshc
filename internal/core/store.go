@@ -162,10 +162,10 @@ func validateHost(host Host) error {
 	if strings.TrimSpace(host.IP) == "" {
 		return errors.New("ip is required")
 	}
-	if strings.TrimSpace(host.User) == "" {
+	if strings.TrimSpace(host.User) == "" && strings.TrimSpace(host.AuthRef) == "" {
 		return errors.New("user is required")
 	}
-	if host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
+	if strings.TrimSpace(host.AuthRef) == "" && host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
 		return errors.New("password or key_path is required")
 	}
 	if host.Port < 1 || host.Port > 65535 {
