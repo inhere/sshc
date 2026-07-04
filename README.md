@@ -12,8 +12,11 @@ remote operations where a full automation platform would be too heavy.
 ## Features
 
 - Manage SSH hosts in `~/.config/sshc/sshc.config.json`
+- Manage shared credential profiles with `auth`
+- Inspect and edit local settings with `cfg`
 - Read simple host entries from `~/.ssh/config`
 - Encrypt saved passwords before writing `sshc.config.json`
+- Verify SSH host keys with `known_hosts` by default
 - Run remote commands by saved host name, IP, or unique partial match
 - Execute local shell scripts on remote hosts
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
@@ -50,6 +53,8 @@ go build -o tmp\sshc.exe ./cmd/sshc
 sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
+sshc auth add dev-root -u root -p
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc run devhost --script ./deploy.sh
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -61,6 +66,9 @@ sshc log devhost --tail 20
 ```text
 sshc add       Add or update a host
 sshc list      List saved hosts
+sshc cfg       Manage config
+sshc auth      Manage credential profiles
+sshc host      Manage hosts
 sshc run       Run a remote command
 sshc login     Open an interactive SSH shell
 sshc scp       Upload files or directories
@@ -82,6 +90,9 @@ run       exec
 login     connect
 scp       upload
 download  dl
+cfg       config
+auth      cred, creds
+host      hosts, h
 ```
 
 ## Examples
@@ -92,6 +103,7 @@ download  dl
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
+sshc add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc add -I
 sshc add --from-clipboard
 ```
@@ -111,6 +123,40 @@ port=22
 ```text
 192.168.1.10,root,password,devhost,22
 ```
+
+### Credential Profiles
+
+Use `auth` profiles when multiple hosts share the same user, password, or key:
+
+```bash
+sshc auth add dev-root -u root -p
+sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
+sshc auth list
+sshc auth show dev-root
+sshc auth rm old-profile --yes
+```
+
+`sshc auth add -p` prompts for a hidden password. It intentionally does not
+accept `-p secret` or `--password secret`.
+
+Attach a profile to a host:
+
+```bash
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+```
+
+### Manage Hosts
+
+```bash
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host list --group testing --show-ip
+sshc host list --match devhost
+sshc host show devhost
+sshc host rm devhost --yes
+sshc host rename old-name new-name
+```
+
+Top-level `add`, `list`, and `ls` remain available for quick daily use.
 
 ### List Hosts
 
@@ -255,8 +301,31 @@ Example config:
 
 ```json
 {
+  "version": 1,
   "logs_path": "logs",
-  "hosts": []
+  "defaults": {
+    "user": "root",
+    "port": 22,
+    "connect_timeout": "20s",
+    "remote_script_dir": "/tmp",
+    "host_key_check": "known_hosts",
+    "known_hosts_path": "~/.ssh/known_hosts"
+  },
+  "auth_profiles": [
+    {
+      "name": "dev-root",
+      "user": "root",
+      "password_enc": "v1:..."
+    }
+  ],
+  "hosts": [
+    {
+      "name": "devhost",
+      "ip": "192.168.1.10",
+      "auth_ref": "dev-root",
+      "group": "testing"
+    }
+  ]
 }
 ```
 
@@ -280,6 +349,21 @@ the same.
 For compatibility, `~/.config/sshc/hosts.json` is still read when the new default
 config file does not exist.
 
+Config helpers:
+
+```bash
+sshc cfg path
+sshc cfg show
+sshc cfg show --raw
+sshc cfg get logs_path
+sshc cfg set logs_path ./runtime/logs
+sshc cfg unset logs_path
+sshc cfg doctor
+```
+
+`cfg show` masks passwords and encrypted password values. `cfg show --raw`
+prints the config file as stored on disk and is intended for local debugging.
+
 ## Security Notes
 
 - Saved passwords are encrypted before being written to `sshc.config.json`.
@@ -287,8 +371,10 @@ config file does not exist.
 - Legacy plaintext `password` fields are still readable for compatibility.
 - Prefer SSH keys over passwords when possible.
 - If both password and `--key` are provided, key authentication is tried first.
-- Current host key verification is permissive and does not enforce
-  `known_hosts`. Do not use this as-is for high-security environments.
+- SSH host keys are checked against `~/.ssh/known_hosts` by default.
+- If a host is not trusted yet, connect once with `ssh devhost` or add its key
+  to `known_hosts` before using `sshc`.
+- Set `host_key_check` to `insecure` only when you explicitly want to skip host key verification.
 - With `--script --sudo-user`, the uploaded temporary script is readable by local
   remote users so the target sudo user can execute it. For sensitive scripts,
   use `--remote-script-dir` with a restricted remote directory.

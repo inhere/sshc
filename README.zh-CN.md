@@ -9,8 +9,11 @@
 ## 功能特性
 
 - 在 `~/.config/sshc/sshc.config.json` 中管理 SSH 主机
+- 通过 `auth` 管理可复用凭证配置
+- 通过 `cfg` 查看和修改本地配置
 - 从 `~/.ssh/config` 读取简单主机配置
 - 保存主机密码前会先加密，避免明文写入 `sshc.config.json`
+- 默认使用 `known_hosts` 校验 SSH host key
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
 - 将本地 shell 脚本上传到远端执行
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
@@ -47,6 +50,8 @@ go build -o tmp\sshc.exe ./cmd/sshc
 sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
+sshc auth add dev-root -u root -p
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc run devhost --script ./deploy.sh
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -58,6 +63,9 @@ sshc log devhost --tail 20
 ```text
 sshc add             新增或更新主机
 sshc list|ls         查看已保存主机
+sshc cfg|config      管理本地配置
+sshc auth|cred       管理可复用凭证
+sshc host|hosts      管理主机
 sshc run|exec        执行远程命令
 sshc login           打开交互式 SSH shell
 sshc scp|upload      上传文件或目录
@@ -79,6 +87,7 @@ sshc <command> --help
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
+sshc add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc add -I
 sshc add --from-clipboard
 ```
@@ -98,6 +107,40 @@ port=22
 ```text
 192.168.1.10,root,password,devhost,22
 ```
+
+### 凭证配置
+
+多台主机复用同一个用户、密码或 key 时，可以使用 `auth`：
+
+```bash
+sshc auth add dev-root -u root -p
+sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
+sshc auth list
+sshc auth show dev-root
+sshc auth rm old-profile --yes
+```
+
+`sshc auth add -p` 会隐藏读取密码，不支持 `-p secret` 或
+`--password secret` 这种命令行明文密码。
+
+把凭证绑定到主机：
+
+```bash
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+```
+
+### 管理主机
+
+```bash
+sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc host list --group testing --show-ip
+sshc host list --match devhost
+sshc host show devhost
+sshc host rm devhost --yes
+sshc host rename old-name new-name
+```
+
+顶层 `add`、`list`、`ls` 仍保留，方便日常快速使用。
 
 ### 查看主机
 
@@ -238,8 +281,31 @@ sshc run "testing gpu" -- uptime
 
 ```json
 {
+  "version": 1,
   "logs_path": "logs",
-  "hosts": []
+  "defaults": {
+    "user": "root",
+    "port": 22,
+    "connect_timeout": "20s",
+    "remote_script_dir": "/tmp",
+    "host_key_check": "known_hosts",
+    "known_hosts_path": "~/.ssh/known_hosts"
+  },
+  "auth_profiles": [
+    {
+      "name": "dev-root",
+      "user": "root",
+      "password_enc": "v1:..."
+    }
+  ],
+  "hosts": [
+    {
+      "name": "devhost",
+      "ip": "192.168.1.10",
+      "auth_ref": "dev-root",
+      "group": "testing"
+    }
+  ]
 }
 ```
 
@@ -260,6 +326,21 @@ SSHC_CONFIG=/path/to/sshc.config.json sshc list
 当保存的主机和 `~/.ssh/config` 读取到的主机同名或同 IP 时，保存的主机优先。
 兼容旧版本：如果新的默认配置文件不存在，仍会读取 `~/.config/sshc/hosts.json`。
 
+配置辅助命令：
+
+```bash
+sshc cfg path
+sshc cfg show
+sshc cfg show --raw
+sshc cfg get logs_path
+sshc cfg set logs_path ./runtime/logs
+sshc cfg unset logs_path
+sshc cfg doctor
+```
+
+`cfg show` 会隐藏密码和加密密码字段。`cfg show --raw` 会打印磁盘上的原始配置，
+主要用于本地排障。
+
 ## 安全说明
 
 - 保存的密码会先加密再写入 `sshc.config.json`。
@@ -267,8 +348,10 @@ SSHC_CONFIG=/path/to/sshc.config.json sshc list
 - 旧版本中的明文 `password` 字段仍可读取，用于兼容已有配置。
 - 尽量优先使用 SSH key，而不是密码。
 - 如果同时提供密码和 `--key`，会优先尝试 key 认证。
-- 当前 host key 校验是宽松模式，不强制校验 `known_hosts`。高安全要求环境不建议
-  直接使用当前实现。
+- 默认会使用 `~/.ssh/known_hosts` 校验 SSH host key。
+- 如果目标主机还未建立信任，先使用 `ssh devhost` 连接一次，或手动把 host key
+  加入 `known_hosts`。
+- 只有显式把 `host_key_check` 设置为 `insecure` 时才会跳过 host key 校验。
 - 使用 `--script --sudo-user` 时，上传的远端临时脚本会对远端本机用户可读，
   这样目标 sudo 用户才能执行。脚本包含敏感内容时，建议配合 `--remote-script-dir`
   使用权限受控的远端目录。

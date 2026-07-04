@@ -2,7 +2,8 @@
 
 ## 当前结论
 
-`sshc` 默认不再把新增或更新的主机密码明文写入 `sshc.config.json`。
+`sshc` 默认不再把新增或更新的主机密码、auth profile 密码明文写入
+`sshc.config.json`。
 
 保存主机时：
 
@@ -10,6 +11,7 @@
 - 写入 `sshc.config.json` 前会把 `password` 加密为 `password_enc`。
 - 落盘后的 `password` 字段为空并因 `omitempty` 不写入。
 - 旧版本已有的明文 `password` 字段仍可读取，避免升级后配置失效。
+- auth profile 使用相同规则加密保存。
 
 示例：
 
@@ -20,6 +22,16 @@
   "user": "root",
   "password_enc": "v1:...",
   "port": 22
+}
+```
+
+auth profile 示例：
+
+```json
+{
+  "name": "dev-root",
+  "user": "root",
+  "password_enc": "v1:..."
 }
 ```
 
@@ -51,6 +63,8 @@
 - 跨机器迁移密码配置时，需要同时迁移 `sshc.config.json` 和 `key`。
 - 删除或丢失 `key` 后，已有 `password_enc` 无法恢复，只能重新添加密码。
 - 仍然建议优先使用 SSH key 登录，而不是密码登录。
+- SSH host key 默认通过 `~/.ssh/known_hosts` 校验；只有显式配置
+  `host_key_check=insecure` 时才跳过校验。
 
 ## 兼容策略
 
@@ -58,11 +72,12 @@
 
 1. 如果存在明文 `password`，直接使用它。
 2. 如果 `password` 为空且存在 `password_enc`，使用本机 key 解密。
-3. 如果两者都为空，则必须配置 `key_path`。
+3. host 可以通过 `auth_ref` 复用 auth profile 的 user/password/key。
+4. 最终 effective host 必须具备 `password`、`password_enc` 或 `key_path` 中至少一种认证方式。
 
 写入规则：
 
-1. 如果 `Host.Password` 非空，写入前加密为 `password_enc`。
+1. 如果 `Host.Password` 或 `AuthProfile.Password` 非空，写入前加密为 `password_enc`。
 2. 不再写入明文 `password` 字段。
 3. 如果仅使用 `key_path`，不会创建本机 password key。
 

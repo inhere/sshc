@@ -150,7 +150,7 @@ docs: update config and auth documentation
 | P4 | 新增 `cfg` 管理命令 | `feat(config): add cfg management commands` | 已完成 |
 | P5 | 新增 `auth` 凭证命令 | `feat(auth): add credential profile commands` | 已完成 |
 | P6 | 新增 `host` 管理命令并兼容顶层 add/list | `feat(host): add host management commands` | 已完成 |
-| P7 | 文档和最终验收 | `docs: update config and auth documentation` | 待实施 |
+| P7 | 文档和最终验收 | `docs: update config and auth documentation` | 已完成 |
 
 ## P0: 迁移到 gcli/v3
 
