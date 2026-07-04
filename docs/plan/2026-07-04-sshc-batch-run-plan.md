@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，基于后续能力设计拆分 batch-run/brun 的实现阶段、提交边界和验收项 |
 | v0.2 | 2026-07-04 | Codex | 补充 `--hosts-file` 批量临时 IP/hostname 场景，通过共享 auth/defaults 执行初始化脚本，不要求先保存所有 host |
+| v0.3 | 2026-07-04 | Codex | 根据 TODO 的 host 日志优化补充 batch-run 前置日志阶段：`task_id`、大输出外置文件、`log --id` 查看输出 |
 
 ## 关联文档
 
@@ -23,6 +24,14 @@
 - `auth`、`host`、`cfg` 多级管理命令。
 - effective host 解析：`host/auth_ref/defaults/内置默认值` 合并。
 - 每台 host 的 JSONL run log。
+
+TODO 中新增了 host 日志优化：当前 JSONL 会完整记录命令输出。这个问题在 batch-run 场景会被放大，因为批量初始化脚本常常输出大量安装、下载、编译或服务启动日志。如果继续把完整 output 写入每台 host 的 JSONL：
+
+- 单个 host log 会快速膨胀，`sshc log` 查看和匹配会变慢。
+- JSONL 行过长，不利于人工审计。
+- batch-run 同时多台执行时，日志目录体积和单文件可读性都会变差。
+
+因此 batch-run 实施前应先完成 run log 的结构升级：每次执行都有 `task_id`，大输出落到独立 `{task_id}.out.log` 文件，JSONL 只记录索引信息。
 
 下一步批量执行不应把 `run` 本身继续撑大。建议新增顶层执行命令：
 
@@ -60,6 +69,8 @@ sshc brun --hosts devhost,web-2 -- uptime
 - 支持 `--fail-fast`。
 - 输出按 host 分块，并在最后输出 summary。
 - 每台 host 继续写入自己的 run log。
+- 每次执行生成 `task_id`，JSONL 记录 task 元信息；大输出写入独立 output 文件。
+- 支持 `sshc log --id <task_id>` 查看某次执行的详细输出。
 - 任意 host 失败时，整体退出码非 0。
 - 临时 IP/hostname 只参与本次执行，不写入 `sshc.config.json`。
 - 分阶段实现、验证和提交，避免一次大提交。
@@ -68,7 +79,8 @@ sshc brun --hosts devhost,web-2 -- uptime
 
 - 不实现完整 Ansible/playbook/inventory/role/template 能力。
 - 不实现 batch 级持久化任务记录或中心化执行历史。
-- 不实现 batch summary log 文件，初版只依赖每 host run log 和命令输出。
+- 不实现 batch summary log 文件，初版只依赖每 host run log、task output 文件和命令输出。
+- 不实现完整日志数据库或索引文件，`log --id` 初版可扫描 JSONL 查找 task。
 - 不把 `--hosts-file` 中的临时 IP/hostname 自动保存为 host 配置。
 - 不实现 `--json` 输出，后续单独设计结构化输出。
 - 不实现跨命令批量 scp/download/login。
@@ -209,22 +221,94 @@ Failed hosts: web-2
 
 风险：
 
-- 远端输出特别大时会占用内存。初版接受该限制；后续 `--stream` 或 `--json` 单独设计。
+- 远端输出特别大时仍会占用命令进程内存，因为初版为了避免并发交错会先收集输出再打印。日志层不会再把大输出塞进 JSONL；后续 `--stream` 或 `--json` 单独设计。
 
 ## 日志设计
 
-每台 host 继续调用现有 run log：
+### 核心原则
+
+每台 host 继续调用 run log，但先升级日志结构：
 
 ```go
 core.AppendRunLog(host, core.RunLogRecord{...})
 ```
 
-记录字段建议：
+每次执行都生成一个 `task_id`：
+
+```text
+yyyymmdd-hhmmss-shorthash
+```
+
+示例：
+
+```text
+20260704-173012-a1b2c3
+```
+
+生成建议：
+
+- 时间部分来自 `StartedAt`。
+- `shorthash` 基于 `host/ip/port/command/script/started_at` 加少量随机值或单调计数生成，长度 6-8 位即可。
+- `task_id` 不要求跨机器全局强一致，只要本机日志目录内极低碰撞即可。
+
+### JSONL 字段
+
+JSONL 记录字段建议：
 
 - `target`: 用户输入的 batch source 项或 group 展开后的 host name。
+- `task_id`: 本次执行 ID。
 - `command`: 实际执行命令。
 - `status`: `success/error`。
 - `script`、`remote_script`、`cwd`、`duration_ms` 沿用现有字段。
+- `output`: 小输出继续内联，便于 `sshc log -m keyword` 快速查看。
+- `output_file`: 大输出外置文件路径，建议记录相对 `logs_path` 的路径。
+- `output_bytes`: 原始输出字节数。
+- `output_sha256`: 大输出文件内容 SHA256，便于确认文件完整性。
+- `output_inline`: bool，表示 output 是否内联在 JSONL 中。
+
+### 大输出外置
+
+建议常量：
+
+```go
+const maxInlineRunOutputBytes = 64 * 1024
+```
+
+规则：
+
+- `len(output) <= maxInlineRunOutputBytes` 时，JSONL 继续写 `output`。
+- `len(output) > maxInlineRunOutputBytes` 时，输出写入：
+
+```text
+{logs_path}/yyyymmdd/{task_id}.out.log
+```
+
+- JSONL 不再写完整 `output`，只写 `output_file/output_bytes/output_sha256/output_inline=false`。
+- 输出文件目录权限沿用 run log 目录策略，建议目录 `0700`，文件 `0600`。
+- `logs_path` 为空时仍使用 `~/.config/sshc/logs`。
+- 记录 `output_file` 时优先使用相对路径，例如 `20260704/20260704-173012-a1b2c3.out.log`，避免配置目录迁移后 JSONL 中保留旧绝对路径。
+
+### `sshc log --id`
+
+新增：
+
+```bash
+sshc log --id 20260704-173012-a1b2c3
+```
+
+行为：
+
+- 扫描 host JSONL，找到匹配 `task_id` 的记录。
+- 如果记录有内联 `output`，打印内联 output。
+- 如果记录有 `output_file`，读取并打印该文件内容。
+- 如果找不到 task，返回非 0。
+- 如果 output 文件缺失，打印 task 元信息后返回明确错误。
+
+`--id` 与 target/match/tail 的关系：
+
+- `--id` 是精确查看某次执行输出，设置后忽略 `--tail`。
+- `--id` 可以和 target 同用，用于只在某个 host log 中查找。
+- `--id` 不建议和 `--match` 同用；初版可直接互斥，避免用户以为匹配的是 output 文件内容。
 
 初版不新增 batch summary log。
 
@@ -235,6 +319,7 @@ core.AppendRunLog(host, core.RunLogRecord{...})
 ```text
 internal/command/batch_run.go
 internal/core/batch_run.go
+internal/core/run_logs.go
 ```
 
 可能需要调整：
@@ -242,6 +327,7 @@ internal/core/batch_run.go
 ```text
 internal/bootstrap/init.go
 internal/command/run.go
+internal/command/log.go
 internal/command/commands_test.go
 internal/core/run.go 或现有 run 相关文件
 README.md
@@ -296,6 +382,9 @@ type BatchRunSummary struct {
 ```go
 ResolveBatchHosts(source BatchHostSource) ([]Host, error)
 ReadHostsFile(path string) ([]string, error)
+NewRunTaskID(startedAt time.Time, host Host, rec RunLogRecord) string
+RunOutputPath(taskID string, startedAt time.Time) (string, string, error)
+ReadRunLogOutputByID(target, taskID string) ([]byte, error)
 ```
 
 说明：
@@ -416,6 +505,86 @@ internal/command/run_options.go
 
 ## 阶段计划
 
+### P0: Host 日志结构优化
+
+目标：
+
+- 为每次 run/login/batch-run 执行生成 `task_id`。
+- 大输出写入独立 output 文件，避免 JSONL 行过大。
+- `sshc log --id <task_id>` 可以查看详细输出。
+- batch-run 后续直接复用新日志模型。
+
+范围：
+
+```text
+internal/core/run_logs.go
+internal/core/core_test.go
+internal/command/run.go
+internal/command/login.go
+internal/command/log.go
+internal/command/commands_test.go
+README.md
+README.zh-CN.md
+docs/TODO.md
+```
+
+实现：
+
+1. `RunLogRecord` 增加：
+   - `TaskID string`
+   - `OutputFile string`
+   - `OutputBytes int64`
+   - `OutputSHA256 string`
+   - `OutputInline bool`
+2. 新增 `NewRunTaskID(startedAt, host, rec)`。
+3. `AppendRunLog` 内部保证 task_id：
+   - 调用方传入则使用调用方传入值。
+   - 调用方未传入则自动生成。
+4. `AppendRunLog` 根据 `maxInlineRunOutputBytes` 判断 output 内联或外置。
+5. 外置文件写入 `{logs_path}/yyyymmdd/{task_id}.out.log`。
+6. JSONL 中记录 `task_id/output_file/output_bytes/output_sha256/output_inline`。
+7. `run` 继续把完整 output 打印到终端，但日志里按新规则记录。
+8. `login` 只记录连接元信息，也生成 task_id；无 output 时不生成 output 文件。
+9. `log` 增加 `--id`：
+   - `sshc log --id <task_id>` 查找所有 host。
+   - `sshc log devhost --id <task_id>` 限定单 host。
+   - `--id` 与 `--match` 互斥。
+10. README/中文 README 增加简短说明。
+11. TODO 标记 host 日志优化完成。
+
+测试：
+
+```text
+TestAppendRunLogWritesTaskID
+TestAppendRunLogKeepsSmallOutputInline
+TestAppendRunLogStoresLargeOutputFile
+TestAppendRunLogOutputFileUsesDateDirectory
+TestAppendRunLogOutputFileRecordsSHA256
+TestReadRunLogOutputByIDFromInlineOutput
+TestReadRunLogOutputByIDFromOutputFile
+TestReadRunLogOutputByIDReturnsErrorWhenMissing
+TestLogCommandShowsOutputByID
+TestLogCommandRejectsIDWithMatch
+TestLoginWritesTaskIDWithoutOutputFile
+```
+
+验证：
+
+```powershell
+go test ./internal/core
+go test ./internal/command
+go test ./...
+go build -o tmp\sshc.exe ./cmd/sshc
+.\tmp\sshc.exe log --help | Out-String
+git diff --check -- internal/core internal/command README.md README.zh-CN.md docs/TODO.md
+```
+
+提交：
+
+```text
+feat(log): store large run output by task id
+```
+
 ### P1.1: Host 来源解析
 
 目标：
@@ -516,6 +685,7 @@ TestBatchRunWritesLogsPerHost
 TestBatchRunReturnsErrorWhenAnyHostFails
 TestBatchRunHostsFileRawIPsUsesSharedAuth
 TestBatchRunPasswordPromptReadsOnce
+TestBatchRunLogRecordsTaskID
 ```
 
 验证：
@@ -602,6 +772,7 @@ internal/command/batch_run.go
 1. README 增加 batch-run 示例。
    - 保存 host 批量执行。
    - `--hosts-file ips.txt --auth dev-root --script ./init.sh` 临时 IP 初始化。
+   - 使用 `sshc log --id <task_id>` 查看大输出详情。
 2. 中文 README 同步。
 3. TODO 标记批量执行完成。
 4. LongHelp 保留常用示例，不重复 option 描述。
@@ -648,7 +819,10 @@ git status --short --branch
 | 风险 | 处理 |
 | --- | --- |
 | 并发输出交错导致难读 | 初版按 host 收集输出后分块打印 |
-| 远端输出过大导致内存占用 | 初版接受限制，后续单独设计 `--stream` |
+| 远端输出过大导致内存占用 | 初版只解决日志膨胀，命令输出仍会在内存中分块收集；后续单独设计 `--stream` |
+| JSONL 记录完整大输出导致审计困难 | P0 先落 `task_id + output_file`，batch-run 复用 |
+| output 文件被用户删除 | `log --id` 打印 task 元信息并返回明确错误 |
+| task_id 碰撞 | `task_id` 生成包含时间、host/command hash 和随机值或计数；写文件前检测存在则重试 |
 | host partial match 多个候选 | 整体失败，不执行任何 host |
 | `--hosts-file` 中 raw IP 没有认证信息 | 明确报错，提示使用 `--auth`、`--key` 或 `-p/--password` |
 | raw IP 新机器未在 known_hosts 中 | 默认失败并提示 host key 校验；需要用户先写入 known_hosts 或显式配置 `insecure` |
