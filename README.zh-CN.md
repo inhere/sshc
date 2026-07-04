@@ -16,6 +16,7 @@
 - 默认使用 `known_hosts` 校验 SSH host key
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
 - 将本地 shell 脚本上传到远端执行
+- 通过 `batch-run/brun` 在多台主机上批量执行命令或脚本
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
 - 通过 SFTP 上传和下载文件或目录
 - 支持单文件传输 SHA256 校验
@@ -53,6 +54,7 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc run devhost --script ./deploy.sh
+sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
 sshc log devhost --tail 20
@@ -67,6 +69,7 @@ sshc cfg|config      管理本地配置
 sshc auth|cred       管理可复用凭证
 sshc host|hosts      管理主机
 sshc run|exec        执行远程命令
+sshc batch-run|brun  在多台主机上执行命令或脚本
 sshc login           打开交互式 SSH shell
 sshc scp|upload      上传文件或目录
 sshc download|dl     下载文件或目录
@@ -192,6 +195,23 @@ sshc run devhost --script ./deploy.sh --keep-remote-script
 脚本模式默认将本地文件上传到远端 `/tmp`，然后用 `bash` 执行。如果远端
 `/tmp` 有 noexec、权限或清理策略限制，可以使用 `--remote-script-dir` 指定
 远端临时脚本目录。
+
+### 批量执行
+
+```bash
+sshc batch-run --hosts devhost,web-2 -- uptime
+sshc brun --hosts devhost,web-2 -- hostname
+sshc batch-run --group testing --parallel 5 --script ./deploy.sh
+sshc batch-run --hosts-file hosts.txt -- hostname
+sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+```
+
+`--hosts` 接收逗号分隔的主机列表。`--hosts-file` 每行读取一个目标，忽略空行和
+整行注释。已保存的 host 会优先解析；未保存的 IP 或 hostname 可以配合 `--auth`、
+`-u`、`--key` 或 `-p` 等共享认证参数临时执行，不会写入配置。
+
+使用 `--parallel` 控制并发数。设置 `--fail-fast` 后，遇到首个失败会停止启动新的
+host，并等待已经运行中的 host 结束。
 
 ### sudo
 

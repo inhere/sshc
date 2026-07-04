@@ -19,6 +19,7 @@ remote operations where a full automation platform would be too heavy.
 - Verify SSH host keys with `known_hosts` by default
 - Run remote commands by saved host name, IP, or unique partial match
 - Execute local shell scripts on remote hosts
+- Run commands or scripts across multiple hosts with `batch-run/brun`
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
 - Upload and download files or directories over SFTP
 - Verify single-file transfers with SHA256
@@ -56,6 +57,7 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc run devhost --script ./deploy.sh
+sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
 sshc log devhost --tail 20
@@ -70,6 +72,7 @@ sshc cfg       Manage config
 sshc auth      Manage credential profiles
 sshc host      Manage hosts
 sshc run       Run a remote command
+sshc batch-run Run a command or script on multiple hosts
 sshc login     Open an interactive SSH shell
 sshc scp       Upload files or directories
 sshc download  Download files or directories
@@ -87,6 +90,7 @@ Aliases:
 ```text
 list      ls
 run       exec
+batch-run brun
 login     connect
 scp       upload
 download  dl
@@ -209,6 +213,24 @@ or commands that require heavy quoting.
 Script mode uploads the local file to `/tmp` by default and runs it with `bash`.
 Use `--remote-script-dir` when `/tmp` has restrictive mount options, permissions,
 or cleanup policies.
+
+### Batch Run
+
+```bash
+sshc batch-run --hosts devhost,web-2 -- uptime
+sshc brun --hosts devhost,web-2 -- hostname
+sshc batch-run --group testing --parallel 5 --script ./deploy.sh
+sshc batch-run --hosts-file hosts.txt -- hostname
+sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+```
+
+`--hosts` accepts a comma-separated list. `--hosts-file` reads one host target per
+line and ignores blank lines and full-line comments. Saved hosts are resolved
+first; unresolved IP or hostname targets can be used with shared auth options
+such as `--auth`, `-u`, `--key`, or `-p`.
+
+Use `--parallel` to limit concurrency. With `--fail-fast`, sshc stops starting
+new hosts after the first failure and waits for already running hosts to finish.
 
 ### Sudo
 
