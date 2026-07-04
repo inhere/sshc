@@ -36,7 +36,7 @@ jobs:
       - name: Build bin package
         run: |
           make build-all
-          .dist/sshc-linux-amd64 -V
+          ./dist/sshc-linux-amd64 -V
 
       - name: Generate changelog
         run: |
