@@ -13,7 +13,6 @@
   - [x] 支持 keypath file
   - [x] 新增备注字段 --remark; 新增 --group 配置 server group，默认 "default"
 - [x] 支持读取 ~/.ssh/config 中带 IdentityFile 的 Host 配置
-- [ ] 支持读取 ~/.ssh/ 的 password 文件
 - [x] 新增 scp/upload -l local-path -r remote-path hostname 命令上传文件到remote
   - [x] 输出 size/files/dirs/elapsed 传输统计
   - [x] 新增 --sha256 文件级校验
