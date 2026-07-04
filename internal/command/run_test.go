@@ -207,6 +207,96 @@ func TestRunUsesEffectiveHostDefaultsAndAuthRef(t *testing.T) {
 	}
 }
 
+func TestRunPassesJumpOption(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "inner-db", "--jump", "bastion", "--", "hostname"}); err != nil {
+		t.Fatalf("run with jump: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
+func TestRunUsesConfiguredJump(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "inner-db", "--", "hostname"}); err != nil {
+		t.Fatalf("run with configured jump: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
+func TestRunJumpOptionOverridesConfiguredJump(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--jump", "alt-bastion", "inner-db", "--", "hostname"}); err != nil {
+		t.Fatalf("run with jump override: %v", err)
+	}
+	if gotHost.Jump != "alt-bastion" {
+		t.Fatalf("jump = %q, want alt-bastion", gotHost.Jump)
+	}
+}
+
+func TestRunParsesJumpBeforeTarget(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "--jump", "bastion", "inner-db", "--", "hostname"}); err != nil {
+		t.Fatalf("run with jump before target: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
+func TestRunParsesJumpAfterTargetBeforeCommand(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHost = host
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "inner-db", "--jump", "bastion", "--", "hostname"}); err != nil {
+		t.Fatalf("run with jump after target: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
 func TestRunPassesCWDOption(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

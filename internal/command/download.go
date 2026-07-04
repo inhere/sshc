@@ -14,6 +14,7 @@ var (
 	downloadOpts = struct {
 		LocalPath  string
 		RemotePath string
+		Jump       string
 		SHA256     bool
 	}{}
 
@@ -31,6 +32,7 @@ Examples:
   sshc download -r /tmp/remote-file.txt -l ./local-file.txt devhost --sha256
   sshc download -r /tmp/remote-file.txt -l ./downloads/ devhost
   sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
+  sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
   sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 
 Path rules:
@@ -42,6 +44,7 @@ Path rules:
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&downloadOpts.LocalPath, "local", "l", "", "local destination path")
 			c.StrOpt(&downloadOpts.RemotePath, "remote", "r", "", "remote file or directory path")
+			c.StrOpt(&downloadOpts.Jump, "jump", "", "", "jump host name or ip")
 			c.BoolOpt(&downloadOpts.SHA256, "sha256", "", false, "verify file transfer with sha256")
 			c.AddArg("target", "host ip or name", true)
 		},
@@ -56,7 +59,7 @@ Path rules:
 				return errors.New("remote path is required")
 			}
 
-			host, err := resolveCommandHost(target)
+			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: downloadOpts.Jump})
 			if err != nil {
 				return err
 			}

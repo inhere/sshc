@@ -122,6 +122,24 @@ func TestSCPUsesUploadMaps(t *testing.T) {
 	}
 }
 
+func TestSCPPassesJumpOption(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		gotHost = host
+		return core.TransferResult{Bytes: 1, Files: 1, Elapsed: time.Second}, nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"scp", "-l", "app.jar", "-r", "/tmp/app.jar", "inner-db", "--jump", "bastion"}); err != nil {
+		t.Fatalf("scp with jump: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
 func TestSCPRejectsInvalidMultiPathOptions(t *testing.T) {
 	withTempConfig(t)
 
@@ -227,6 +245,24 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	}
 	if !gotOpts.SHA256 {
 		t.Fatal("sha256 option = false, want true")
+	}
+}
+
+func TestDownloadPassesJumpOption(t *testing.T) {
+	saveJumpCommandHosts(t)
+
+	var gotHost core.Host
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
+		gotHost = host
+		return core.TransferResult{Bytes: 1, Files: 1, Elapsed: time.Second}, nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"download", "-r", "/var/log/app.log", "-l", "tmp/logs", "inner-db", "--jump", "bastion"}); err != nil {
+		t.Fatalf("download with jump: %v", err)
+	}
+	if gotHost.Jump != "bastion" {
+		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
 	}
 }
 

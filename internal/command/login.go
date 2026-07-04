@@ -13,6 +13,7 @@ var loginRemote = core.LoginRemoteWithOptions
 
 func NewLoginCmd() *gcli.Command {
 	var termName string
+	var jumpName string
 
 	cmd := &gcli.Command{
 		Name:    "login",
@@ -22,6 +23,7 @@ func NewLoginCmd() *gcli.Command {
 Examples:
   sshc login devhost
   sshc connect devhost
+  sshc login inner-db --jump bastion
   sshc login devhost --term xterm-256color
 
 Notes:
@@ -31,11 +33,12 @@ Notes:
 `),
 		Config: func(c *gcli.Command) {
 			c.AddArg("target", "host ip or name", true)
+			c.StrOpt(&jumpName, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&termName, "term", "", "", "remote terminal type, defaults to TERM or xterm-256color")
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
-			host, err := resolveCommandHost(target)
+			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: jumpName})
 			if err != nil {
 				return err
 			}

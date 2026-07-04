@@ -25,6 +25,7 @@ Examples:
   sshc run 192.168.1.10 -- docker ps
   sshc run devhost --script ./deploy.sh
   sshc run devhost --cwd /opt/app -- python -m app
+  sshc run inner-db --jump bastion -- hostname
   sshc run devhost --sudo -- apt-get update
   sshc run devhost --sudo-user app --cwd /opt/app -- whoami
   sshc run devhost --timeout 30s --kill-after 5s -- systemctl status nginx
@@ -57,6 +58,7 @@ Notes:
 			c.StrOpt(&opts.EnvFile, "env-file", "", "", "load environment variables from file")
 			c.StrOpt(&opts.EnvFile, "efile", "", "", "load environment variables from file")
 			c.StrOpt(&opts.CWD, "cwd", "", "", "remote working directory")
+			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
 			c.BoolOpt(&opts.Sudo, "sudo", "", false, "run remote command with sudo")
 			c.StrOpt(&opts.SudoUser, "sudo-user", "", "", "run remote command as user via sudo")
 			c.StrOpt(&opts.Script, "script", "", "", "local shell script to upload and run")
@@ -79,7 +81,7 @@ Notes:
 			if err != nil {
 				return err
 			}
-			host, err := resolveCommandHost(target)
+			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: opts.Jump})
 			if err != nil {
 				return err
 			}
@@ -147,6 +149,7 @@ type runFlagOptions struct {
 	Env              gcli.Strings
 	EnvFile          string
 	CWD              string
+	Jump             string
 	Sudo             bool
 	SudoUser         string
 	Script           string

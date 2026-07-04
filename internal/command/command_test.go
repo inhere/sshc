@@ -452,6 +452,25 @@ func withTempConfig(t *testing.T) string {
 	return path
 }
 
+func saveJumpCommandHosts(t *testing.T) {
+	t.Helper()
+	withTempConfig(t)
+	config := &core.Config{
+		Defaults: core.Defaults{HostKeyCheck: core.HostKeyCheckInsecure},
+		AuthProfiles: []core.AuthProfile{
+			{Name: "ops", User: "root", Password: "secret"},
+		},
+		Hosts: []core.Host{
+			{Name: "bastion", IP: "1.2.3.4", AuthRef: "ops"},
+			{Name: "alt-bastion", IP: "1.2.3.5", AuthRef: "ops"},
+			{Name: "inner-db", IP: "10.0.0.8", AuthRef: "ops", Jump: "bastion"},
+		},
+	}
+	if err := core.SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func readTestStore(t *testing.T) core.Store {
 	t.Helper()
 	path, err := core.StorePath()

@@ -29,12 +29,19 @@ func setCommandOutputForTest(out io.Writer) func() {
 }
 
 func resolveCommandHost(target string) (core.Host, error) {
+	return resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{})
+}
+
+func resolveCommandHostWithOptions(target string, opts core.ResolveConnectionOptions) (core.Host, error) {
 	host, ok, err := core.ResolveHostWithSSHConfig(target, core.HostOverrides{})
 	if err != nil {
 		return core.Host{}, err
 	}
 	if !ok {
 		return core.Host{}, fmt.Errorf("host %q not found", target)
+	}
+	if jump := strings.TrimSpace(opts.Jump); jump != "" {
+		host.Jump = jump
 	}
 	return host, nil
 }

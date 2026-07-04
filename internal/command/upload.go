@@ -26,6 +26,7 @@ Examples:
   sshc scp -l ./local-dir -r /tmp/remote-dir devhost
   sshc scp -l ./dist -r /opt/app/dist devhost --remove-dir
   sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
+  sshc scp -l app.jar -r /tmp/app.jar inner-db --jump bastion
   sshc upload -l ./dist -r /opt/app/dist devhost
   sshc upload -l ./a.jar -l ./b.jar -r /opt/app/lib/ devhost
   sshc upload --map ./config/app.yml=/etc/app/app.yml --map ./scripts/deploy.sh=/opt/app/deploy.sh devhost
@@ -44,6 +45,7 @@ Path rules:
 			c.VarOpt(&opts.LocalPaths, "local", "l", "local file or directory path, repeatable")
 			c.StrOpt(&opts.RemotePath, "remote", "r", "", "remote file or directory path")
 			c.VarOpt(&opts.Maps, "map", "", "upload mapping local=remote, repeatable")
+			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
 			c.BoolOpt(&opts.SHA256, "sha256", "", false, "verify file transfer with sha256")
 			c.BoolOpt(&opts.RemoveDir, "remove-dir", "", false, "remove remote directory before directory upload")
 			c.AddArg("target", "host ip or name", true)
@@ -55,7 +57,7 @@ Path rules:
 				return err
 			}
 
-			host, err := resolveCommandHost(target)
+			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: opts.Jump})
 			if err != nil {
 				return err
 			}
@@ -80,6 +82,7 @@ type uploadFlagOptions struct {
 	LocalPaths gcli.Strings
 	RemotePath string
 	Maps       gcli.Strings
+	Jump       string
 	SHA256     bool
 	RemoveDir  bool
 }
