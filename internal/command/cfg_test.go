@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inhere/sshc/internal/core"
 )
@@ -283,4 +284,195 @@ func TestCfgExportRequiresOutput(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--output is required") {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+func TestCfgImportMergeAddsEntries(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "current", User: "root", KeyPath: "~/.ssh/current"}},
+		Hosts:        []core.Host{{Name: "current", IP: "10.0.0.8", AuthRef: "current"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file, key := writeConfigExportForTest(t, core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "imported", User: "ops", KeyPath: "~/.ssh/imported"}},
+		Hosts:        []core.Host{{Name: "imported", IP: "10.0.0.9", AuthRef: "imported"}},
+	})
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key}); err != nil {
+		t.Fatalf("cfg import: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 2 || len(config.Hosts) != 2 {
+		t.Fatalf("config = %+v", config)
+	}
+	if !strings.Contains(out.String(), "hosts_added=1") || !strings.Contains(out.String(), "auth_added=1") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestCfgImportMergeRejectsConflicts(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/current"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file, key := writeConfigExportForTest(t, core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "ops", KeyPath: "~/.ssh/imported"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	})
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCfgImportOverwriteUpdatesEntries(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/current"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Remark: "old"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file, key := writeConfigExportForTest(t, core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "ops", KeyPath: "~/.ssh/imported"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Remark: "new"}},
+	})
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key, "--overwrite"}); err != nil {
+		t.Fatalf("cfg import overwrite: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthProfiles[0].User != "ops" || config.Hosts[0].Remark != "new" {
+		t.Fatalf("config = %+v", config)
+	}
+}
+
+func TestCfgImportReplaceConfig(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "old", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/old"}}}); err != nil {
+		t.Fatal(err)
+	}
+	file, key := writeConfigExportForTest(t, core.Config{Hosts: []core.Host{{Name: "new", IP: "10.0.0.9", User: "root", KeyPath: "~/.ssh/new"}}})
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key, "--replace"}); err != nil {
+		t.Fatalf("cfg import replace: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Name != "new" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestCfgImportRequiresFileAndKey(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"cfg", "import"}); err == nil || !strings.Contains(err.Error(), "--file is required") {
+		t.Fatalf("file err = %v", err)
+	}
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", "missing.enc"}); err == nil || !strings.Contains(err.Error(), "--key is required") {
+		t.Fatalf("key err = %v", err)
+	}
+}
+
+func TestCfgImportRejectsMultipleStrategies(t *testing.T) {
+	withTempConfig(t)
+	file, key := writeConfigExportForTest(t, core.Config{})
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key, "--merge", "--overwrite"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCfgImportBacksUpExistingConfig(t *testing.T) {
+	path := withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "old", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/old"}}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, key := writeConfigExportForTest(t, core.Config{Hosts: []core.Host{{Name: "new", IP: "10.0.0.9", User: "root", KeyPath: "~/.ssh/new"}}})
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key, "--replace"}); err != nil {
+		t.Fatalf("cfg import replace: %v", err)
+	}
+	if !strings.Contains(out.String(), "backup:") || strings.Contains(out.String(), "backup: none") {
+		t.Fatalf("output = %q", out.String())
+	}
+	backups, err := filepath.Glob(filepath.Join(filepath.Dir(path), "backups", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("backups = %+v", backups)
+	}
+	data, err := os.ReadFile(backups[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(before) {
+		t.Fatalf("backup mismatch:\n%s\n%s", data, before)
+	}
+}
+
+func TestCfgImportReencryptsPasswordsWithLocalKey(t *testing.T) {
+	path := withTempConfig(t)
+	file, key := writeConfigExportForTest(t, core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", Password: "secret"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Password: "host-secret"}},
+	})
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key}); err != nil {
+		t.Fatalf("cfg import password: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, `"password": "secret"`) || strings.Contains(content, `"password": "host-secret"`) {
+		t.Fatalf("config contains plaintext password: %s", content)
+	}
+	if !strings.Contains(content, `"password_enc": "v1:`) {
+		t.Fatalf("config missing password_enc: %s", content)
+	}
+}
+
+func writeConfigExportForTest(t *testing.T, config core.Config) (string, string) {
+	t.Helper()
+	key, err := core.GenerateExportKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := core.EncryptConfigExport(config, key, time.Date(2026, 7, 5, 10, 0, 0, 0, time.Local))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sshc-export.enc")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path, key
 }

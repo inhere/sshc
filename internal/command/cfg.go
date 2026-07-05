@@ -51,6 +51,7 @@ Notes:
 		newCfgEditCmd(),
 		newCfgDoctorCmd(),
 		newCfgExportCmd(),
+		newCfgImportCmd(),
 	)
 	return cmd
 }
@@ -278,6 +279,92 @@ func newCfgExportCmd() *gcli.Command {
 			fmt.Fprintf(cmdOutput(c), "export key: %s\n", key)
 			return nil
 		},
+	}
+}
+
+func newCfgImportCmd() *gcli.Command {
+	opts := struct {
+		File      string
+		Key       string
+		Merge     bool
+		Overwrite bool
+		Replace   bool
+	}{}
+	return &gcli.Command{
+		Name: "import",
+		Desc: "import encrypted config",
+		Config: func(c *gcli.Command) {
+			c.StrOpt(&opts.File, "file", "f", "", "input export file")
+			c.StrOpt(&opts.Key, "key", "", "", "export key")
+			c.BoolOpt(&opts.Merge, "merge", "", false, "merge imported config")
+			c.BoolOpt(&opts.Overwrite, "overwrite", "", false, "overwrite conflicting entries")
+			c.BoolOpt(&opts.Replace, "replace", "", false, "replace current config")
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			file := strings.TrimSpace(opts.File)
+			if file == "" {
+				return errors.New("--file is required")
+			}
+			key := strings.TrimSpace(opts.Key)
+			if key == "" {
+				return errors.New("--key is required")
+			}
+			strategy, err := cfgImportStrategy(opts.Merge, opts.Overwrite, opts.Replace)
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(file)
+			if err != nil {
+				return err
+			}
+			imported, err := core.DecryptConfigExport(data, key)
+			if err != nil {
+				return err
+			}
+			current, err := core.LoadConfig()
+			if err != nil {
+				return err
+			}
+			merged, result, err := core.MergeImportedConfig(*current, imported, strategy)
+			if err != nil {
+				return err
+			}
+			backupPath, err := core.BackupConfigFile(time.Now())
+			if err != nil {
+				return err
+			}
+			result.BackupPath = backupPath
+			if err := core.SaveConfig(&merged); err != nil {
+				return err
+			}
+			if result.BackupPath == "" {
+				fmt.Fprintln(cmdOutput(c), "backup: none")
+			} else {
+				fmt.Fprintf(cmdOutput(c), "backup: %s\n", result.BackupPath)
+			}
+			fmt.Fprintf(cmdOutput(c), "imported config: hosts_added=%d hosts_updated=%d auth_added=%d auth_updated=%d\n", result.HostsAdded, result.HostsUpdated, result.AuthAdded, result.AuthUpdated)
+			return nil
+		},
+	}
+}
+
+func cfgImportStrategy(merge, overwrite, replace bool) (core.ImportStrategy, error) {
+	count := 0
+	for _, enabled := range []bool{merge, overwrite, replace} {
+		if enabled {
+			count++
+		}
+	}
+	if count > 1 {
+		return "", errors.New("--merge, --overwrite and --replace cannot be used together")
+	}
+	switch {
+	case overwrite:
+		return core.ImportOverwrite, nil
+	case replace:
+		return core.ImportReplace, nil
+	default:
+		return core.ImportMerge, nil
 	}
 }
 
