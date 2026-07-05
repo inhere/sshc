@@ -203,3 +203,126 @@ func TestParseHostImportRejectsInvalidHostKeyCheck(t *testing.T) {
 		t.Fatalf("errs = %+v", errs)
 	}
 }
+
+func TestPlanHostImportAddsNewHosts(t *testing.T) {
+	config := Config{AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}}
+	hosts := []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}}
+	plan, err := PlanHostImport(config, hosts, HostImportOptions{})
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Added != 1 || plan.Updated != 0 || plan.Skipped != 0 || len(plan.Changes) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if plan.Changes[0].Action != HostImportActionAdd || plan.Changes[0].ExistingIndex != -1 {
+		t.Fatalf("change = %+v", plan.Changes[0])
+	}
+}
+
+func TestPlanHostImportRejectsExistingName(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.7", AuthRef: "dev-root"}},
+	}
+	hosts := []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}}
+	plan, err := PlanHostImport(config, hosts, HostImportOptions{})
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+	if len(plan.Conflicts) != 1 || plan.Conflicts[0].Field != "name" {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+}
+
+func TestPlanHostImportRejectsExistingIP(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "oldhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}
+	hosts := []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}}
+	plan, err := PlanHostImport(config, hosts, HostImportOptions{})
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+	if len(plan.Conflicts) != 1 || plan.Conflicts[0].Field != "ip" {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+}
+
+func TestPlanHostImportRejectsDuplicateInputName(t *testing.T) {
+	hosts := []Host{
+		{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"},
+		{Name: "devhost", IP: "10.0.0.9", User: "root", KeyPath: "~/.ssh/id_rsa"},
+	}
+	plan, err := PlanHostImport(Config{}, hosts, HostImportOptions{})
+	if err == nil {
+		t.Fatal("expected duplicate input error")
+	}
+	if len(plan.Invalid) == 0 || !strings.Contains(plan.Invalid[0].Error(), "duplicate imported host name") {
+		t.Fatalf("invalid = %+v", plan.Invalid)
+	}
+}
+
+func TestPlanHostImportSkipExisting(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}
+	hosts := []Host{
+		{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"},
+		{Name: "newhost", IP: "10.0.0.9", AuthRef: "dev-root"},
+	}
+	plan, err := PlanHostImport(config, hosts, HostImportOptions{SkipExisting: true})
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Added != 1 || plan.Skipped != 1 || len(plan.Changes) != 2 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if plan.Changes[0].Action != HostImportActionSkip || plan.Changes[1].Action != HostImportActionAdd {
+		t.Fatalf("changes = %+v", plan.Changes)
+	}
+}
+
+func TestPlanHostImportOverwrite(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Remark: "old"}},
+	}
+	hosts := []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Remark: "new"}}
+	plan, err := PlanHostImport(config, hosts, HostImportOptions{Overwrite: true})
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Updated != 1 || len(plan.Changes) != 1 || plan.Changes[0].ExistingIndex != 0 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if plan.Changes[0].Action != HostImportActionUpdate {
+		t.Fatalf("change = %+v", plan.Changes[0])
+	}
+}
+
+func TestPlanHostImportValidatesEffectiveHost(t *testing.T) {
+	hosts := []Host{{Name: "devhost", IP: "10.0.0.8"}}
+	plan, err := PlanHostImport(Config{}, hosts, HostImportOptions{})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if len(plan.Invalid) == 0 || !strings.Contains(plan.Invalid[0].Error(), "user is required") {
+		t.Fatalf("invalid = %+v", plan.Invalid)
+	}
+}
+
+func TestApplyHostImportDoesNotPartiallyApplyInvalidPlan(t *testing.T) {
+	config := Config{Hosts: []Host{{Name: "oldhost", IP: "10.0.0.7", User: "root", KeyPath: "~/.ssh/id_rsa"}}}
+	plan := HostImportPlan{
+		Changes: []HostImportChange{{Action: HostImportActionAdd, Host: Host{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"}}},
+		Invalid: []HostImportError{{Message: "invalid"}},
+	}
+	if err := ApplyHostImport(&config, plan); err == nil {
+		t.Fatal("expected apply error")
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Name != "oldhost" {
+		t.Fatalf("config was changed: %+v", config.Hosts)
+	}
+}

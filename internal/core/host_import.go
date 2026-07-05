@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -29,6 +30,45 @@ type HostImportDefaults struct {
 	RemoteScriptDir string
 	HostKeyCheck    string
 	KnownHostsPath  string
+}
+
+type HostImportOptions struct {
+	Format       HostImportFormat
+	Defaults     HostImportDefaults
+	Overwrite    bool
+	SkipExisting bool
+}
+
+type HostImportAction string
+
+const (
+	HostImportActionAdd    HostImportAction = "add"
+	HostImportActionUpdate HostImportAction = "update"
+	HostImportActionSkip   HostImportAction = "skip"
+)
+
+type HostImportChange struct {
+	Action        HostImportAction
+	Host          Host
+	ExistingIndex int
+	Reason        string
+}
+
+type HostImportConflict struct {
+	Host   Host
+	Field  string
+	Value  string
+	Reason string
+}
+
+type HostImportPlan struct {
+	Hosts     []Host
+	Changes   []HostImportChange
+	Added     int
+	Updated   int
+	Skipped   int
+	Conflicts []HostImportConflict
+	Invalid   []HostImportError
 }
 
 type HostImportError struct {
@@ -62,6 +102,105 @@ func ParseHostImport(reader io.Reader, format HostImportFormat, defaults HostImp
 	default:
 		return nil, []HostImportError{{Message: fmt.Sprintf("unsupported host import format %q", format)}}
 	}
+}
+
+func PlanHostImport(config Config, hosts []Host, opts HostImportOptions) (HostImportPlan, error) {
+	plan := HostImportPlan{Hosts: append([]Host(nil), hosts...)}
+	if opts.SkipExisting && opts.Overwrite {
+		plan.Invalid = append(plan.Invalid, HostImportError{Message: "skip-existing and overwrite cannot be used together"})
+		return plan, errors.New("host import options are invalid")
+	}
+	plan.Invalid = append(plan.Invalid, validateHostImportInputDuplicates(hosts)...)
+	if len(plan.Invalid) > 0 {
+		return plan, errors.New("host import input has errors")
+	}
+
+	for _, host := range hosts {
+		nameIdx := findExistingHostByName(config.Hosts, host.Name)
+		ipIdx := findExistingHostByIP(config.Hosts, host.IP)
+		existingIdx := mergeExistingIndexes(nameIdx, ipIdx)
+		if existingIdx == -2 {
+			plan.Conflicts = append(plan.Conflicts, HostImportConflict{
+				Host:   host,
+				Field:  "name/ip",
+				Value:  fmt.Sprintf("%s/%s", host.Name, host.IP),
+				Reason: "name and ip match different existing hosts",
+			})
+			continue
+		}
+
+		if existingIdx >= 0 {
+			if opts.SkipExisting {
+				plan.Changes = append(plan.Changes, HostImportChange{
+					Action:        HostImportActionSkip,
+					Host:          host,
+					ExistingIndex: existingIdx,
+					Reason:        "existing host",
+				})
+				plan.Skipped++
+				continue
+			}
+			if opts.Overwrite {
+				if err := validatePlannedHost(config, host); err != nil {
+					plan.Invalid = append(plan.Invalid, HostImportError{Field: "host", Message: err.Error()})
+					continue
+				}
+				plan.Changes = append(plan.Changes, HostImportChange{
+					Action:        HostImportActionUpdate,
+					Host:          host,
+					ExistingIndex: existingIdx,
+				})
+				plan.Updated++
+				continue
+			}
+			if nameIdx >= 0 {
+				plan.Conflicts = append(plan.Conflicts, HostImportConflict{Host: host, Field: "name", Value: host.Name, Reason: "host name already exists"})
+			}
+			if ipIdx >= 0 {
+				plan.Conflicts = append(plan.Conflicts, HostImportConflict{Host: host, Field: "ip", Value: host.IP, Reason: "host ip already exists"})
+			}
+			continue
+		}
+
+		if err := validatePlannedHost(config, host); err != nil {
+			plan.Invalid = append(plan.Invalid, HostImportError{Field: "host", Message: err.Error()})
+			continue
+		}
+		plan.Changes = append(plan.Changes, HostImportChange{Action: HostImportActionAdd, Host: host, ExistingIndex: -1})
+		plan.Added++
+	}
+
+	if len(plan.Invalid) > 0 || len(plan.Conflicts) > 0 {
+		return plan, errors.New("host import plan has conflicts")
+	}
+	return plan, nil
+}
+
+func ApplyHostImport(config *Config, plan HostImportPlan) error {
+	if config == nil {
+		return errors.New("config is nil")
+	}
+	if len(plan.Invalid) > 0 || len(plan.Conflicts) > 0 {
+		return errors.New("host import plan has conflicts")
+	}
+	hosts := append([]Host(nil), config.Hosts...)
+	for _, change := range plan.Changes {
+		switch change.Action {
+		case HostImportActionAdd:
+			hosts = append(hosts, change.Host)
+		case HostImportActionUpdate:
+			if change.ExistingIndex < 0 || change.ExistingIndex >= len(hosts) {
+				return fmt.Errorf("host import update index %d out of range", change.ExistingIndex)
+			}
+			hosts[change.ExistingIndex] = change.Host
+		case HostImportActionSkip:
+			continue
+		default:
+			return fmt.Errorf("unknown host import action %q", change.Action)
+		}
+	}
+	config.Hosts = hosts
+	return nil
 }
 
 func ParseHostImportIPs(reader io.Reader, defaults HostImportDefaults) ([]Host, []HostImportError) {
@@ -374,4 +513,76 @@ func csvRecordIsBlank(record []string) bool {
 		}
 	}
 	return true
+}
+
+func validateHostImportInputDuplicates(hosts []Host) []HostImportError {
+	var errs []HostImportError
+	seenNames := map[string]struct{}{}
+	seenIPs := map[string]struct{}{}
+	for _, host := range hosts {
+		if name := strings.TrimSpace(host.Name); name != "" {
+			key := strings.ToLower(name)
+			if _, ok := seenNames[key]; ok {
+				errs = append(errs, HostImportError{Field: "name", Message: fmt.Sprintf("duplicate imported host name %q", name)})
+			}
+			seenNames[key] = struct{}{}
+		}
+		if ip := strings.TrimSpace(host.IP); ip != "" {
+			key := strings.ToLower(ip)
+			if _, ok := seenIPs[key]; ok {
+				errs = append(errs, HostImportError{Field: "ip", Message: fmt.Sprintf("duplicate imported host ip %q", ip)})
+			}
+			seenIPs[key] = struct{}{}
+		}
+	}
+	return errs
+}
+
+func validatePlannedHost(config Config, host Host) error {
+	if _, _, err := config.EffectiveHost(host, HostOverrides{}); err != nil {
+		return err
+	}
+	if jump := strings.TrimSpace(host.Jump); jump != "" {
+		if _, err := config.ResolveConnection(host); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func findExistingHostByName(hosts []Host, name string) int {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return -1
+	}
+	for i, host := range hosts {
+		if strings.TrimSpace(host.Name) == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func findExistingHostByIP(hosts []Host, ip string) int {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return -1
+	}
+	for i, host := range hosts {
+		if strings.TrimSpace(host.IP) == ip {
+			return i
+		}
+	}
+	return -1
+}
+
+func mergeExistingIndexes(a, b int) int {
+	switch {
+	case a >= 0 && b >= 0 && a != b:
+		return -2
+	case a >= 0:
+		return a
+	default:
+		return b
+	}
 }
