@@ -153,6 +153,50 @@ sshc host rename old-name new-name
 
 顶层 `add`、`list`、`ls` 仍保留，方便日常快速使用。
 
+### 导入主机
+
+```bash
+sshc host import -f ips.txt --format ips --auth dev-root --group testing --yes
+sshc host import -f hosts.txt --format plain --dry-run
+sshc host import -f hosts.csv --format csv --overwrite --yes
+sshc host import --from-clipboard --format plain --auth dev-root
+```
+
+`ips` 是每行一个目标的简单格式：
+
+```text
+10.0.0.8
+10.0.0.9
+web.internal
+```
+
+`plain` 复用 `add --from-clipboard` 的 `key=value`/`key: value` 写法。
+多个主机之间使用空行分隔：
+
+```text
+ip=10.0.0.8
+name=devhost
+auth=dev-root
+group=testing
+
+ip: 10.0.0.9
+name: dbhost
+user: root
+password: secret
+group: testing
+```
+
+CSV 导入必须包含 header：
+
+```csv
+name,ip,auth,group,remark,port
+devhost,10.0.0.8,dev-root,testing,app server,22
+```
+
+默认遇到冲突会失败且不保存。使用 `--skip-existing` 跳过已存在主机，
+或使用 `--overwrite` 覆盖更新。`--dry-run` 只预览计划。导入的密码会在保存前加密，
+不会打印到输出里。
+
 ### 查看主机
 
 ```bash

@@ -155,6 +155,50 @@ sshc host rename old-name new-name
 
 Top-level `add`, `list`, and `ls` remain available for quick daily use.
 
+### Import Hosts
+
+```bash
+sshc host import -f ips.txt --format ips --auth dev-root --group testing --yes
+sshc host import -f hosts.txt --format plain --dry-run
+sshc host import -f hosts.csv --format csv --overwrite --yes
+sshc host import --from-clipboard --format plain --auth dev-root
+```
+
+`ips` is a simple one-target-per-line format:
+
+```text
+10.0.0.8
+10.0.0.9
+web.internal
+```
+
+`plain` reuses the same `key=value`/`key: value` style as `add --from-clipboard`.
+Separate multiple hosts with a blank line:
+
+```text
+ip=10.0.0.8
+name=devhost
+auth=dev-root
+group=testing
+
+ip: 10.0.0.9
+name: dbhost
+user: root
+password: secret
+group: testing
+```
+
+CSV imports must include a header row:
+
+```csv
+name,ip,auth,group,remark,port
+devhost,10.0.0.8,dev-root,testing,app server,22
+```
+
+By default, conflicts fail without saving. Use `--skip-existing` to ignore saved
+hosts or `--overwrite` to update them. `--dry-run` previews the plan. Imported
+passwords are encrypted before saving and are not printed.
+
 ### List Hosts
 
 ```bash

@@ -439,6 +439,8 @@ func ApplyHostImport(config *Config, plan HostImportPlan) error
 
 ### P1: host import 解析器
 
+状态：已完成，提交 `636eb6f feat(host): parse host import files`。
+
 目标：
 
 - 支持 `ips`、`plain` 和 CSV with header 解析。
@@ -499,6 +501,8 @@ feat(host): parse host import files
 
 ### P2: host import 计划与冲突策略
 
+状态：已完成，提交 `d5db747 feat(host): plan imported host changes`。
+
 目标：
 
 - 支持 dry-run 所需 plan。
@@ -552,6 +556,8 @@ feat(host): plan imported host changes
 ```
 
 ### P3: host import 命令
+
+状态：已完成，提交 `3cbec13 feat(host): import hosts from files`。
 
 目标：
 
@@ -621,6 +627,8 @@ feat(host): import hosts from files
 ```
 
 ### P4: 文档和 TODO 收口
+
+状态：已完成，提交 `docs: document host import usage`。
 
 目标：
 

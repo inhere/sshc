@@ -8,6 +8,7 @@
 | v0.2 | 2026-07-04 | Codex | 明确 gcli/v3 迁移、命令分组、host/auth/cfg/batch-run 命名和 jump 方向 |
 | v0.3 | 2026-07-04 | Codex | 更新当前实现状态，补充 add/host add --jump 已支持持久化跳板配置 |
 | v0.4 | 2026-07-05 | Codex | 对齐当前实现状态，标记 login/cfg defaults/host set-unset 已完成，明确下一步为 cfg export/import |
+| v0.5 | 2026-07-05 | Codex | 标记 `host import` 已完成，散装 hosts 清单导入已从 cfg export/import 边界中拆出 |
 
 ## 背景
 
@@ -738,6 +739,8 @@ sshc cfg import -f sshc-export.enc --key "one-time-key"
 散装 host 清单导入不走 `cfg import`，应走 `sshc host import`。详细计划见
 `docs/plan/2026-07-05-sshc-host-import-plan.md`。
 
+状态：`host import` 已完成，支持 `ips`、`plain` KV 文本、CSV、剪贴板导入、dry-run、skip-existing 和 overwrite。
+
 ### 导出流程
 
 - 读取当前配置。
@@ -1008,7 +1011,7 @@ sshc run devhost --no-log -- uptime
 
 ## 结论
 
-配置管理、凭证模型、batch-run、jump host 和 login 交互选择已经完成。下一步建议优先补齐跨机器迁移能力：
+配置管理、凭证模型、host import、batch-run、jump host 和 login 交互选择已经完成。下一步建议优先补齐跨机器迁移能力：
 
 ```text
 P7 cfg export/import -> P8 run 输出模式 / host key 辅助命令 / completion 增强
