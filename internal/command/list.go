@@ -22,8 +22,6 @@ func NewListCmd() *gcli.Command {
 		Aliases: []string{"ls"},
 		Help: strings.TrimSpace(`
 Examples:
-  sshc list
-  sshc ls
   sshc list --show-ip
 
 Output:

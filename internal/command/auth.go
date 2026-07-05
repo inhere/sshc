@@ -25,7 +25,6 @@ func NewAuthCmd() *gcli.Command {
 Examples:
   sshc auth add dev-root -u root -p --remark "shared root login"
   sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
-  sshc auth list
   sshc auth show dev-root
   sshc auth show dev-root --raw
   sshc auth rm dev-root --yes
@@ -96,8 +95,9 @@ func newAuthAddCmd() *gcli.Command {
 
 func newAuthListCmd() *gcli.Command {
 	return &gcli.Command{
-		Name: "list",
-		Desc: "list credential profiles",
+		Name:    "list",
+		Desc:    "list credential profiles",
+		Aliases: []string{"ls"},
 		Func: func(c *gcli.Command, _ []string) error {
 			config, err := core.LoadConfig()
 			if err != nil {

@@ -73,7 +73,6 @@ func NewHostCmd() *gcli.Command {
 Examples:
   sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
   sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
-  sshc host list
   sshc host list --group testing
   sshc host list --match devhost
   sshc host list --show-ip
@@ -336,8 +335,9 @@ func newHostListCmd() *gcli.Command {
 		JSON   bool
 	}{}
 	return &gcli.Command{
-		Name: "list",
-		Desc: "list saved ssh hosts",
+		Name:    "list",
+		Desc:    "list saved ssh hosts",
+		Aliases: []string{"ls"},
 		Config: func(c *gcli.Command) {
 			c.BoolOpt(&opts.ShowIP, "show-ip", "", false, "show full host IP address")
 			c.StrOpt(&opts.Group, "group", "", "", "filter by host group")

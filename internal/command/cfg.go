@@ -26,8 +26,6 @@ func NewCfgCmd() *gcli.Command {
 		Category: managementCategory,
 		Help: strings.TrimSpace(`
 Examples:
-  sshc cfg path
-  sshc cfg show
   sshc cfg show --raw
   sshc cfg get logs_path
   sshc cfg set logs_path ./runtime/logs
@@ -35,8 +33,6 @@ Examples:
   sshc cfg set defaults.port 2222
   sshc cfg set defaults.host_key_check known_hosts
   sshc cfg unset logs_path
-  sshc cfg doctor
-  sshc cfg edit
 
 Notes:
   - show masks passwords and encrypted password values by default.

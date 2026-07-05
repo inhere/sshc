@@ -31,7 +31,6 @@ func NewLogCmd() *gcli.Command {
 		Aliases: []string{"logs"},
 		Help: strings.TrimSpace(`
 Examples:
-  sshc log
   sshc log devhost
   sshc log 192.168.1.10
   sshc log devhost --match uptime
