@@ -36,9 +36,10 @@
   - [ ] 另一种通过 pve 主机到上面的 lxc 或者 vhost 执行命令
 - [x] login 命令
   - [x] 未输入或未匹配到host时，使用 cliui newui 交互选择目标
-- [ ] 支持导入与导出 hosts 配置数据
-  - 导出时会加密整个文件数据，同时生成一个一次性key string
-  - 导入时需要指定导出的文件和配套的 key string 才行
+- [ ] 支持 cfg export/import 完整配置迁移
+  - [ ] 导出时加密完整配置包，同时生成一次性 export key
+  - [ ] 导入时指定导出文件和 export key，并用目标机器本地 key 重新加密密码
+  - [ ] import 支持默认 merge、overwrite、replace，并在导入前备份当前配置
 - [ ] 安全增强
   - [ ] 后续可考虑配置级解锁机制：设置有效期，过期后本机验证，验证后短期缓存解锁态
 

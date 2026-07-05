@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-05 | Codex | 初版，基于当前配置和凭证模型拆分 cfg export/import 的实现阶段、提交边界和验收项 |
+| v0.2 | 2026-07-05 | Codex | 对齐 `host import` 已完成后的边界，补充 cfg export/import 已确认决策 |
 
 ## 关联文档
 
@@ -42,8 +43,8 @@
 - `auth_profiles`
 - `hosts`
 
-已有 `ips`、`plain` KV 文本、CSV、剪贴板 hosts 清单的批量导入不属于本计划，应该通过
-`sshc host import` 处理。详细计划见：
+已有 `ips`、`plain` KV 文本、CSV、剪贴板 hosts 清单的批量导入不属于本计划，已由
+`sshc host import` 提供。详细计划和实现状态见：
 
 ```text
 docs/plan/2026-07-05-sshc-host-import-plan.md
@@ -61,6 +62,14 @@ docs/plan/2026-07-05-sshc-host-import-plan.md
 - 支持 merge/replace/overwrite 三类导入策略。
 - 每个阶段独立验证、独立提交。
 
+## 已确认事项
+
+- 初版使用自动生成的一次性 export key，格式为 `sshc-v1:<base64url random 32 bytes>`。
+- 初版不做用户 passphrase 输入；passphrase 模式作为后续扩展。
+- import 默认策略为 `--merge`，遇到同名 host、同 IP host 或同名 auth profile 时拒绝导入。
+- 只有显式 `--overwrite` 或 `--replace` 才覆盖已有配置。
+- 导入前备份到配置目录下的 `backups/`，初版不自动清理旧备份。
+
 ## 非目标
 
 - 不实现云同步、远端配置仓库或中心化配置服务。
@@ -70,7 +79,7 @@ docs/plan/2026-07-05-sshc-host-import-plan.md
 - 不把 export key 写入日志或配置文件。
 - 不支持只导出单个 host/auth profile；初版只导出整个 config。
 - 不支持导出包追加写入或增量更新。
-- 不支持普通 `ips`、`plain` KV 文本、CSV 或剪贴板 hosts 清单导入；该能力由 `host import` 提供。
+- 不支持普通 `ips`、`plain` KV 文本、CSV 或剪贴板 hosts 清单导入；该能力已由 `host import` 提供。
 
 ## 命令面
 
@@ -96,6 +105,7 @@ export key: sshc-v1:...
 - 生成随机一次性 export key。
 - export key 只输出一次，用户需要自行保存。
 - 不在 run log 中记录 export key。
+- 不读取或复用 `host import` 的 `ips/plain/csv` 输入格式。
 
 ### import
 

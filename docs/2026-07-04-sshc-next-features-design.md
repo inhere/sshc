@@ -9,6 +9,7 @@
 | v0.3 | 2026-07-04 | Codex | 更新当前实现状态，补充 add/host add --jump 已支持持久化跳板配置 |
 | v0.4 | 2026-07-05 | Codex | 对齐当前实现状态，标记 login/cfg defaults/host set-unset 已完成，明确下一步为 cfg export/import |
 | v0.5 | 2026-07-05 | Codex | 标记 `host import` 已完成，散装 hosts 清单导入已从 cfg export/import 边界中拆出 |
+| v0.6 | 2026-07-05 | Codex | 收敛 cfg export/import 已确认决策，避免与 `host import` 边界混淆 |
 
 ## 背景
 
@@ -282,7 +283,7 @@ sshc cfg unset logs_path
 sshc cfg edit
 sshc cfg doctor
 sshc cfg export -o sshc-export.enc
-sshc cfg import -f sshc-export.enc --key "one-time-key"
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
 ```
 
 `cfg` 顶级命令设置 `Category: "Management"`，别名为 `config`。
@@ -731,7 +732,7 @@ sshc run pve-host -- pct exec 101 -- hostname
 
 ```bash
 sshc cfg export -o sshc-export.enc
-sshc cfg import -f sshc-export.enc --key "one-time-key"
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
 ```
 
 确定放在 `cfg` 下，避免顶层命令过多。导入导出操作的是整个配置文件，不只是 host。
@@ -745,7 +746,7 @@ sshc cfg import -f sshc-export.enc --key "one-time-key"
 
 - 读取当前配置。
 - 解密本机 `password_enc` 到内存。
-- 生成随机一次性 key string，或要求用户输入 passphrase。
+- 生成随机一次性 key string。
 - 用一次性 key 派生 AES-GCM key。
 - 加密整个导出包。
 - 输出加密文件和一次性 key string。
@@ -768,7 +769,7 @@ sshc cfg import -f sshc-export.enc --key "one-time-key"
 --overwrite
 ```
 
-默认 `--merge`，遇到同名 host 或 auth profile 时拒绝并提示使用 `--overwrite`。
+默认 `--merge`，遇到同名 host、同 IP host 或同名 auth profile 时拒绝并提示使用 `--overwrite`。
 
 ### 安全边界
 
@@ -1003,11 +1004,11 @@ sshc run devhost --no-log -- uptime
 - 用户可以更方便地维护 `known_hosts` 信任。
 - 主流 shell 可以补全命令和 host。
 
-## 需要先确认的问题
+## 已确认事项
 
-1. export/import 的 key 是自动生成一次性 key，还是用户输入 passphrase。建议初版自动生成一次性 key，同时后续可追加 passphrase 模式。
-2. import 冲突默认策略是否为 `--merge` 且冲突拒绝。建议默认 merge，不覆盖已有 host/auth，显式 `--overwrite` 才覆盖。
-3. 导入前备份目录和保留策略。建议备份到配置目录下 `backups/`，后续再考虑清理策略。
+1. export/import 初版使用自动生成一次性 key，格式为 `sshc-v1:<base64url random 32 bytes>`；passphrase 模式后续再追加。
+2. import 默认策略为 `--merge` 且冲突拒绝，不覆盖已有 host/auth；显式 `--overwrite` 或 `--replace` 才覆盖。
+3. 导入前备份到配置目录下的 `backups/`，文件名包含时间戳；初版不自动清理旧备份。
 
 ## 结论
 
