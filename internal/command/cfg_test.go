@@ -193,3 +193,94 @@ func TestCfgDoctorReturnsErrorForInvalidConfig(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestCfgExportWritesEncryptedFile(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", Password: "secret"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "sshc-export.enc")
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := app.RunWithArgs([]string{"cfg", "export", "-o", output}); err != nil {
+		t.Fatalf("cfg export: %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "secret") || strings.Contains(string(data), "devhost") {
+		t.Fatalf("export leaked plaintext: %s", data)
+	}
+	if !strings.Contains(out.String(), "exported config to") || !strings.Contains(out.String(), "export key: sshc-v1:") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestCfgExportPrintsExportKey(t *testing.T) {
+	withTempConfig(t)
+	output := filepath.Join(t.TempDir(), "sshc-export.enc")
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := app.RunWithArgs([]string{"cfg", "export", "-o", output}); err != nil {
+		t.Fatalf("cfg export: %v", err)
+	}
+	if !strings.Contains(out.String(), "export key: sshc-v1:") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestCfgExportRejectsExistingFileWithoutForce(t *testing.T) {
+	withTempConfig(t)
+	output := filepath.Join(t.TempDir(), "sshc-export.enc")
+	if err := os.WriteFile(output, []byte("existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"cfg", "export", "-o", output})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "existing" {
+		t.Fatalf("file was overwritten: %s", data)
+	}
+}
+
+func TestCfgExportForceOverwritesFile(t *testing.T) {
+	withTempConfig(t)
+	output := filepath.Join(t.TempDir(), "sshc-export.enc")
+	if err := os.WriteFile(output, []byte("existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"cfg", "export", "-o", output, "--force"}); err != nil {
+		t.Fatalf("cfg export --force: %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) == "existing" || !strings.Contains(string(data), `"payload"`) {
+		t.Fatalf("file not overwritten with export: %s", data)
+	}
+}
+
+func TestCfgExportRequiresOutput(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"cfg", "export"})
+	if err == nil || !strings.Contains(err.Error(), "--output is required") {
+		t.Fatalf("err = %v", err)
+	}
+}

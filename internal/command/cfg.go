@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/inhere/sshc/internal/core"
 
@@ -48,6 +50,7 @@ Notes:
 		newCfgUnsetCmd(),
 		newCfgEditCmd(),
 		newCfgDoctorCmd(),
+		newCfgExportCmd(),
 	)
 	return cmd
 }
@@ -222,6 +225,57 @@ func newCfgDoctorCmd() *gcli.Command {
 			if core.HasDoctorErrors(issues) {
 				return errors.New("config doctor found errors")
 			}
+			return nil
+		},
+	}
+}
+
+func newCfgExportCmd() *gcli.Command {
+	opts := struct {
+		Output string
+		Force  bool
+	}{}
+	return &gcli.Command{
+		Name: "export",
+		Desc: "export encrypted config",
+		Config: func(c *gcli.Command) {
+			c.StrOpt(&opts.Output, "output", "o", "", "output export file")
+			c.BoolOpt(&opts.Force, "force", "", false, "overwrite existing output file")
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			output := strings.TrimSpace(opts.Output)
+			if output == "" {
+				return errors.New("--output is required")
+			}
+			if !opts.Force {
+				if _, err := os.Stat(output); err == nil {
+					return fmt.Errorf("output file %s already exists; use --force to overwrite", output)
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+			}
+			config, err := core.LoadConfig()
+			if err != nil {
+				return err
+			}
+			key, err := core.GenerateExportKey()
+			if err != nil {
+				return err
+			}
+			data, err := core.EncryptConfigExport(*config, key, time.Now())
+			if err != nil {
+				return err
+			}
+			if dir := filepath.Dir(output); dir != "." {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					return err
+				}
+			}
+			if err := os.WriteFile(output, data, 0600); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdOutput(c), "exported config to %s\n", output)
+			fmt.Fprintf(cmdOutput(c), "export key: %s\n", key)
 			return nil
 		},
 	}
