@@ -42,6 +42,13 @@
 - `auth_profiles`
 - `hosts`
 
+已有 IP/CSV/剪贴板 hosts 清单的批量导入不属于本计划，应该通过
+`sshc host import` 处理。详细计划见：
+
+```text
+docs/plan/2026-07-05-sshc-host-import-plan.md
+```
+
 ## 目标
 
 - 新增 `sshc cfg export -o FILE`。
@@ -63,6 +70,7 @@
 - 不把 export key 写入日志或配置文件。
 - 不支持只导出单个 host/auth profile；初版只导出整个 config。
 - 不支持导出包追加写入或增量更新。
+- 不支持普通 IP list、CSV 或剪贴板 hosts 清单导入；该能力由 `host import` 提供。
 
 ## 命令面
 

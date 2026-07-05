@@ -718,6 +718,14 @@ sshc run pve-host -- pct exec 101 -- hostname
 
 导入导出有价值，尤其跨机器迁移时，本机 `password_enc` 依赖本机 key，直接复制配置无法在另一台机器解密。
 
+导入相关能力按场景拆分：
+
+| 场景 | 命令 | 是否保存 host | 说明 |
+| --- | --- | --- | --- |
+| 临时执行很多 IP/host | `batch-run --hosts-file` | 否 | 适合一次性初始化或巡检 |
+| 已有 hosts 清单批量纳入 sshc | `host import` | 是 | 适合 IP list、CSV、剪贴板清单 |
+| 另一台 sshc 完整配置迁移 | `cfg export/import` | 是 | 迁移 `defaults/auth_profiles/hosts`，并重新加密密码 |
+
 建议命令：
 
 ```bash
@@ -726,6 +734,9 @@ sshc cfg import -f sshc-export.enc --key "one-time-key"
 ```
 
 确定放在 `cfg` 下，避免顶层命令过多。导入导出操作的是整个配置文件，不只是 host。
+
+散装 host 清单导入不走 `cfg import`，应走 `sshc host import`。详细计划见
+`docs/plan/2026-07-05-sshc-host-import-plan.md`。
 
 ### 导出流程
 
