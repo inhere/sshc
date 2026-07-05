@@ -33,6 +33,9 @@ func TestHostImportIPsCommand(t *testing.T) {
 	if len(config.Hosts) != 2 || config.Hosts[0].IP != "10.0.0.8" || config.Hosts[1].Group != "testing" {
 		t.Fatalf("hosts = %+v", config.Hosts)
 	}
+	if config.Hosts[0].Port != core.DefaultSSHPort || config.Hosts[1].Port != core.DefaultSSHPort {
+		t.Fatalf("ports = %d,%d", config.Hosts[0].Port, config.Hosts[1].Port)
+	}
 }
 
 func TestHostImportPlainCommand(t *testing.T) {

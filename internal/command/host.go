@@ -142,19 +142,19 @@ Examples:
 			if err != nil {
 				return err
 			}
-			hosts, parseErrs := core.ParseHostImport(bytes.NewReader(data), format, hostImportDefaults(opts))
-			if len(parseErrs) > 0 {
-				writeHostImportErrors(c, "invalid", parseErrs)
-				return fmt.Errorf("host import parse failed: %d error(s)", len(parseErrs))
-			}
-
 			config, err := core.LoadConfig()
 			if err != nil {
 				return err
 			}
+			defaults := hostImportDefaults(opts, config.Defaults)
+			hosts, parseErrs := core.ParseHostImport(bytes.NewReader(data), format, defaults)
+			if len(parseErrs) > 0 {
+				writeHostImportErrors(c, "invalid", parseErrs)
+				return fmt.Errorf("host import parse failed: %d error(s)", len(parseErrs))
+			}
 			plan, planErr := core.PlanHostImport(*config, hosts, core.HostImportOptions{
 				Format:       format,
-				Defaults:     hostImportDefaults(opts),
+				Defaults:     defaults,
 				Overwrite:    opts.Overwrite,
 				SkipExisting: opts.SkipExisting,
 			})
@@ -268,18 +268,46 @@ func hostImportLooksPlain(data []byte) bool {
 	return false
 }
 
-func hostImportDefaults(opts hostImportOptions) core.HostImportDefaults {
+func hostImportDefaults(opts hostImportOptions, configDefaults core.Defaults) core.HostImportDefaults {
+	group := strings.TrimSpace(opts.Group)
+	if group == "" {
+		group = core.DefaultGroup
+	}
+	port := opts.Port
+	if port == 0 {
+		port = configDefaults.Port
+	}
+	if port == 0 {
+		port = core.DefaultSSHPort
+	}
+	hostKeyCheck := strings.TrimSpace(opts.HostKeyCheck)
+	if hostKeyCheck == "" {
+		hostKeyCheck = configDefaults.HostKeyCheck
+	}
+	knownHostsPath := strings.TrimSpace(opts.KnownHostsPath)
+	if knownHostsPath == "" {
+		knownHostsPath = configDefaults.KnownHostsPath
+	}
 	return core.HostImportDefaults{
 		AuthRef:        strings.TrimSpace(opts.AuthRef),
-		User:           strings.TrimSpace(opts.User),
+		User:           firstNonEmpty(opts.User, configDefaults.User),
 		KeyPath:        strings.TrimSpace(opts.KeyPath),
-		Group:          strings.TrimSpace(opts.Group),
+		Group:          group,
 		Remark:         strings.TrimSpace(opts.Remark),
-		Port:           opts.Port,
+		Port:           port,
 		Jump:           strings.TrimSpace(opts.Jump),
-		HostKeyCheck:   strings.TrimSpace(opts.HostKeyCheck),
-		KnownHostsPath: strings.TrimSpace(opts.KnownHostsPath),
+		HostKeyCheck:   hostKeyCheck,
+		KnownHostsPath: knownHostsPath,
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func writeHostImportPlan(c *gcli.Command, plan core.HostImportPlan, dryRun bool) {
