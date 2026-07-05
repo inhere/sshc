@@ -1,11 +1,240 @@
 package command
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/inhere/sshc/internal/core"
 )
+
+func TestHostImportIPsCommand(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hosts.ips")
+	if err := os.WriteFile(path, []byte("10.0.0.8\n10.0.0.9\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--auth", "dev-root", "--group", "testing", "--yes"}); err != nil {
+		t.Fatalf("host import ips: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 2 || config.Hosts[0].IP != "10.0.0.8" || config.Hosts[1].Group != "testing" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportPlainCommand(t *testing.T) {
+	withTempConfig(t)
+	input := `ip=10.0.0.8
+name=devhost
+user=root
+key=~/.ssh/id_rsa
+group=testing
+
+ip=10.0.0.9
+name=dbhost
+user=root
+key=~/.ssh/id_rsa
+group=testing
+`
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte(input), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--format", "plain", "--yes"}); err != nil {
+		t.Fatalf("host import plain: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 2 || config.Hosts[0].Name != "devhost" || config.Hosts[1].Name != "dbhost" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportCSVCommand(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hosts.csv")
+	if err := os.WriteFile(path, []byte("name,ip,auth,group,remark,port\ndevhost,10.0.0.8,dev-root,testing,app server,2222\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--yes"}); err != nil {
+		t.Fatalf("host import csv: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[0]
+	if host.Name != "devhost" || host.AuthRef != "dev-root" || host.Port != 2222 || host.Remark != "app server" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestHostImportDryRunDoesNotSave(t *testing.T) {
+	withTempConfig(t)
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte("ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--dry-run"}); err != nil {
+		t.Fatalf("host import dry-run: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 0 {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportRejectsConflicts(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte("ip=10.0.0.9\nname=devhost\nuser=root\nkey=~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"host", "import", "-f", path, "--format", "plain", "--yes"})
+	if err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHostImportSkipExisting(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte("ip=10.0.0.8\nname=devhost\nuser=root\nkey=~/.ssh/id_rsa\n\nip=10.0.0.9\nname=newhost\nuser=root\nkey=~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--format", "plain", "--skip-existing", "--yes"}); err != nil {
+		t.Fatalf("host import skip: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 2 || config.Hosts[1].Name != "newhost" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportOverwrite(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Remark: "old"}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte("ip=10.0.0.8\nname=devhost\nuser=root\nkey=~/.ssh/id_rsa\nremark=new\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--format", "plain", "--overwrite", "--yes"}); err != nil {
+		t.Fatalf("host import overwrite: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Remark != "new" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportFromClipboard(t *testing.T) {
+	withTempConfig(t)
+	t.Cleanup(setReadClipboardForTest(func() (string, error) {
+		return "ip=10.0.0.8\nname=devhost\nuser=root\nkey=~/.ssh/id_rsa\n", nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "--from-clipboard", "--format", "plain"}); err != nil {
+		t.Fatalf("host import clipboard: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Name != "devhost" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportRequiresYesInNonInteractiveMode(t *testing.T) {
+	withTempConfig(t)
+	path := filepath.Join(t.TempDir(), "hosts.ips")
+	if err := os.WriteFile(path, []byte("10.0.0.8\n10.0.0.9\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"host", "import", "-f", path, "--user", "root", "--key", "~/.ssh/id_rsa"})
+	if err == nil || !strings.Contains(err.Error(), "confirmation required") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHostImportEncryptsPassword(t *testing.T) {
+	path := withTempConfig(t)
+	csvPath := filepath.Join(t.TempDir(), "hosts.csv")
+	if err := os.WriteFile(csvPath, []byte("name,ip,user,password\ndevhost,10.0.0.8,root,secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", csvPath, "--yes"}); err != nil {
+		t.Fatalf("host import password: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, `"password": "secret"`) || strings.Contains(content, `"password":"secret"`) {
+		t.Fatalf("config contains plaintext password: %s", content)
+	}
+	if !strings.Contains(content, `"password_enc": "v1:`) {
+		t.Fatalf("config missing encrypted password: %s", content)
+	}
+}
 
 func TestHostSetUpdatesFields(t *testing.T) {
 	withTempConfig(t)

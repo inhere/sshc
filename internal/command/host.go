@@ -1,14 +1,37 @@
 package command
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/gookit/cliui/cutypes"
 	"github.com/inhere/sshc/internal/core"
 
 	"github.com/gookit/gcli/v3"
 )
+
+type hostImportOptions struct {
+	File           string
+	FromClipboard  bool
+	Format         string
+	AuthRef        string
+	User           string
+	KeyPath        string
+	Group          string
+	Remark         string
+	Jump           string
+	HostKeyCheck   string
+	KnownHostsPath string
+	Port           int
+	DryRun         bool
+	SkipExisting   bool
+	Overwrite      bool
+	Yes            bool
+}
 
 type hostSetOptions struct {
 	IP              string
@@ -69,6 +92,7 @@ Notes:
 	}
 	cmd.Add(
 		newHostAddCmd(),
+		newHostImportCmd(),
 		newHostListCmd(),
 		newHostShowCmd(),
 		newHostSetCmd(),
@@ -79,12 +103,201 @@ Notes:
 	return cmd
 }
 
+func newHostImportCmd() *gcli.Command {
+	opts := hostImportOptions{}
+	return &gcli.Command{
+		Name: "import",
+		Desc: "import ssh hosts",
+		Help: strings.TrimSpace(`
+Examples:
+  sshc host import -f ips.txt --format ips --auth dev-root --group testing
+  sshc host import -f hosts.txt --format plain --dry-run
+  sshc host import -f hosts.csv --format csv --overwrite --yes
+  sshc host import --from-clipboard --format plain --auth dev-root
+`),
+		Config: func(c *gcli.Command) {
+			c.StrOpt(&opts.File, "file", "f", "", "input file, or - for stdin")
+			c.BoolOpt(&opts.FromClipboard, "from-clipboard", "", false, "read import data from clipboard")
+			c.StrOpt(&opts.Format, "format", "", "", "input format: ips, plain, or csv")
+			c.StrOpt(&opts.AuthRef, "auth", "", "", "default auth profile name")
+			c.StrOpt(&opts.User, "user", "u", "", "default ssh username")
+			c.StrOpt(&opts.KeyPath, "key", "", "", "default ssh private key path")
+			c.StrOpt(&opts.Group, "group", "", "", "default host group")
+			c.StrOpt(&opts.Remark, "remark", "", "", "default host remark")
+			c.StrOpt(&opts.Jump, "jump", "", "", "default jump host name or ip")
+			c.IntOpt(&opts.Port, "port", "", 0, "default ssh port")
+			c.StrOpt(&opts.HostKeyCheck, "host-key-check", "", "", "default host key check policy: known_hosts or insecure")
+			c.StrOpt(&opts.KnownHostsPath, "known-hosts-path", "", "", "default known_hosts file path")
+			c.BoolOpt(&opts.DryRun, "dry-run", "", false, "preview import plan without saving")
+			c.BoolOpt(&opts.SkipExisting, "skip-existing", "", false, "skip existing hosts")
+			c.BoolOpt(&opts.Overwrite, "overwrite", "", false, "overwrite existing hosts")
+			c.BoolOpt(&opts.Yes, "yes", "y", false, "confirm import")
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			data, source, err := readHostImportInput(opts)
+			if err != nil {
+				return err
+			}
+			format, err := resolveHostImportFormat(opts.Format, source, data)
+			if err != nil {
+				return err
+			}
+			hosts, parseErrs := core.ParseHostImport(bytes.NewReader(data), format, hostImportDefaults(opts))
+			if len(parseErrs) > 0 {
+				writeHostImportErrors(c, "invalid", parseErrs)
+				return fmt.Errorf("host import parse failed: %d error(s)", len(parseErrs))
+			}
+
+			config, err := core.LoadConfig()
+			if err != nil {
+				return err
+			}
+			plan, planErr := core.PlanHostImport(*config, hosts, core.HostImportOptions{
+				Format:       format,
+				Defaults:     hostImportDefaults(opts),
+				Overwrite:    opts.Overwrite,
+				SkipExisting: opts.SkipExisting,
+			})
+			writeHostImportPlan(c, plan, opts.DryRun)
+			if planErr != nil {
+				if opts.DryRun {
+					return nil
+				}
+				return planErr
+			}
+			if opts.DryRun {
+				return nil
+			}
+			if !opts.Yes && plan.Added+plan.Updated+plan.Skipped > 1 {
+				if ok, err := confirmInteractive("import hosts?"); err != nil {
+					return err
+				} else if !ok {
+					return errors.New("import canceled")
+				}
+			}
+			if err := core.ApplyHostImport(config, plan); err != nil {
+				return err
+			}
+			if err := core.SaveConfig(config); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdOutput(c), "Imported hosts: added=%d updated=%d skipped=%d\n", plan.Added, plan.Updated, plan.Skipped)
+			return nil
+		},
+	}
+}
+
 func newHostAddCmd() *gcli.Command {
 	cmd := NewAddCmd()
 	cmd.Name = "add"
 	cmd.Aliases = nil
 	cmd.Desc = "add or update ssh host"
 	return cmd
+}
+
+func readHostImportInput(opts hostImportOptions) ([]byte, string, error) {
+	if strings.TrimSpace(opts.File) != "" && opts.FromClipboard {
+		return nil, "", errors.New("--file and --from-clipboard cannot be used together")
+	}
+	if opts.FromClipboard {
+		text, err := readClipboard()
+		if err != nil {
+			return nil, "", err
+		}
+		return []byte(text), "clipboard", nil
+	}
+	file := strings.TrimSpace(opts.File)
+	switch file {
+	case "":
+		return nil, "", errors.New("--file or --from-clipboard is required")
+	case "-":
+		if cutypes.Input == nil {
+			return nil, "", errors.New("stdin is not available")
+		}
+		buf := new(bytes.Buffer)
+		if _, err := buf.ReadFrom(cutypes.Input); err != nil {
+			return nil, "", err
+		}
+		return buf.Bytes(), "stdin", nil
+	default:
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, file, nil
+	}
+}
+
+func resolveHostImportFormat(value, source string, data []byte) (core.HostImportFormat, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+	case string(core.HostImportIPs):
+		return core.HostImportIPs, nil
+	case string(core.HostImportPlain):
+		return core.HostImportPlain, nil
+	case string(core.HostImportCSV):
+		return core.HostImportCSV, nil
+	default:
+		return "", fmt.Errorf("unsupported import format %q", value)
+	}
+	switch strings.ToLower(filepath.Ext(source)) {
+	case ".csv":
+		return core.HostImportCSV, nil
+	case ".ips":
+		return core.HostImportIPs, nil
+	}
+	if hostImportLooksPlain(data) {
+		return core.HostImportPlain, nil
+	}
+	return core.HostImportIPs, nil
+}
+
+func hostImportLooksPlain(data []byte) bool {
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(strings.TrimRight(raw, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if _, _, ok := strings.Cut(line, "="); ok {
+			return true
+		}
+		if key, _, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(key) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hostImportDefaults(opts hostImportOptions) core.HostImportDefaults {
+	return core.HostImportDefaults{
+		AuthRef:        strings.TrimSpace(opts.AuthRef),
+		User:           strings.TrimSpace(opts.User),
+		KeyPath:        strings.TrimSpace(opts.KeyPath),
+		Group:          strings.TrimSpace(opts.Group),
+		Remark:         strings.TrimSpace(opts.Remark),
+		Port:           opts.Port,
+		Jump:           strings.TrimSpace(opts.Jump),
+		HostKeyCheck:   strings.TrimSpace(opts.HostKeyCheck),
+		KnownHostsPath: strings.TrimSpace(opts.KnownHostsPath),
+	}
+}
+
+func writeHostImportPlan(c *gcli.Command, plan core.HostImportPlan, dryRun bool) {
+	if dryRun {
+		fmt.Fprintln(cmdOutput(c), "Dry-run: no changes saved")
+	}
+	fmt.Fprintf(cmdOutput(c), "Parsed: total=%d valid=%d invalid=%d\n", len(plan.Hosts), len(plan.Hosts)-len(plan.Invalid), len(plan.Invalid))
+	fmt.Fprintf(cmdOutput(c), "Plan: add=%d update=%d skip=%d conflict=%d\n", plan.Added, plan.Updated, plan.Skipped, len(plan.Conflicts))
+	for _, conflict := range plan.Conflicts {
+		fmt.Fprintf(cmdOutput(c), "conflict: %s=%s %s\n", conflict.Field, conflict.Value, conflict.Reason)
+	}
+	writeHostImportErrors(c, "invalid", plan.Invalid)
+}
+
+func writeHostImportErrors(c *gcli.Command, prefix string, errs []core.HostImportError) {
+	for _, item := range errs {
+		fmt.Fprintf(cmdOutput(c), "%s: %s\n", prefix, item.Error())
+	}
 }
 
 func newHostListCmd() *gcli.Command {
