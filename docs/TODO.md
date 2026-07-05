@@ -29,8 +29,8 @@
 - [x] 通过中间机器作为跳板到ssh另一个远程机器执行命令等
   - [x] add/host add 支持 --jump 持久化配置默认跳板
   - [ ] 另一种通过 pve 主机到上面的 lxc 或者 vhost 执行命令
-- [ ] login 命令
-  - [ ] 未输入或未匹配到host时，使用 cliui newui 交互选择目标
+- [x] login 命令
+  - [x] 未输入或未匹配到host时，使用 cliui newui 交互选择目标
 - [ ] 支持导入与导出 hosts 配置数据
   - 导出时会加密整个文件数据，同时生成一个一次性key string
   - 导入时需要指定导出的文件和配套的 key string 才行

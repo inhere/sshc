@@ -331,6 +331,7 @@ sshc log devhost --lines 20,80
 ### 交互式登录
 
 ```bash
+sshc login
 sshc login devhost
 sshc connect devhost
 sshc login --term xterm-256color devhost
@@ -338,6 +339,7 @@ sshc login --term xterm-256color devhost
 
 `login` 和 `connect` 会打开交互式远端 PTY。终端类型默认读取本地 `TERM`，
 没有时回退到 `xterm-256color`。
+不传目标，或者目标匹配到多个主机时，`sshc` 会打开交互式主机选择器。
 
 ## 主机匹配
 
@@ -427,6 +429,9 @@ sshc cfg show
 sshc cfg show --raw
 sshc cfg get logs_path
 sshc cfg set logs_path ./runtime/logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 sshc cfg doctor
 ```

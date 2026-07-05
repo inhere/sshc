@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，基于配置管理与凭证模型设计拆分实施阶段、提交边界和验收项 |
 | v0.2 | 2026-07-04 | Codex | 确认待确认事项，复审并调整 auth/host 实施顺序、known_hosts 接入和兼容解密要求 |
+| v0.3 | 2026-07-05 | Codex | 对齐后续增量实现，cfg defaults.*、login 交互选择、host set/unset 已完成 |
 
 ## 关联文档
 
@@ -531,6 +532,9 @@ sshc cfg show
 sshc cfg show --raw
 sshc cfg get logs_path
 sshc cfg set logs_path ./logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 sshc cfg edit
 sshc cfg doctor
@@ -558,8 +562,15 @@ internal/bootstrap/init.go
 3. `cfg path` 输出实际路径，并标识是否来自 `SSHC_CONFIG`。
 4. `cfg show` 默认输出 mask 后 JSON。
 5. `cfg show --raw` 输出原始 JSON 结构。
-6. `cfg get/set/unset` 初版只支持：
+6. `cfg get/set/unset` 支持白名单字段：
    - `logs_path`
+   - `defaults.user`
+   - `defaults.port`
+   - `defaults.connect_timeout`
+   - `defaults.run_timeout`
+   - `defaults.remote_script_dir`
+   - `defaults.host_key_check`
+   - `defaults.known_hosts_path`
 7. `cfg edit`：
    - 优先 `VISUAL`。
    - 其次 `EDITOR`。
@@ -575,6 +586,7 @@ internal/bootstrap/init.go
 - `sshc cfg show` 不泄露真实密码或密文。
 - `sshc cfg show --raw` 明确输出原始配置。
 - `sshc cfg set logs_path ./runtime/logs` 后配置生效。
+- `sshc cfg set defaults.user root`、`defaults.port`、`defaults.host_key_check` 后配置生效并做基础校验。
 - `sshc cfg unset logs_path` 后恢复默认日志路径。
 - `sshc cfg doctor` 能报告配置问题。
 - help 中 `cfg` 位于 Management 分组。
@@ -609,7 +621,7 @@ feat(config): add cfg management commands
 风险点：
 
 - `cfg show --raw` 可能输出敏感信息，LongHelp 中必须明确只用于排障。
-- `cfg set` 初版不要做 dotted path，避免 JSON path 规则不稳定。
+- `cfg set` 只支持白名单 dotted key，不做通用 JSON path，避免任意字段写入破坏配置结构。
 
 ## P5: auth 凭证命令
 
@@ -920,7 +932,7 @@ sshc run devhost -- uptime
 
 以下事项已按推荐方案确认，实施时不再二次询问：
 
-1. `cfg get/set/unset` 初版只支持 `logs_path`，暂不支持 dotted path。
+1. `cfg get/set/unset` 支持 `logs_path` 和 `defaults.*` 白名单字段，不支持通用 dotted JSON path。
 2. `auth add -p` 只作为隐藏读取开关，不支持 `-p secret` 或 `--password secret`。
 3. `auth rm` 被 host 引用时拒绝删除，初版不提供 `--force`。
 4. `host rm` 默认需要确认；非交互环境无法确认时直接失败，并提示使用 `--yes`。

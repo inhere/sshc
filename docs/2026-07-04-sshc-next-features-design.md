@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-04 | Codex | 初版，整理 TODO 后续能力、优先级和核心设计 |
 | v0.2 | 2026-07-04 | Codex | 明确 gcli/v3 迁移、命令分组、host/auth/cfg/batch-run 命名和 jump 方向 |
 | v0.3 | 2026-07-04 | Codex | 更新当前实现状态，补充 add/host add --jump 已支持持久化跳板配置 |
+| v0.4 | 2026-07-05 | Codex | 对齐当前实现状态，标记 login/cfg defaults/host set-unset 已完成，明确下一步为 cfg export/import |
 
 ## 背景
 
@@ -15,7 +16,8 @@
 - 主机配置保存在 `~/.config/sshc/sshc.config.json`。
 - 支持 `add/list/run/login/scp/download/log`。
 - 支持密码加密存储、SSH key、`~/.ssh/config` 读取、脚本执行、文件传输、日志记录。
-- 支持 `logs_path` 等全局配置项扩展。
+- 支持 `logs_path`、`defaults.*` 等全局配置项扩展。
+- 支持 `auth`、`host`、`cfg` 管理命令，支持 batch-run 和标准 SSH jump host。
 
 后续需求集中在三个方向：
 
@@ -263,7 +265,7 @@ sshc
 
 ## cfg 命令
 
-`cfg` 是下一阶段最应该先做的能力，用于让用户管理 `sshc.config.json`，避免手动改 JSON。
+`cfg` 基础能力已经完成，用于让用户管理 `sshc.config.json`，避免手动改 JSON。
 
 建议命令：
 
@@ -272,6 +274,9 @@ sshc cfg path
 sshc cfg show
 sshc cfg get logs_path
 sshc cfg set logs_path ./logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 sshc cfg edit
 sshc cfg doctor
@@ -314,15 +319,21 @@ sshc cfg show --raw
 
 ### cfg get/set/unset
 
-初版只支持顶层配置项：
+当前支持白名单配置项：
 
 ```bash
 sshc cfg get logs_path
 sshc cfg set logs_path ./runtime/logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 ```
 
-后续再考虑 `defaults.user` 这类 dotted path。
+支持的 key 包括 `logs_path`、`defaults.user`、`defaults.port`、
+`defaults.connect_timeout`、`defaults.run_timeout`、`defaults.remote_script_dir`、
+`defaults.host_key_check` 和 `defaults.known_hosts_path`。不做通用 JSON path，
+避免任意字段写入破坏配置结构。
 
 ### cfg edit
 
@@ -478,7 +489,7 @@ sshc host list --show-ip
 
 ## login 交互选择
 
-TODO 中的 `login` 无输入或未匹配时交互选择非常有用，建议优先级较高。
+`login` 无输入、未匹配或多匹配时交互选择已完成。
 
 行为：
 
@@ -499,7 +510,7 @@ sshc login testing
 
 不要直接报错，可以进入候选选择列表。
 
-初版只支持 `login`，后续再考虑：
+当前只支持 `login`，后续可再考虑：
 
 ```bash
 sshc run --select -- uptime
@@ -817,6 +828,9 @@ sshc run devhost --no-log -- uptime
 
 ## 建议实施顺序
 
+当前 P0-P6 以及 login 交互选择已经完成。下一步建议优先实施 `cfg export/import`，
+再进入更高成本的安全和体验增强。
+
 ### P0: 迁移到 gcli/v3
 
 范围：
@@ -826,6 +840,8 @@ sshc run devhost --no-log -- uptime
 - 为后续多级命令建立 `internal/command` 或 `internal/commands` 注册结构。
 - 管理命令使用 `Category: "Management"`。
 - completion 使用 gcli 内置 `--gen-completion`。
+
+状态：已完成。
 
 验收：
 
@@ -842,9 +858,13 @@ sshc run devhost --no-log -- uptime
 - `sshc cfg show`
 - `sshc cfg get logs_path`
 - `sshc cfg set logs_path VALUE`
+- `sshc cfg set defaults.user VALUE`
+- `sshc cfg set defaults.port 2222`
 - `sshc cfg unset logs_path`
 - `sshc cfg edit`
 - `sshc cfg doctor`
+
+状态：已完成，并已扩展到 `defaults.*` 白名单字段。
 
 验收：
 
@@ -860,10 +880,14 @@ sshc run devhost --no-log -- uptime
 - `sshc host show HOST`
 - `sshc host rm HOST`
 - `sshc host rename OLD NEW`
+- `sshc host set HOST ...`
+- `sshc host unset HOST ...`
 - `sshc host list --group`
 - `sshc host list --match`
 - `sshc host list --json`
 - 顶层 `sshc add/list` 继续兼容并复用 handler。
+
+状态：已完成。
 
 验收：
 
@@ -880,6 +904,8 @@ sshc run devhost --no-log -- uptime
 - `sshc auth add/list/show/rm`。
 - `sshc add --auth NAME`。
 
+状态：已完成，`auth add` 支持 `--remark`。
+
 验收：
 
 - 多个 host 可共享同一凭证。
@@ -892,6 +918,8 @@ sshc run devhost --no-log -- uptime
 
 - `sshc login` 无 target 时进入选择。
 - 多个模糊匹配候选时进入选择。
+
+状态：已完成。
 
 验收：
 
@@ -909,6 +937,8 @@ sshc run devhost --no-log -- uptime
 - `--parallel`
 - `--fail-fast`
 
+状态：已完成。
+
 验收：
 
 - 支持对多个 host 执行命令或脚本。
@@ -923,6 +953,8 @@ sshc run devhost --no-log -- uptime
 - 命令参数 `--jump`。
 - 覆盖 run/login/scp/download。
 
+状态：已完成，且 `add/host add --jump` 支持持久化默认跳板。
+
 验收：
 
 - 可以通过 bastion 访问内网 host。
@@ -936,6 +968,8 @@ sshc run devhost --no-log -- uptime
 - `sshc cfg import`
 - portable encrypted export package。
 
+状态：待实施，下一步优先。
+
 验收：
 
 - 跨机器迁移时密码可重新加密到目标机器 key。
@@ -946,29 +980,27 @@ sshc run devhost --no-log -- uptime
 
 范围：
 
-- `known_hosts` 模式。
+- host key 辅助信任命令，例如 `host keyscan` 或 `host trust`。
 - shell completion。
 - `run --json/--quiet/--no-log`。
 
 验收：
 
-- 用户可以开启标准 host key 校验。
+- 用户可以更方便地维护 `known_hosts` 信任。
 - 主流 shell 可以补全命令和 host。
 
 ## 需要先确认的问题
 
-1. `cfg set` 初版是否只支持顶层字段，还是直接支持 dotted path。建议初版只支持顶层字段。
-2. `batch-run` 是否接受普通 `run` 的所有参数，还是初版只支持 `--script` 和 command。
-3. jump host 是否允许多级跳板，例如 `jump: ["b1", "b2"]`。建议初版只支持一级。
-4. export/import 的 key 是自动生成一次性 key，还是用户输入 passphrase。建议初版自动生成一次性 key。
-5. 管理命令 category 名称是否使用 `Management`，批量命令是否保持默认分组。建议管理命令用 `Management`，`batch-run` 初版保持默认分组。
+1. export/import 的 key 是自动生成一次性 key，还是用户输入 passphrase。建议初版自动生成一次性 key，同时后续可追加 passphrase 模式。
+2. import 冲突默认策略是否为 `--merge` 且冲突拒绝。建议默认 merge，不覆盖已有 host/auth，显式 `--overwrite` 才覆盖。
+3. 导入前备份目录和保留策略。建议备份到配置目录下 `backups/`，后续再考虑清理策略。
 
 ## 结论
 
-建议下一步不要先做批量、跳板或导入导出，而是先稳定配置管理和凭证模型：
+配置管理、凭证模型、batch-run、jump host 和 login 交互选择已经完成。下一步建议优先补齐跨机器迁移能力：
 
 ```text
-P0 gcli/v3 -> P1 cfg -> P2 host 管理 -> P3 auth profile
+P7 cfg export/import -> P8 run 输出模式 / host key 辅助命令 / completion 增强
 ```
 
-这三步完成后，`sshc.config.json` 的结构会稳定，后续的 batch、jump、export/import 都能在同一套模型上扩展，避免重复迁移配置结构。
+`cfg export/import` 能解决 `password_enc` 依赖本机 key、直接复制配置无法在另一台机器解密的问题，是发布后最容易遇到的真实迁移场景。

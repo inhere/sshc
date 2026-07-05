@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，聚焦配置结构、凭证复用、敏感字段、安全边界和实施顺序 |
+| v0.2 | 2026-07-05 | Codex | 对齐当前实现，cfg get/set/unset 已支持 defaults.* 白名单字段，export/import 转入下一阶段计划 |
 
 ## 背景
 
@@ -403,6 +404,9 @@ sshc cfg path
 sshc cfg show
 sshc cfg get logs_path
 sshc cfg set logs_path ./logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 sshc cfg edit
 sshc cfg doctor
@@ -410,11 +414,11 @@ sshc cfg export
 sshc cfg import
 ```
 
-初版建议：
+当前实现：
 
-- `cfg get/set/unset` 先支持顶层字段：`logs_path`。
-- dotted path 如 `defaults.user` 可以在基础模型稳定后再加。
-- `cfg export/import` 可以先保留在设计和 help 中，不必和本阶段一起完整实现。
+- `cfg get/set/unset` 支持 `logs_path` 和 `defaults.*` 白名单字段。
+- `defaults.*` 不实现为通用 JSON path，只允许明确字段，避免任意写入破坏配置结构。
+- `cfg export/import` 保留在设计中，转入独立实施计划。
 
 ### host
 
@@ -665,14 +669,13 @@ feat(auth): add reusable credential commands
 
 ## 待确认事项
 
-1. `cfg get/set/unset` 初版是否只支持顶层字段。建议初版只支持顶层字段，降低 JSON path 合并风险。
-2. `auth add` 是否完全禁止命令行明文密码参数。建议初版只支持 `-p` 隐藏输入。
-3. `auth profile` 是否允许不写 user，完全依赖 `defaults.user`。建议允许，但 effective host 最终必须有 user。
-4. 保存新结构时 `auth_profiles` 空列表是否也写入。建议写入，方便用户理解配置形态。
+1. `cfg export/import` 是否默认自动生成一次性 key。建议初版自动生成，减少用户自行选择弱口令的风险。
+2. import 默认合并策略是否拒绝冲突。建议默认 `--merge` 且冲突拒绝，显式 `--overwrite` 才覆盖。
+3. 导入前配置备份放置位置。建议放到配置目录 `backups/` 下，文件名包含时间戳。
 
 ## 结论
 
-推荐先完成配置管理和凭证模型，而不是先推进 batch、jump 或 export/import。
+配置管理和凭证模型已经完成，下一步推荐推进 `cfg export/import`。
 
 核心落点是：
 

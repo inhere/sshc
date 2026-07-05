@@ -340,6 +340,7 @@ Interactive `login` sessions only record connection metadata.
 ### Interactive Login
 
 ```bash
+sshc login
 sshc login devhost
 sshc connect devhost
 sshc login --term xterm-256color devhost
@@ -347,6 +348,8 @@ sshc login --term xterm-256color devhost
 
 `login` and `connect` open an interactive remote PTY. The terminal type defaults
 to the local `TERM` value and falls back to `xterm-256color`.
+When no target is provided, or when a target matches multiple hosts, `sshc`
+opens an interactive host selector.
 
 ## Host Matching
 
@@ -439,6 +442,9 @@ sshc cfg show
 sshc cfg show --raw
 sshc cfg get logs_path
 sshc cfg set logs_path ./runtime/logs
+sshc cfg set defaults.user root
+sshc cfg set defaults.port 2222
+sshc cfg set defaults.host_key_check known_hosts
 sshc cfg unset logs_path
 sshc cfg doctor
 ```
