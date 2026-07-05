@@ -723,7 +723,7 @@ sshc run pve-host -- pct exec 101 -- hostname
 | 场景 | 命令 | 是否保存 host | 说明 |
 | --- | --- | --- | --- |
 | 临时执行很多 IP/host | `batch-run --hosts-file` | 否 | 适合一次性初始化或巡检 |
-| 已有 hosts 清单批量纳入 sshc | `host import` | 是 | 适合 IP list、CSV、剪贴板清单 |
+| 已有 hosts 清单批量纳入 sshc | `host import` | 是 | 适合 `ips`、`plain` KV 文本、CSV、剪贴板清单 |
 | 另一台 sshc 完整配置迁移 | `cfg export/import` | 是 | 迁移 `defaults/auth_profiles/hosts`，并重新加密密码 |
 
 建议命令：

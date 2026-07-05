@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-05 | Codex | 初版，补充已有 hosts 清单快速导入 sshc 的场景边界、命令设计和实施阶段 |
+| v0.2 | 2026-07-05 | Codex | 将 `list` 格式调整为 `ips`，新增复用单 host KV 语义的 `plain` 多主机文本格式 |
 
 ## 关联文档
 
@@ -56,7 +57,8 @@ sshc batch-run --hosts 10.0.0.8,10.0.0.9 --auth dev-root -- hostname
 适合用户已有一批机器清单，希望导入为 sshc 可管理 host。
 
 ```bash
-sshc host import -f ips.txt --auth dev-root --group testing
+sshc host import -f ips.txt --format ips --auth dev-root --group testing
+sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --dry-run
 sshc host import --from-clipboard --format csv --auth dev-root
 ```
@@ -88,7 +90,8 @@ sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
 
 - 新增 `sshc host import`。
 - 支持从文件、stdin 和剪贴板导入 host。
-- 支持纯 IP/hostname 列表。
+- 支持 `--format ips` 纯 IP/hostname 列表。
+- 支持 `--format plain` 多段 KV 文本，每段一个 host，空行分隔。
 - 支持 CSV with header。
 - 支持命令行统一补默认字段，例如 `--auth`、`--group`、`--port`、`--jump`。
 - 支持 dry-run 预览。
@@ -109,12 +112,12 @@ sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
 
 ## 命令面
 
-### IP/hostname 列表导入
+### `--format ips` IP/hostname 列表导入
 
 ```bash
-sshc host import -f ips.txt --auth dev-root --group testing
-sshc host import -f ips.txt --auth dev-root --group testing --port 22
-sshc host import -f - --auth dev-root --group testing
+sshc host import -f ips.txt --format ips --auth dev-root --group testing
+sshc host import -f ips.txt --format ips --auth dev-root --group testing --port 22
+sshc host import -f - --format ips --auth dev-root --group testing
 ```
 
 `ips.txt`：
@@ -134,6 +137,49 @@ web.internal
 - 初版不支持行内注释。
 - `name` 默认等于 IP/hostname。
 - 行内没有字段，因此认证和分组主要来自命令行默认值。
+
+### `--format plain` KV 文本导入
+
+`plain` 用于复用当前 `sshc add --from-clipboard` 的 `key=value`/`key: value`
+单 host 文本格式，并扩展为可导入多个 host。每个 host 是一个 KV 文本块，多个 host
+之间使用至少一个空行分隔。
+
+```bash
+sshc host import -f hosts.txt --format plain --dry-run
+sshc host import -f hosts.txt --format plain --overwrite
+sshc host import --from-clipboard --format plain --auth dev-root
+```
+
+`hosts.txt`：
+
+```text
+ip=10.0.0.8
+name=devhost
+auth=dev-root
+group=testing
+remark=app server
+port=22
+jump=bastion
+
+ip: 10.0.0.9
+name: dbhost
+user: root
+password: secret
+group: testing
+remark: db server
+port: 22
+```
+
+规则：
+
+- 每个非空块表示一个 host。
+- 块内每行一个 `key=value` 或 `key: value`。
+- 块内空行表示当前 host 结束，因此 `remark` 等字段初版不支持多行值。
+- 空白块忽略。
+- `#` 开头整行注释忽略。
+- 支持字段别名与 CSV 一致，并额外兼容当前剪贴板解析里的 `host`、`hostname`、`username`、`pwd`、`keypath`、`jump_host`。
+- `name` 为空时使用 `ip`。
+- 命令行默认值仍可补齐块内缺失字段。
 
 ### CSV with header 导入
 
@@ -184,14 +230,16 @@ CSV 解析必须使用 Go 标准库 `encoding/csv`，不要手写 `strings.Split
 ### 剪贴板导入
 
 ```bash
+sshc host import --from-clipboard --format plain --auth dev-root
 sshc host import --from-clipboard --format csv --auth dev-root
 ```
 
 规则：
 
 - 剪贴板内容按 `--format` 解析。
-- 初版要求显式 `--format csv` 或 `--format list`。
-- 不复用 `add --from-clipboard` 的单 host 解析规则，避免单 host 和批量导入语义混淆。
+- 初版要求显式 `--format ips`、`--format plain` 或 `--format csv`。
+- `--format plain` 复用并扩展 `add --from-clipboard` 的 KV 解析语义。
+- 一行 CSV 的单 host 剪贴板格式仍只属于 `sshc add --from-clipboard`，`host import` 的 `csv` 必须带 header。
 
 ## 参数设计
 
@@ -213,12 +261,12 @@ sshc host import \
 | --- | --- |
 | `-f/--file` | 输入文件；`-` 表示 stdin |
 | `--from-clipboard` | 从剪贴板读取输入 |
-| `--format` | `list` 或 `csv`；未设置时按文件扩展名推断，无法推断时报错 |
+| `--format` | `ips`、`plain` 或 `csv`；未设置时先按扩展名和内容推断，无法推断时报错 |
 | `--auth` | 默认 auth profile |
 | `-u/--user` | 默认 SSH 用户 |
 | `--key` | 默认 SSH key path |
 | `--group` | 默认 group |
-| `--remark` | 默认 remark，通常只适合 list 格式 |
+| `--remark` | 默认 remark，通常只适合 `ips` 或少量 `plain` 导入 |
 | `--port` | 默认端口 |
 | `--jump` | 默认 jump host |
 | `--host-key-check` | 默认 host key 策略 |
@@ -234,19 +282,27 @@ sshc host import \
 - `--skip-existing` 和 `--overwrite` 互斥。
 - 未设置 `--file` 且未设置 `--from-clipboard` 时默认从 stdin 读取，或直接报错。建议初版直接报错，避免命令卡住等待 stdin。
 
+格式推断规则：
+
+- 显式 `--format` 优先。
+- `.csv` 文件默认推断为 `csv`。
+- `.ips` 文件默认推断为 `ips`。
+- `.txt`、stdin 和剪贴板默认按内容探测：非注释行中存在 `key=value` 或 `key: value` 时推断为 `plain`，否则推断为 `ips`。
+- `csv` 不做内容探测，避免把一行普通逗号文本误判成导入表；使用 `csv` 时推荐显式 `--format csv` 或 `.csv` 后缀。
+
 ## 字段优先级
 
 导入时按以下顺序合并 host 字段：
 
 ```text
-CSV/行内字段 > host import 命令参数 > config defaults > 内置默认值
+plain/CSV 行内字段 > host import 命令参数 > config defaults > 内置默认值
 ```
 
 说明：
 
-- CSV 行内 `auth` 覆盖命令行 `--auth`。
-- CSV 行内 `group` 覆盖命令行 `--group`。
-- list 格式没有行内字段，主要使用命令行默认值。
+- `plain`/CSV 行内 `auth` 覆盖命令行 `--auth`。
+- `plain`/CSV 行内 `group` 覆盖命令行 `--group`。
+- `ips` 格式没有行内字段，主要使用命令行默认值。
 - 保存前仍使用现有 effective host 校验，确保最终有 user 和认证方式。
 
 ## 冲突策略
@@ -327,8 +383,9 @@ docs/2026-07-04-sshc-next-features-design.md
 type HostImportFormat string
 
 const (
-    HostImportList HostImportFormat = "list"
-    HostImportCSV  HostImportFormat = "csv"
+    HostImportIPs   HostImportFormat = "ips"
+    HostImportPlain HostImportFormat = "plain"
+    HostImportCSV   HostImportFormat = "csv"
 )
 
 type HostImportDefaults struct {
@@ -364,7 +421,8 @@ type HostImportPlan struct {
 
 ```go
 func ParseHostImport(reader io.Reader, format HostImportFormat, defaults HostImportDefaults) ([]Host, []HostImportError)
-func ParseHostImportList(reader io.Reader, defaults HostImportDefaults) ([]Host, []HostImportError)
+func ParseHostImportIPs(reader io.Reader, defaults HostImportDefaults) ([]Host, []HostImportError)
+func ParseHostImportPlain(reader io.Reader, defaults HostImportDefaults) ([]Host, []HostImportError)
 func ParseHostImportCSV(reader io.Reader, defaults HostImportDefaults) ([]Host, []HostImportError)
 func PlanHostImport(config Config, hosts []Host, opts HostImportOptions) (HostImportPlan, error)
 func ApplyHostImport(config *Config, plan HostImportPlan) error
@@ -383,7 +441,7 @@ func ApplyHostImport(config *Config, plan HostImportPlan) error
 
 目标：
 
-- 支持 list 和 CSV with header 解析。
+- 支持 `ips`、`plain` 和 CSV with header 解析。
 - 支持命令行默认字段覆盖。
 - 暂不接命令。
 
@@ -397,19 +455,23 @@ internal/core/host_import_test.go
 实现：
 
 1. 新增 `HostImportFormat`。
-2. 新增 list 解析。
-3. 新增 CSV with header 解析。
-4. 支持字段别名：`auth/auth_ref`、`key/key_path`。
-5. 校验必需字段：最终 `ip` 非空。
-6. 校验 port 范围。
-7. 校验 `host_key_check`。
-8. password 字段只进入内存态。
+2. 新增 `ips` 解析。
+3. 新增 `plain` 多段 KV 解析。
+4. 新增 CSV with header 解析。
+5. 支持字段别名：`auth/auth_ref`、`key/key_path`，并兼容 `add --from-clipboard` 已支持的别名。
+6. 校验必需字段：最终 `ip` 非空。
+7. 校验 port 范围。
+8. 校验 `host_key_check`。
+9. password 字段只进入内存态。
 
 测试：
 
 ```text
-TestParseHostImportList
-TestParseHostImportListIgnoresBlankAndCommentLines
+TestParseHostImportIPs
+TestParseHostImportIPsIgnoresBlankAndCommentLines
+TestParseHostImportPlain
+TestParseHostImportPlainSeparatesHostsByBlankLine
+TestParseHostImportPlainSupportsAliases
 TestParseHostImportCSV
 TestParseHostImportCSVSupportsAliases
 TestParseHostImportCSVKeepsCommaInRemark
@@ -507,7 +569,8 @@ internal/command/host_test.go
 命令：
 
 ```bash
-sshc host import -f ips.txt --auth dev-root --group testing
+sshc host import -f ips.txt --format ips --auth dev-root --group testing
+sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --dry-run
 sshc host import --from-clipboard --format csv --auth dev-root
 ```
@@ -518,7 +581,7 @@ sshc host import --from-clipboard --format csv --auth dev-root
 2. `-f/--file` 支持文件路径。
 3. `-f -` 支持 stdin。
 4. `--from-clipboard` 读取剪贴板。
-5. `--format list|csv`，未设置时按扩展名推断。
+5. `--format ips|plain|csv`，未设置时按扩展名和内容推断。
 6. 构造 `HostImportDefaults`。
 7. 调用 core parser 和 planner。
 8. dry-run 只打印统计和冲突，不保存。
@@ -528,7 +591,8 @@ sshc host import --from-clipboard --format csv --auth dev-root
 测试：
 
 ```text
-TestHostImportListCommand
+TestHostImportIPsCommand
+TestHostImportPlainCommand
 TestHostImportCSVCommand
 TestHostImportDryRunDoesNotSave
 TestHostImportRejectsConflicts
@@ -574,7 +638,7 @@ docs/plan/2026-07-05-sshc-host-import-plan.md
 
 实现：
 
-1. README 增加 `host import` list 和 CSV 示例。
+1. README 增加 `host import` ips、plain 和 CSV 示例。
 2. 中文 README 同步。
 3. TODO 增加并标记 host import 完成。
 4. 后续能力设计标记 host import 完成。
@@ -614,9 +678,27 @@ $env:SSHC_CONFIG = "$PWD\tmp\host-import.json"
 10.0.0.8
 10.0.0.9
 "@ | Set-Content tmp\ips.txt
-.\tmp\sshc.exe host import -f tmp\ips.txt --auth dev-root --group testing --yes
+.\tmp\sshc.exe host import -f tmp\ips.txt --format ips --auth dev-root --group testing --yes
 .\tmp\sshc.exe host list --group testing
 .\tmp\sshc.exe cfg show --raw
+```
+
+plain smoke：
+
+```powershell
+@"
+ip=10.0.0.8
+name=devhost
+auth=dev-root
+group=testing
+
+ip=10.0.0.9
+name=dbhost
+auth=dev-root
+group=testing
+"@ | Set-Content tmp\hosts.txt
+.\tmp\sshc.exe host import -f tmp\hosts.txt --format plain --dry-run
+.\tmp\sshc.exe host import -f tmp\hosts.txt --format plain --overwrite --yes
 ```
 
 CSV smoke：
@@ -640,13 +722,12 @@ devhost,10.0.0.8,dev-root,testing,app server,22
 | 大批量导入误操作 | 默认需要确认，脚本场景显式 `--yes` |
 | 部分导入导致配置半成功 | 先 parse + plan + validate，全部通过后一次保存 |
 | auth_ref 不存在 | effective host 校验失败或 doctor 报错；导入阶段应明确提示 |
-| IP list 缺少认证信息 | 要求通过 `--auth`、`--user/--key` 或 defaults 补齐最终认证 |
+| `ips` 缺少认证信息 | 要求通过 `--auth`、`--user/--key` 或 defaults 补齐最终认证 |
 | host:port 解析歧义 | 初版不支持 `host:port`，端口统一用 `port` 字段或 `--port` |
 
 ## 后续扩展
 
 - JSON/YAML host 清单导入。
-- key=value 文本导入。
 - 字段映射参数，例如 `--map hostname=ip,desc=remark`。
 - `--name-template`，例如 `--name-template node-{index}`。
 - 导入后自动执行 `cfg doctor`。

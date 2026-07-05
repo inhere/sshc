@@ -26,7 +26,8 @@
   - [x] 新增 auth/cred 保存账号或凭证信息用于多个主机共享登录信息
   - [x] 新增 host/hosts 管理命令，避免管理类命令干扰常用命令
 - [ ] 新增 host import 批量导入已有 hosts 清单
-  - [ ] 支持 IP/hostname list
+  - [ ] 支持 `--format ips` IP/hostname 清单
+  - [ ] 支持 `--format plain` 多段 KV 文本
   - [ ] 支持 CSV with header
   - [ ] 支持 dry-run、skip-existing、overwrite
 - [x] 新增在多个主机(逗号分隔指定多个或者从一个txt文件读取多个ip/host)批量执行指定脚本能力
