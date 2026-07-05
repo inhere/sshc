@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-05 | Codex | 初版，基于当前配置和凭证模型拆分 cfg export/import 的实现阶段、提交边界和验收项 |
 | v0.2 | 2026-07-05 | Codex | 对齐 `host import` 已完成后的边界，补充 cfg export/import 已确认决策 |
+| v0.3 | 2026-07-05 | Codex | 记录 cfg export/import 实施完成状态和阶段提交 |
 
 ## 关联文档
 
@@ -323,6 +324,8 @@ func BackupConfigFile(now time.Time) (string, error)
 
 ### P1: 导出包加密与合并核心
 
+状态：已完成，提交 `765e29c feat(config): add encrypted config export format`。
+
 目标：
 
 - 实现 export key、导出包加解密、导入合并策略和配置备份 helper。
@@ -375,6 +378,8 @@ feat(config): add encrypted config export format
 ```
 
 ### P2: cfg export 命令
+
+状态：已完成，提交 `362386e feat(cfg): export encrypted config`。
 
 目标：
 
@@ -432,6 +437,8 @@ feat(cfg): export encrypted config
 ```
 
 ### P3: cfg import 命令
+
+状态：已完成，提交 `90157f1 feat(cfg): import encrypted config`。
 
 目标：
 
@@ -498,6 +505,8 @@ feat(cfg): import encrypted config
 ```
 
 ### P4: 文档和 TODO 收口
+
+状态：已完成，提交 `docs: document config export and import`。
 
 目标：
 

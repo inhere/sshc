@@ -465,6 +465,28 @@ SSHC_CONFIG=/path/to/sshc.config.json sshc list
 当保存的主机和 `~/.ssh/config` 读取到的主机同名或同 IP 时，保存的主机优先。
 兼容旧版本：如果新的默认配置文件不存在，仍会读取 `~/.config/sshc/hosts.json`。
 
+### 配置导入导出
+
+使用 `cfg export/import` 可以把完整 sshc 配置迁移到另一台机器：
+
+```bash
+sshc cfg export -o sshc-export.enc
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..." --overwrite
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..." --replace
+```
+
+`cfg export` 会写入加密导出包，并打印一次性 export key。请单独保存这个 key；
+它不会写入导出文件或本地配置。
+
+`cfg import` 写入前会先备份当前配置。默认 `merge` 策略遇到同名 host、同 IP
+host 或同名 auth profile 会拒绝导入。需要覆盖冲突条目时使用 `--overwrite`，
+需要用导入配置整体替换当前配置时使用 `--replace`。
+
+导出包中的密码在目标机器保存时，会使用目标机器本地的 `~/.config/sshc/key`
+重新加密。导入普通 IP 列表、CSV 文件或粘贴的主机片段请使用 `sshc host import`，
+不要使用 `sshc cfg import`。
+
 配置辅助命令：
 
 ```bash

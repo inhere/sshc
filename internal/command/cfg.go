@@ -35,11 +35,14 @@ Examples:
   sshc cfg set defaults.port 2222
   sshc cfg set defaults.host_key_check known_hosts
   sshc cfg unset logs_path
+  sshc cfg export -o sshc-export.enc
+  sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
 
 Notes:
   - show masks passwords and encrypted password values by default.
   - show --raw prints the config file as stored on disk and may expose secrets.
   - get, set, and unset only support whitelisted config keys.
+  - import uses merge by default; use --overwrite or --replace explicitly to change existing entries.
 `),
 	}
 	cmd.Add(

@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-04 | Codex | 初版，聚焦配置结构、凭证复用、敏感字段、安全边界和实施顺序 |
 | v0.2 | 2026-07-05 | Codex | 对齐当前实现，cfg get/set/unset 已支持 defaults.* 白名单字段，export/import 转入下一阶段计划 |
+| v0.3 | 2026-07-05 | Codex | 标记 cfg export/import 已由独立计划完成，更新后续结论 |
 
 ## 背景
 
@@ -418,7 +419,7 @@ sshc cfg import
 
 - `cfg get/set/unset` 支持 `logs_path` 和 `defaults.*` 白名单字段。
 - `defaults.*` 不实现为通用 JSON path，只允许明确字段，避免任意写入破坏配置结构。
-- `cfg export/import` 保留在设计中，转入独立实施计划。
+- `cfg export/import` 已由独立实施计划完成。
 
 ### host
 
@@ -667,15 +668,15 @@ feat(config): add cfg management commands
 feat(auth): add reusable credential commands
 ```
 
-## 待确认事项
+## 已确认事项
 
-1. `cfg export/import` 是否默认自动生成一次性 key。建议初版自动生成，减少用户自行选择弱口令的风险。
-2. import 默认合并策略是否拒绝冲突。建议默认 `--merge` 且冲突拒绝，显式 `--overwrite` 才覆盖。
-3. 导入前配置备份放置位置。建议放到配置目录 `backups/` 下，文件名包含时间戳。
+1. `cfg export/import` 初版自动生成一次性 key，减少用户自行选择弱口令的风险。
+2. import 默认合并策略为 `--merge` 且冲突拒绝，显式 `--overwrite` 或 `--replace` 才覆盖。
+3. 导入前配置备份放置到配置目录 `backups/` 下，文件名包含时间戳。
 
 ## 结论
 
-配置管理和凭证模型已经完成，下一步推荐推进 `cfg export/import`。
+配置管理、凭证模型和 `cfg export/import` 已经完成。
 
 核心落点是：
 
@@ -685,4 +686,4 @@ feat(auth): add reusable credential commands
 - 密码继续使用本机 key file 加密，扩展覆盖 auth profile。
 - `cfg/host/auth` 命令只消费同一套配置模型。
 
-这套模型完成后，后续 `batch-run`、`jump`、`cfg export/import` 都可以复用同一套解析和校验逻辑，避免反复迁移配置结构。
+这套模型完成后，`batch-run`、`jump`、`cfg export/import` 都已复用同一套解析和校验逻辑，避免反复迁移配置结构。

@@ -10,6 +10,7 @@
 | v0.4 | 2026-07-05 | Codex | 对齐当前实现状态，标记 login/cfg defaults/host set-unset 已完成，明确下一步为 cfg export/import |
 | v0.5 | 2026-07-05 | Codex | 标记 `host import` 已完成，散装 hosts 清单导入已从 cfg export/import 边界中拆出 |
 | v0.6 | 2026-07-05 | Codex | 收敛 cfg export/import 已确认决策，避免与 `host import` 边界混淆 |
+| v0.7 | 2026-07-05 | Codex | 标记 `cfg export/import` 已完成，下一步调整为 P8 增强项 |
 
 ## 背景
 
@@ -843,8 +844,7 @@ sshc run devhost --no-log -- uptime
 
 ## 建议实施顺序
 
-当前 P0-P6 以及 login 交互选择已经完成。下一步建议优先实施 `cfg export/import`，
-再进入更高成本的安全和体验增强。
+当前 P0-P7 以及 login 交互选择已经完成。下一步建议进入 P8 安全和体验增强。
 
 ### P0: 迁移到 gcli/v3
 
@@ -983,7 +983,8 @@ sshc run devhost --no-log -- uptime
 - `sshc cfg import`
 - portable encrypted export package。
 
-状态：待实施，下一步优先。
+状态：已完成，支持加密导出包、一次性 export key、merge/overwrite/replace
+导入策略和导入前备份。
 
 验收：
 
@@ -1012,10 +1013,10 @@ sshc run devhost --no-log -- uptime
 
 ## 结论
 
-配置管理、凭证模型、host import、batch-run、jump host 和 login 交互选择已经完成。下一步建议优先补齐跨机器迁移能力：
+配置管理、凭证模型、host import、batch-run、jump host、login 交互选择和跨机器迁移能力已经完成。下一步建议进入安全和体验增强：
 
 ```text
-P7 cfg export/import -> P8 run 输出模式 / host key 辅助命令 / completion 增强
+P8 run 输出模式 / host key 辅助命令 / completion 增强
 ```
 
-`cfg export/import` 能解决 `password_enc` 依赖本机 key、直接复制配置无法在另一台机器解密的问题，是发布后最容易遇到的真实迁移场景。
+`cfg export/import` 已解决 `password_enc` 依赖本机 key、直接复制配置无法在另一台机器解密的问题。

@@ -478,6 +478,30 @@ the same.
 For compatibility, `~/.config/sshc/hosts.json` is still read when the new default
 config file does not exist.
 
+### Export And Import Config
+
+Use `cfg export/import` to move a complete sshc config to another machine:
+
+```bash
+sshc cfg export -o sshc-export.enc
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..."
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..." --overwrite
+sshc cfg import -f sshc-export.enc --key "sshc-v1:..." --replace
+```
+
+`cfg export` writes an encrypted export package and prints a one-time export key.
+Save that key separately; it is not stored in the export file or local config.
+
+`cfg import` backs up the current config before writing. The default `merge`
+strategy rejects conflicting host names, host IPs, and auth profile names.
+Use `--overwrite` to update conflicting entries, or `--replace` to replace the
+current config with the imported config.
+
+Passwords from the export package are re-encrypted with the target machine's
+local `~/.config/sshc/key` when the imported config is saved. Importing plain IP
+lists, CSV files, or pasted host snippets is handled by `sshc host import`, not
+`sshc cfg import`.
+
 Config helpers:
 
 ```bash
