@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/inhere/sshc/internal/core"
@@ -30,6 +31,9 @@ Examples:
   sshc cfg show --raw
   sshc cfg get logs_path
   sshc cfg set logs_path ./runtime/logs
+  sshc cfg set defaults.user root
+  sshc cfg set defaults.port 2222
+  sshc cfg set defaults.host_key_check known_hosts
   sshc cfg unset logs_path
   sshc cfg doctor
   sshc cfg edit
@@ -37,7 +41,7 @@ Examples:
 Notes:
   - show masks passwords and encrypted password values by default.
   - show --raw prints the config file as stored on disk and may expose secrets.
-  - get, set, and unset initially support logs_path only.
+  - get, set, and unset only support whitelisted config keys.
 `),
 	}
 	cmd.Add(
@@ -119,13 +123,12 @@ func newCfgGetCmd() *gcli.Command {
 			if err != nil {
 				return err
 			}
-			switch key {
-			case "logs_path":
-				fmt.Fprintln(cmdOutput(c), config.LogsPath)
-				return nil
-			default:
-				return unsupportedCfgKey(key)
+			value, err := getConfigValue(config, key)
+			if err != nil {
+				return err
 			}
+			fmt.Fprintln(cmdOutput(c), value)
+			return nil
 		},
 	}
 }
@@ -145,11 +148,8 @@ func newCfgSetCmd() *gcli.Command {
 			if err != nil {
 				return err
 			}
-			switch key {
-			case "logs_path":
-				config.LogsPath = value
-			default:
-				return unsupportedCfgKey(key)
+			if err := setConfigValue(config, key, value); err != nil {
+				return err
 			}
 			if err := core.SaveConfig(config); err != nil {
 				return err
@@ -173,11 +173,8 @@ func newCfgUnsetCmd() *gcli.Command {
 			if err != nil {
 				return err
 			}
-			switch key {
-			case "logs_path":
-				config.LogsPath = ""
-			default:
-				return unsupportedCfgKey(key)
+			if err := unsetConfigValue(config, key); err != nil {
+				return err
 			}
 			if err := core.SaveConfig(config); err != nil {
 				return err
@@ -234,6 +231,104 @@ func newCfgDoctorCmd() *gcli.Command {
 	}
 }
 
+func getConfigValue(config *core.Config, key string) (string, error) {
+	switch key {
+	case "logs_path":
+		return config.LogsPath, nil
+	case "defaults.user":
+		return config.Defaults.User, nil
+	case "defaults.port":
+		if config.Defaults.Port == 0 {
+			return "", nil
+		}
+		return strconv.Itoa(config.Defaults.Port), nil
+	case "defaults.connect_timeout":
+		return config.Defaults.ConnectTimeout, nil
+	case "defaults.run_timeout":
+		return config.Defaults.RunTimeout, nil
+	case "defaults.remote_script_dir":
+		return config.Defaults.RemoteScriptDir, nil
+	case "defaults.host_key_check":
+		return config.Defaults.HostKeyCheck, nil
+	case "defaults.known_hosts_path":
+		return config.Defaults.KnownHostsPath, nil
+	default:
+		return "", unsupportedCfgKey(key)
+	}
+}
+
+func setConfigValue(config *core.Config, key, value string) error {
+	switch key {
+	case "logs_path":
+		config.LogsPath = value
+	case "defaults.user":
+		config.Defaults.User = value
+	case "defaults.port":
+		port, err := parseCfgPort(value)
+		if err != nil {
+			return err
+		}
+		config.Defaults.Port = port
+	case "defaults.connect_timeout":
+		config.Defaults.ConnectTimeout = value
+	case "defaults.run_timeout":
+		config.Defaults.RunTimeout = value
+	case "defaults.remote_script_dir":
+		config.Defaults.RemoteScriptDir = value
+	case "defaults.host_key_check":
+		if err := validateCfgHostKeyCheck(value); err != nil {
+			return err
+		}
+		config.Defaults.HostKeyCheck = value
+	case "defaults.known_hosts_path":
+		config.Defaults.KnownHostsPath = value
+	default:
+		return unsupportedCfgKey(key)
+	}
+	return nil
+}
+
+func unsetConfigValue(config *core.Config, key string) error {
+	switch key {
+	case "logs_path":
+		config.LogsPath = ""
+	case "defaults.user":
+		config.Defaults.User = ""
+	case "defaults.port":
+		config.Defaults.Port = 0
+	case "defaults.connect_timeout":
+		config.Defaults.ConnectTimeout = ""
+	case "defaults.run_timeout":
+		config.Defaults.RunTimeout = ""
+	case "defaults.remote_script_dir":
+		config.Defaults.RemoteScriptDir = ""
+	case "defaults.host_key_check":
+		config.Defaults.HostKeyCheck = ""
+	case "defaults.known_hosts_path":
+		config.Defaults.KnownHostsPath = ""
+	default:
+		return unsupportedCfgKey(key)
+	}
+	return nil
+}
+
+func parseCfgPort(value string) (int, error) {
+	port, err := strconv.Atoi(value)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("invalid defaults.port %q, want 1-65535", value)
+	}
+	return port, nil
+}
+
+func validateCfgHostKeyCheck(value string) error {
+	switch value {
+	case core.HostKeyCheckKnownHosts, core.HostKeyCheckInsecure:
+		return nil
+	default:
+		return fmt.Errorf("invalid defaults.host_key_check %q, want known_hosts or insecure", value)
+	}
+}
+
 func writeJSON(c *gcli.Command, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -244,7 +339,7 @@ func writeJSON(c *gcli.Command, value any) error {
 }
 
 func unsupportedCfgKey(key string) error {
-	return fmt.Errorf("unsupported config key %q, currently only logs_path is supported", key)
+	return fmt.Errorf("unsupported config key %q", key)
 }
 
 func ensureConfigFile(path string) error {

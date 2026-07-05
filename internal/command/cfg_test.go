@@ -104,6 +104,75 @@ func TestCfgSetGetUnsetLogsPath(t *testing.T) {
 	}
 }
 
+func TestCfgSetGetUnsetDefaults(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	cases := []struct {
+		key   string
+		value string
+	}{
+		{key: "defaults.user", value: "root"},
+		{key: "defaults.port", value: "2222"},
+		{key: "defaults.connect_timeout", value: "15s"},
+		{key: "defaults.run_timeout", value: "2m"},
+		{key: "defaults.remote_script_dir", value: "/var/tmp"},
+		{key: "defaults.host_key_check", value: core.HostKeyCheckKnownHosts},
+		{key: "defaults.known_hosts_path", value: "~/.ssh/known_hosts"},
+	}
+	for _, tt := range cases {
+		out.Reset()
+		if err := app.RunWithArgs([]string{"cfg", "set", tt.key, tt.value}); err != nil {
+			t.Fatalf("cfg set %s: %v", tt.key, err)
+		}
+		out.Reset()
+		if err := app.RunWithArgs([]string{"cfg", "get", tt.key}); err != nil {
+			t.Fatalf("cfg get %s: %v", tt.key, err)
+		}
+		if strings.TrimSpace(out.String()) != tt.value {
+			t.Fatalf("cfg get %s = %q, want %q", tt.key, out.String(), tt.value)
+		}
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Defaults.User != "root" || config.Defaults.Port != 2222 || config.Defaults.HostKeyCheck != core.HostKeyCheckKnownHosts {
+		t.Fatalf("defaults = %+v", config.Defaults)
+	}
+
+	for _, tt := range cases {
+		if err := app.RunWithArgs([]string{"cfg", "unset", tt.key}); err != nil {
+			t.Fatalf("cfg unset %s: %v", tt.key, err)
+		}
+	}
+	config, err = core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Defaults != (core.Defaults{}) {
+		t.Fatalf("defaults = %+v", config.Defaults)
+	}
+}
+
+func TestCfgSetDefaultsValidation(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+
+	if err := app.RunWithArgs([]string{"cfg", "set", "defaults.port", "70000"}); err == nil || !strings.Contains(err.Error(), "invalid defaults.port") {
+		t.Fatalf("port err = %v", err)
+	}
+	if err := app.RunWithArgs([]string{"cfg", "set", "defaults.host_key_check", "bad"}); err == nil || !strings.Contains(err.Error(), "invalid defaults.host_key_check") {
+		t.Fatalf("host key err = %v", err)
+	}
+	if err := app.RunWithArgs([]string{"cfg", "get", "defaults.password"}); err == nil || !strings.Contains(err.Error(), "unsupported config key") {
+		t.Fatalf("unsupported err = %v", err)
+	}
+}
+
 func TestCfgDoctorReturnsErrorForInvalidConfig(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
