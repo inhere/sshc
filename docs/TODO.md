@@ -33,7 +33,8 @@
 - [x] 新增在多个主机(逗号分隔指定多个或者从一个txt文件读取多个ip/host)批量执行指定脚本能力
 - [x] 通过中间机器作为跳板到ssh另一个远程机器执行命令等
   - [x] add/host add 支持 --jump 持久化配置默认跳板
-  - [ ] 另一种通过 pve 主机到上面的 lxc 或者 vhost 执行命令
+  - [x] 通过 command_proxy 支持经由 pve/docker/vhost 宿主机代理执行 run/batch-run/login
+  - [ ] 后续设计 command_proxy 的脚本注入和 upload/download 模板能力
 - [x] login 命令
   - [x] 未输入或未匹配到host时，使用 cliui newui 交互选择目标
 - [x] 支持 cfg export/import 完整配置迁移

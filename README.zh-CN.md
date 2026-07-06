@@ -23,6 +23,7 @@
 - 通过主机名、IP 或唯一的模糊匹配结果执行远程命令
   - 将本地 shell 脚本上传到远端执行
 - 通过主机配置或 `--jump` 使用单级跳板机连接目标主机
+- 注册 command_proxy 逻辑主机，用于 PVE/LXC、Docker 或 vhost 命令代理执行
 - 通过 `batch-run/brun` 在多台主机上批量执行命令或脚本
 - 支持远端工作目录、超时、环境变量、sudo 和 sudo user
 - 通过 `upload` 使用 SFTP 上传和 `download` 下载文件或目录
@@ -57,8 +58,10 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "共享 root 登录"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
+sshc run lxc-app -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -144,6 +147,7 @@ sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
@@ -279,8 +283,54 @@ sshc scp -l app.jar -r /tmp/app.jar inner-db --jump bastion
 sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
 ```
 
-初版只支持一级跳板。暂不支持多级跳板、`ProxyCommand`，以及 PVE/LXC/vhost
-这类专用执行方式。jump host 和 target host 都会在本机执行 host key 校验。
+初版只支持一级跳板。暂不支持多级跳板、`ProxyCommand` 和嵌套跳板链路。
+jump host 和 target host 都会在本机执行 host key 校验。
+
+### Command Proxy 逻辑主机
+
+当目标不是可直接 SSH 的主机，而是 PVE LXC、Docker container 或 vhost 这类逻辑
+目标时，可以使用 `command_proxy`。sshc 会连接 `via` 指向的真实 SSH 主机，渲染
+`run_template` 后执行，并把日志仍记录到逻辑主机名下。
+
+```bash
+sshc host add --ip 192.168.1.20 --name pve-host --auth dev-root
+sshc host add --name lxc-app \
+  --backend command_proxy \
+  --via pve-host \
+  --run-template "pct exec 101 -- sh -lc {{cmd}}" \
+  --login-command "pct enter 101" \
+  --group lxc \
+  --remark "PVE CT 101"
+
+sshc run lxc-app -- hostname
+sshc run lxc-app --cwd /opt/app -e APP_ENV=prod -- ./init.sh
+sshc batch-run --hosts devhost,lxc-app -- uptime
+sshc login lxc-app
+```
+
+等价配置：
+
+```json
+{
+  "name": "lxc-app",
+  "backend": "command_proxy",
+  "via": "pve-host",
+  "run_template": "pct exec 101 -- sh -lc {{cmd}}",
+  "login_command": "pct enter 101",
+  "group": "lxc",
+  "remark": "PVE CT 101"
+}
+```
+
+`{{cmd}}` 会替换为 sshc 构造出的最终命令，并且会先做 shell quote；`--cwd`、
+`--env`、`--sudo` 和 timeout 等选项会在替换前进入最终命令。
+`login_command` 是完整交互命令，会在 `via` 主机的 PTY session 中执行。
+
+`command_proxy` 不是 OpenSSH `ProxyCommand`：它不会代理 TCP stream，逻辑目标
+也不需要 sshd。初版 command_proxy 支持 `run`、`batch-run` 和 `login`。
+`scp/upload/download` 对 command_proxy 主机会返回明确的不支持错误。
+`run --script` 暂不支持 command_proxy，因为临时脚本会上传到 `via` 主机，而不是
+逻辑目标内部。
 
 ### 执行脚本
 
@@ -379,6 +429,7 @@ sshc login
 sshc login devhost
 sshc connect devhost
 sshc login --term xterm-256color devhost
+sshc login lxc-app
 ```
 
 `login` 和 `connect` 会打开交互式远端 PTY。终端类型默认读取本地 `TERM`，
@@ -443,6 +494,14 @@ sshc run "testing gpu" -- uptime
       "auth_ref": "dev-root",
       "jump": "devhost",
       "group": "testing"
+    },
+    {
+      "name": "lxc-app",
+      "backend": "command_proxy",
+      "via": "devhost",
+      "run_template": "pct exec 101 -- sh -lc {{cmd}}",
+      "login_command": "pct enter 101",
+      "group": "lxc"
     }
   ]
 }

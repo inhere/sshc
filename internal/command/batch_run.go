@@ -38,6 +38,7 @@ Examples:
   sshc batch-run --group testing --script ./deploy.sh
   sshc batch-run --hosts-file hosts.txt -- hostname
   sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+  sshc batch-run --hosts devhost,lxc-app -- uptime
   sshc batch-run --group testing --parallel 5 --fail-fast -- uptime
   sshc batch-run --hosts-file ips.txt --auth dev-root -u root --port 22 --script ./init.sh
 
@@ -49,6 +50,7 @@ Host sources:
 Notes:
   - Remote commands must be placed after --.
   - Use --script for multiline shell, here-doc, source/venv activation, or heavy quoting.
+  - Saved command_proxy hosts can be mixed with normal SSH hosts for command mode.
   - Every target writes a JSON log line with task_id under the configured logs_path.
 `),
 		Config: func(c *gcli.Command) {

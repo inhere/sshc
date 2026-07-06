@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-06 | Codex | 初版，基于 command_proxy 设计拆分配置模型、run/batch-run、login 和文档验收阶段 |
 | v0.2 | 2026-07-06 | Codex | 记录 P1/P2 已提交，P3 login 支持完成 |
+| v0.3 | 2026-07-06 | Codex | 记录 P3/P4 实施结果，补充传输拒绝与文档收口提交 |
 
 ## 关联文档
 
@@ -427,7 +428,7 @@ feat(run): execute command proxy hosts
 
 ### P3: login 支持 command_proxy
 
-状态：已完成，提交 `feat(login): support command proxy hosts`。
+状态：已完成，提交 `264bc7d feat(login): support command proxy hosts`。
 
 目标：
 
@@ -489,6 +490,8 @@ feat(login): support command proxy hosts
 
 ### P4: 明确传输不支持和文档收口
 
+状态：已完成，提交 `60c5068 fix(transfer): reject command proxy hosts`，并随文档提交补齐 README、LongHelp 和设计状态。
+
 目标：
 
 - scp/upload/download 遇 command_proxy host 给出明确错误。
@@ -544,6 +547,7 @@ git diff --check -- README.md README.zh-CN.md docs internal
 提交：
 
 ```text
+fix(transfer): reject command proxy hosts
 docs: document command proxy hosts
 ```
 
@@ -602,12 +606,12 @@ Remove-Item Env:SSHC_CONFIG -ErrorAction SilentlyContinue
 
 ## 待确认事项
 
-1. P2 是否按建议禁用 command_proxy `--script`。建议禁用，避免脚本上传到 via 后 LXC 内不可见。
-2. `host add` 是否允许 `backend=command_proxy` 时省略 `--ip`。建议允许。
-3. `host list` 是否展示 backend/via。建议只在非默认 backend 时展示。
-4. `run_template` 是否在 `host add/set` 时强制包含 `{{cmd}}`。建议强制。
-5. `run_template` 是否允许为空。建议允许，但 `run` 时必须报错；这样可以存在只支持 login 的逻辑 host。
-6. `login_command` 是否允许为空。建议允许，但 `login` 时必须报错；这样可以存在只支持 run 的逻辑 host。
+1. P2 按建议禁用 command_proxy `--script`，避免脚本上传到 via 后 LXC 内不可见。
+2. `host add` 允许 `backend=command_proxy` 时省略 `--ip`。
+3. `host list` 展示 `via:<host>` 和 `command_proxy` auth 标识。
+4. `run_template` 非空时在保存和 doctor 中强制包含 `{{cmd}}`。
+5. `run_template` 允许为空，但 `run` 时必须报错；这样可以存在只支持 login 的逻辑 host。
+6. `login_command` 允许为空，但 `login` 时必须报错；这样可以存在只支持 run 的逻辑 host。
 
 ## 提交计划
 

@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-06 | Codex | 初版，设计 PVE/LXC/vhost 等通过宿主机代理执行命令的 command_proxy backend |
+| v0.2 | 2026-07-06 | Codex | 标记 command_proxy 初版已完成，明确传输和脚本注入仍属后续能力 |
 
 ## 背景
 
@@ -504,11 +505,15 @@ type RemoteExecutor interface {
 
 ### P1: 配置模型和校验
 
+状态：已完成。
+
 - 新增 `backend/via/run_template/login_command` 字段。
 - `cfg doctor` 增加 command_proxy 校验。
 - `host add/set/unset/show/list` 支持展示和维护字段。
 
 ### P2: run 和 batch-run
+
+状态：已完成。
 
 - `run` 支持 command_proxy。
 - `batch-run` 复用 run 行为。
@@ -516,11 +521,15 @@ type RemoteExecutor interface {
 
 ### P3: login
 
+状态：已完成。
+
 - `login` 支持 command_proxy。
 - 使用 via host 建立 PTY session。
 - 执行 `login_command`。
 
 ### P4: 文档和后续计划
+
+状态：已完成。
 
 - README/README.zh-CN 增加 command_proxy 示例。
 - TODO 标记 run/login 支持状态。
@@ -551,6 +560,7 @@ command_proxy 应作为独立 backend 实现，而不是扩展 jump host。
 }
 ```
 
-初版优先支持 `run`、`batch-run` 和 `login`，明确不支持文件传输。这样可以覆盖
+初版已经支持 `run`、`batch-run` 和 `login`，并明确不支持文件传输。这样可以覆盖
 PVE/LXC/vhost 初始化和日常命令执行场景，同时保持 sshc 是轻量 SSH 运维工具，
-而不是 PVE 专用管理平台。
+而不是 PVE 专用管理平台。后续如果要支持脚本注入或文件传输，应单独设计
+`pct push/pull`、`docker cp` 或通用传输模板，避免误把文件上传到 `via` 主机。

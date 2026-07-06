@@ -40,6 +40,7 @@ Path rules:
   - Local glob patterns are expanded by sshc and upload matching files to the remote directory.
   - SHA256 verification is available for file uploads only; directories are not supported.
   - Removing a remote directory refuses empty, current, and root remote paths.
+  - command_proxy hosts are not supported for upload yet.
 `),
 		Config: func(c *gcli.Command) {
 			c.VarOpt(&opts.LocalPaths, "local", "l", "local file or directory path, repeatable")

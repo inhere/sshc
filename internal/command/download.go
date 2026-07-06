@@ -40,6 +40,7 @@ Path rules:
   - Local paths ending with / or \ also receive the remote base name.
   - Directory download recursively creates local directories and files.
   - SHA256 verification is available for single file downloads only.
+  - command_proxy hosts are not supported for download yet.
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&downloadOpts.LocalPath, "local", "l", "", "local destination path")

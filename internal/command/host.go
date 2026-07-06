@@ -85,10 +85,12 @@ func NewHostCmd() *gcli.Command {
 Examples:
   sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
   sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+  sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
   sshc host list --group testing
   sshc host list --match devhost
   sshc host list --show-ip
   sshc host show devhost
+  sshc host set lxc-app --run-template "pct exec 101 -- sh -lc {{cmd}}"
   sshc host set devhost --remark "testing host" --jump bastion
   sshc host unset devhost --remark --jump
   sshc host rm devhost --yes
@@ -97,6 +99,7 @@ Examples:
 Notes:
   - host add supports the same fields as top-level add and adds --auth.
   - host set/unset only change the selected host record.
+  - command_proxy hosts are logical targets that execute through a configured via host.
   - host list masks IPv4 addresses unless --show-ip is set.
   - host show masks password fields unless --raw is set.
 `),

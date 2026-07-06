@@ -32,11 +32,13 @@ Examples:
   sshc connect devhost
   sshc login inner-db --jump bastion
   sshc login devhost --term xterm-256color
+  sshc login lxc-app
 
 Notes:
   - Terminal resize is forwarded on Unix-like systems; Windows uses the startup terminal size.
   - By default, sshc only logs connection metadata, not full session input/output.
   - Use run for non-interactive commands that need full stdout/stderr logs.
+  - command_proxy login runs login_command in a PTY on the configured via host.
 `),
 		Config: func(c *gcli.Command) {
 			c.AddArg("target", "host ip or name", false)

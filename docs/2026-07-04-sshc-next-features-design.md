@@ -11,6 +11,7 @@
 | v0.5 | 2026-07-05 | Codex | 标记 `host import` 已完成，散装 hosts 清单导入已从 cfg export/import 边界中拆出 |
 | v0.6 | 2026-07-05 | Codex | 收敛 cfg export/import 已确认决策，避免与 `host import` 边界混淆 |
 | v0.7 | 2026-07-05 | Codex | 标记 `cfg export/import` 已完成，下一步调整为 P8 增强项 |
+| v0.8 | 2026-07-06 | Codex | 标记 PVE/LXC/vhost 命令代理已通过 command_proxy 初版完成 |
 
 ## 背景
 
@@ -43,7 +44,7 @@
 - 不读取 `~/.ssh/` 下的 password 文件。
 - 不新增明文 password 文件约定。
 - 不做完整 Ansible 类 playbook、inventory、role、template 系统。
-- 不优先实现 PVE/LXC/vhost 特定执行器。
+- PVE/LXC/vhost 不做专用平台，但已通过通用 command_proxy backend 支持 run/batch-run/login。
 - 不默认记录 `login` 的完整终端输入输出。
 
 ## 总体定位
@@ -689,33 +690,48 @@ local -> jump -> target
 
 ## PVE/LXC/vhost 执行器
 
-TODO 中的 PVE/LXC/vhost 场景有实际价值，但不建议近期产品化。
+TODO 中的 PVE/LXC/vhost 场景有实际价值。当前已通过通用 `command_proxy`
+backend 完成初版，不做 PVE 专用平台。
 
-原因：
+已完成能力：
 
-- 它不是标准 SSH jump host，而是远端命令代理。
-- 上传下载语义不清楚：文件是传到 PVE 还是传进 LXC。
-- login PTY 行为复杂：`pct enter`、`pct exec` 和普通 SSH 不同。
-- 引号、shell、sudo、cwd、env 的组合更容易出错。
+- 注册逻辑 host：`backend=command_proxy`、`via`、`run_template`、`login_command`。
+- `run` 在 `via` host 上渲染并执行代理命令。
+- `batch-run` 可混用普通 SSH host 和 command_proxy host。
+- `login` 在 `via` host 的 PTY session 中执行 `login_command`。
+- 日志仍按逻辑 host 分文件，并记录 `backend/via/proxied_command`。
 
-建议先不做专用 PVE 模式。需要时可先用普通命令完成：
-
-```bash
-sshc run pve-host -- pct exec 101 -- hostname
-```
-
-如果未来要做，建议设计成通用 `proxy_command` backend，而不是写死 PVE：
+推荐配置：
 
 ```json
 {
   "name": "lxc-app",
-  "backend": "proxy_command",
+  "backend": "command_proxy",
   "via": "pve-host",
-  "command_prefix": "pct exec 101 --"
+  "run_template": "pct exec 101 -- sh -lc {{cmd}}",
+  "login_command": "pct enter 101"
 }
 ```
 
-该能力应独立设计，不进入近期实现计划。
+使用：
+
+```bash
+sshc run lxc-app -- hostname
+sshc batch-run --hosts devhost,lxc-app -- uptime
+sshc login lxc-app
+```
+
+仍未支持：
+
+- `run --script` 注入逻辑 target。
+- `scp/upload/download` 传输到逻辑 target。
+- 多层 command_proxy。
+
+原因：
+
+- 上传下载语义不清楚：文件是传到 PVE 还是传进 LXC。
+- PVE LXC 更合理的是 `pct push/pull`，Docker 更合理的是 `docker cp`。
+- 这些传输模板和 run/login 不同，应单独设计。
 
 ## export/import
 
@@ -844,7 +860,7 @@ sshc run devhost --no-log -- uptime
 
 ## 建议实施顺序
 
-当前 P0-P7 以及 login 交互选择已经完成。下一步建议进入 P8 安全和体验增强。
+当前 P0-P7、login 交互选择以及 command_proxy 初版已经完成。下一步建议进入 P8 安全和体验增强。
 
 ### P0: 迁移到 gcli/v3
 
@@ -1005,6 +1021,23 @@ sshc run devhost --no-log -- uptime
 - 用户可以更方便地维护 `known_hosts` 信任。
 - 主流 shell 可以补全命令和 host。
 
+### P8a: command_proxy 命令代理
+
+范围：
+
+- `backend=command_proxy`
+- `via/run_template/login_command`
+- `run/batch-run/login` 代理执行
+- 传输命令明确拒绝 command_proxy host
+
+状态：已完成。
+
+验收：
+
+- PVE/LXC/vhost 可作为逻辑 host 执行命令和登录。
+- command_proxy 不是 OpenSSH ProxyCommand，文档已明确。
+- 文件传输和脚本注入仍保留为后续独立设计。
+
 ## 已确认事项
 
 1. export/import 初版使用自动生成一次性 key，格式为 `sshc-v1:<base64url random 32 bytes>`；passphrase 模式后续再追加。
@@ -1013,7 +1046,7 @@ sshc run devhost --no-log -- uptime
 
 ## 结论
 
-配置管理、凭证模型、host import、batch-run、jump host、login 交互选择和跨机器迁移能力已经完成。下一步建议进入安全和体验增强：
+配置管理、凭证模型、host import、batch-run、jump host、login 交互选择、跨机器迁移和 command_proxy 命令代理能力已经完成。下一步建议进入安全和体验增强：
 
 ```text
 P8 run 输出模式 / host key 辅助命令 / completion 增强

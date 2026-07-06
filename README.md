@@ -25,6 +25,7 @@ remote operations where a full automation platform would be too heavy.
 - Run remote commands by saved host name, IP, or unique partial match
   - Execute local shell scripts on remote hosts
 - Connect through a single jump host with host config or `--jump`
+- Register command-proxy hosts for PVE/LXC, Docker, or vhost command execution
 - Run commands or scripts across multiple hosts with `batch-run/brun`
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
 - Upload files with `upload` and download files with `download` over SFTP
@@ -59,8 +60,10 @@ sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "shared root login"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
+sshc run lxc-app -- hostname
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -146,6 +149,7 @@ sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```bash
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
+sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
@@ -284,9 +288,55 @@ sshc download -r /var/log/app.log -l tmp/logs inner-db --jump bastion
 ```
 
 The initial implementation supports one jump host. Nested jump hosts,
-`ProxyCommand`, and PVE/LXC/vhost-specific execution are not supported yet.
-Host key checking still happens on the local machine for both the jump host and
-the target host.
+`ProxyCommand`, and nested jump chains are not supported yet. Host key checking
+still happens on the local machine for both the jump host and the target host.
+
+### Command Proxy Hosts
+
+Use `command_proxy` when the target is a logical host that cannot be reached by
+SSH directly, such as a PVE LXC container, Docker container, or vhost. sshc
+connects to the real SSH host in `via`, renders `run_template`, and records logs
+under the logical host name.
+
+```bash
+sshc host add --ip 192.168.1.20 --name pve-host --auth dev-root
+sshc host add --name lxc-app \
+  --backend command_proxy \
+  --via pve-host \
+  --run-template "pct exec 101 -- sh -lc {{cmd}}" \
+  --login-command "pct enter 101" \
+  --group lxc \
+  --remark "PVE CT 101"
+
+sshc run lxc-app -- hostname
+sshc run lxc-app --cwd /opt/app -e APP_ENV=prod -- ./init.sh
+sshc batch-run --hosts devhost,lxc-app -- uptime
+sshc login lxc-app
+```
+
+Equivalent config:
+
+```json
+{
+  "name": "lxc-app",
+  "backend": "command_proxy",
+  "via": "pve-host",
+  "run_template": "pct exec 101 -- sh -lc {{cmd}}",
+  "login_command": "pct enter 101",
+  "group": "lxc",
+  "remark": "PVE CT 101"
+}
+```
+
+`{{cmd}}` is replaced with sshc's shell-quoted final command after applying
+`--cwd`, `--env`, `--sudo`, and timeout options. `login_command` is a complete
+interactive command executed inside a PTY on the `via` host.
+
+`command_proxy` is not OpenSSH `ProxyCommand`: it does not proxy a TCP stream and
+the logical target does not need sshd. Initial command-proxy support covers
+`run`, `batch-run`, and `login`. `scp/upload/download` return a clear unsupported
+error for command-proxy hosts. `run --script` is also not supported yet because
+the temporary script is uploaded to the `via` host, not into the logical target.
 
 ### Run Scripts
 
@@ -388,6 +438,7 @@ sshc login
 sshc login devhost
 sshc connect devhost
 sshc login --term xterm-256color devhost
+sshc login lxc-app
 ```
 
 `login` and `connect` open an interactive remote PTY. The terminal type defaults
@@ -453,6 +504,14 @@ Example config:
       "auth_ref": "dev-root",
       "jump": "devhost",
       "group": "testing"
+    },
+    {
+      "name": "lxc-app",
+      "backend": "command_proxy",
+      "via": "devhost",
+      "run_template": "pct exec 101 -- sh -lc {{cmd}}",
+      "login_command": "pct enter 101",
+      "group": "lxc"
     }
   ]
 }

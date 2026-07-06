@@ -31,6 +31,7 @@ Examples:
   sshc run devhost --timeout 30s --kill-after 5s -- systemctl status nginx
   sshc run devhost -e APP_ENV=prod -e DEBUG=1 -- printenv APP_ENV
   sshc run devhost --efile ./remote.env -- env
+  sshc run lxc-app -- hostname
   sshc run devhost --script ./deploy.sh --keep-remote-script
   sshc run devhost --script ./deploy.sh --remote-script-dir /opt/app/tmp
 
@@ -50,6 +51,7 @@ Notes:
   - See docs/deploy-examples.md for common deployment command sequences.
   - Environment variables are injected as a shell prefix, so SSH AcceptEnv is not required.
   - Every run writes a JSON log line under the configured logs_path or ~/.config/sshc/logs.
+  - command_proxy hosts support command execution through via hosts, but not --script yet.
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.Timeout, "timeout", "", "", "command timeout, eg: 30s, 2m, or bare seconds")
