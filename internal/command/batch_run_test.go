@@ -50,6 +50,38 @@ func TestBatchRunUsesHosts(t *testing.T) {
 	}
 }
 
+func TestBatchRunCommandProxyMixedHosts(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22, HostKeyCheck: core.HostKeyCheckInsecure},
+		{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		got = append(got, host.Name)
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,lxc-app", "--parallel", "1", "--", "uptime"}); err != nil {
+		t.Fatalf("batch command_proxy: %v", err)
+	}
+	if strings.Join(got, ",") != "devhost,lxc-app" {
+		t.Fatalf("got hosts = %#v", got)
+	}
+	lines, err := core.ReadRunLogs("lxc-app", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], `"backend":"command_proxy"`) {
+		t.Fatalf("logs = %#v", lines)
+	}
+}
+
 func TestBatchRunAlias(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveStore(&core.Store{Hosts: []core.Host{{

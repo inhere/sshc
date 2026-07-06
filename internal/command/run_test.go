@@ -59,6 +59,59 @@ func TestRunUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestRunCommandProxyWritesLogFields(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22, HostKeyCheck: core.HostKeyCheckInsecure},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		if host.Name != "lxc-app" || command != "hostname" {
+			t.Fatalf("host=%+v command=%q", host, command)
+		}
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"run", "lxc-app", "--", "hostname"}); err != nil {
+		t.Fatalf("run command_proxy: %v", err)
+	}
+	lines, err := core.ReadRunLogs("lxc-app", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("logs = %#v", lines)
+	}
+	for _, want := range []string{`"backend":"command_proxy"`, `"via":"pve-host"`, `"proxied_command":"pct exec 101 -- sh -lc 'hostname'"`} {
+		if !strings.Contains(lines[0], want) {
+			t.Fatalf("log line %q does not contain %q", lines[0], want)
+		}
+	}
+}
+
+func TestRunCommandProxyRejectsScript(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22, HostKeyCheck: core.HostKeyCheckInsecure},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	scriptPath := filepath.Join(t.TempDir(), "deploy.sh")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"run", "--script", scriptPath, "lxc-app"})
+	if err == nil || !strings.Contains(err.Error(), "--script is not supported") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestRunUsesPartialHostTarget(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{

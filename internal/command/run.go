@@ -93,6 +93,7 @@ Notes:
 			if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
 				runOptions.RemoteScriptPath = core.NewRemoteScriptPathInDir(startedAt, runOptions.RemoteScriptDir)
 			}
+			logBackend, logVia, proxiedCommand := commandProxyLogFields(host, command, runOptions)
 			out, err := runRemote(host, command, runOptions)
 			logErr := core.AppendRunLog(host, core.RunLogRecord{
 				Target:           target,
@@ -103,6 +104,9 @@ Notes:
 				Output:           string(out),
 				Error:            core.ErrorString(err),
 				CWD:              runOptions.CWD,
+				Backend:          logBackend,
+				Via:              logVia,
+				ProxiedCommand:   proxiedCommand,
 				Script:           runOptions.ScriptPath,
 				RemoteScript:     runOptions.RemoteScriptPath,
 				KeepRemoteScript: runOptions.KeepRemoteScript,
@@ -120,6 +124,19 @@ Notes:
 		},
 	}
 	return cmd
+}
+
+func commandProxyLogFields(host core.Host, command string, opts core.RunOptions) (backend, via, proxiedCommand string) {
+	if !core.IsCommandProxyHost(host) {
+		return "", "", ""
+	}
+	backend = core.HostBackendCommandProxy
+	via = strings.TrimSpace(host.Via)
+	plan, err := core.PlanCommandProxyRun(host, command, opts)
+	if err != nil {
+		return backend, via, ""
+	}
+	return backend, core.HostLogName(plan.Via), plan.ProxiedCommand
 }
 
 func applyHostRunDefaults(opts *core.RunOptions, host core.Host) error {

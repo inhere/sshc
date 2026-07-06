@@ -203,6 +203,7 @@ func runBatchHost(host core.Host, command string, baseOptions core.RunOptions) b
 	if runOptions.ScriptPath != "" && runOptions.RemoteScriptPath == "" {
 		runOptions.RemoteScriptPath = core.NewRemoteScriptPathInDir(startedAt, runOptions.RemoteScriptDir)
 	}
+	logBackend, logVia, proxiedCommand := commandProxyLogFields(host, command, runOptions)
 	out, err := runRemote(host, command, runOptions)
 	logErr := core.AppendRunLog(host, core.RunLogRecord{
 		Target:           core.HostLogName(host),
@@ -213,6 +214,9 @@ func runBatchHost(host core.Host, command string, baseOptions core.RunOptions) b
 		Output:           string(out),
 		Error:            core.ErrorString(err),
 		CWD:              runOptions.CWD,
+		Backend:          logBackend,
+		Via:              logVia,
+		ProxiedCommand:   proxiedCommand,
 		Script:           runOptions.ScriptPath,
 		RemoteScript:     runOptions.RemoteScriptPath,
 		KeepRemoteScript: runOptions.KeepRemoteScript,
@@ -231,7 +235,11 @@ func runBatchHost(host core.Host, command string, baseOptions core.RunOptions) b
 }
 
 func writeBatchRunBlock(c *gcli.Command, result batchRunResult) {
-	fmt.Fprintf(cmdOutput(c), "==> %s (%s@%s:%d)\n", core.HostLogName(result.Host), result.Host.User, result.Host.IP, result.Host.Port)
+	if core.IsCommandProxyHost(result.Host) {
+		fmt.Fprintf(cmdOutput(c), "==> %s (command_proxy via:%s)\n", core.HostLogName(result.Host), strings.TrimSpace(result.Host.Via))
+	} else {
+		fmt.Fprintf(cmdOutput(c), "==> %s (%s@%s:%d)\n", core.HostLogName(result.Host), result.Host.User, result.Host.IP, result.Host.Port)
+	}
 	if result.Output != "" {
 		fmt.Fprint(cmdOutput(c), result.Output)
 		if !strings.HasSuffix(result.Output, "\n") {

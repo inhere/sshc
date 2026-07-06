@@ -96,6 +96,9 @@ var (
 )
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
+	if IsCommandProxyHost(host) {
+		return ExecuteCommandProxy(host, command, opts)
+	}
 	client, err := newSSHClient(host)
 	if err != nil {
 		return nil, err
@@ -106,12 +109,10 @@ func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 		return executeRemoteScript(client, opts)
 	}
 
-	remoteCommand, err := BuildRemoteCommandWithCWD(command, opts.Env, opts.CWD)
+	remoteCommand, err := BuildRemoteRunCommand(command, opts)
 	if err != nil {
 		return nil, err
 	}
-	remoteCommand = remoteSudoCommand(remoteCommand, opts)
-	remoteCommand = remoteTimeoutCommand(remoteCommand, opts)
 	clientTimeout := remoteClientTimeout(opts)
 	if clientTimeout <= 0 {
 		return client.Run(remoteCommand)

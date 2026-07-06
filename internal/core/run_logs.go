@@ -51,6 +51,9 @@ type RunLogRecord struct {
 	Script           string
 	RemoteScript     string
 	KeepRemoteScript bool
+	Backend          string
+	Via              string
+	ProxiedCommand   string
 }
 
 func Now() time.Time {
@@ -126,6 +129,15 @@ func AppendRunLog(host Host, rec RunLogRecord) error {
 	}
 	if rec.CWD != "" {
 		attrs = append(attrs, slog.String("cwd", rec.CWD))
+	}
+	if rec.Backend != "" {
+		attrs = append(attrs, slog.String("backend", rec.Backend))
+	}
+	if rec.Via != "" {
+		attrs = append(attrs, slog.String("via", rec.Via))
+	}
+	if rec.ProxiedCommand != "" {
+		attrs = append(attrs, slog.String("proxied_command", rec.ProxiedCommand))
 	}
 	if rec.Script != "" {
 		attrs = append(attrs,
