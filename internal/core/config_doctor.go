@@ -24,6 +24,7 @@ func CheckConfig(config Config) []DoctorIssue {
 	issues = append(issues, checkAuthRefs(config)...)
 	issues = append(issues, checkHostPorts(config.Hosts)...)
 	issues = append(issues, checkHostKeyPolicy(config)...)
+	issues = append(issues, checkCommandProxyHosts(config)...)
 	if len(issues) == 0 {
 		return []DoctorIssue{{Level: DoctorOK, Item: "config", Message: "config looks valid"}}
 	}
@@ -88,6 +89,9 @@ func checkAuthRefs(config Config) []DoctorIssue {
 		}
 	}
 	for _, host := range config.Hosts {
+		if IsCommandProxyHost(host) {
+			continue
+		}
 		ref := strings.TrimSpace(host.AuthRef)
 		if ref == "" {
 			continue
@@ -107,6 +111,53 @@ func checkHostPorts(hosts []Host) []DoctorIssue {
 		}
 		if host.Port < 1 || host.Port > 65535 {
 			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("host %q has invalid port %d", HostLogName(host), host.Port)})
+		}
+	}
+	return issues
+}
+
+func checkCommandProxyHosts(config Config) []DoctorIssue {
+	var issues []DoctorIssue
+	store := storeFromConfig(config)
+	for _, host := range config.Hosts {
+		if err := validateHostBackend(host); err != nil {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("host %q has %s", HostLogName(host), err.Error())})
+			continue
+		}
+		if !IsCommandProxyHost(host) {
+			if strings.TrimSpace(host.Via) != "" || strings.TrimSpace(host.RunTemplate) != "" || strings.TrimSpace(host.LoginCommand) != "" {
+				issues = append(issues, DoctorIssue{Level: DoctorWarn, Item: "hosts", Message: fmt.Sprintf("host %q has command_proxy fields but backend is ssh", HostLogName(host))})
+			}
+			continue
+		}
+		name := HostLogName(host)
+		viaName := strings.TrimSpace(host.Via)
+		if viaName == "" {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q requires via", name)})
+		}
+		if strings.TrimSpace(host.RunTemplate) == "" && strings.TrimSpace(host.LoginCommand) == "" {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q requires run_template or login_command", name)})
+		}
+		if err := ValidateCommandProxyTemplate(host); err != nil {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: err.Error()})
+		}
+		if viaName == "" {
+			continue
+		}
+		via, ok, err := store.ResolveHost(viaName)
+		if err != nil {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q via %q is ambiguous: %v", name, viaName, err)})
+			continue
+		}
+		if !ok {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q references missing via host %q", name, viaName)})
+			continue
+		}
+		if sameHostIdentity(host, via) || strings.TrimSpace(host.Name) == strings.TrimSpace(via.Name) {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q cannot use itself as via", name)})
+		}
+		if IsCommandProxyHost(via) {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("command_proxy host %q via host %q is also command_proxy", name, HostLogName(via))})
 		}
 	}
 	return issues

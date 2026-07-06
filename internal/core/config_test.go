@@ -366,6 +366,37 @@ func TestDoctorReportsInvalidPortAndHostKeyCheck(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsCommandProxyErrors(t *testing.T) {
+	issues := CheckConfig(Config{Hosts: []Host{{
+		Name:        "lxc-app",
+		Backend:     HostBackendCommandProxy,
+		Via:         "missing",
+		RunTemplate: "pct exec 101 -- hostname",
+	}}})
+	if !HasDoctorErrors(issues) ||
+		!doctorMessagesContain(issues, "references missing via host") ||
+		!doctorMessagesContain(issues, "must contain {{cmd}}") {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestDoctorAcceptsCommandProxyHost(t *testing.T) {
+	issues := CheckConfig(Config{Hosts: []Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}", LoginCommand: "pct enter 101"},
+	}})
+	if HasDoctorErrors(issues) {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestValidateHostAllowsCommandProxyWithoutIP(t *testing.T) {
+	err := validateHost(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}"})
+	if err != nil {
+		t.Fatalf("validate command_proxy: %v", err)
+	}
+}
+
 func doctorMessagesContain(issues []DoctorIssue, want string) bool {
 	for _, issue := range issues {
 		if strings.Contains(issue.Message, want) {

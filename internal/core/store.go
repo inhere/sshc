@@ -20,22 +20,30 @@ const (
 	ConfigEnvKey         = "SSHC_CONFIG"
 	ConfigFileName       = "sshc.config.json"
 	LegacyConfigFileName = "hosts.json"
+
+	HostBackendSSH          = "ssh"
+	HostBackendCommandProxy = "command_proxy"
+	CommandProxyCmdToken    = "{{cmd}}"
 )
 
 var userHomeDir = os.UserHomeDir
 
 type Host struct {
-	Name        string `json:"name"`
-	IP          string `json:"ip"`
-	AuthRef     string `json:"auth_ref,omitempty"`
-	User        string `json:"user"`
-	Password    string `json:"password,omitempty"`
-	PasswordEnc string `json:"password_enc,omitempty"`
-	KeyPath     string `json:"key_path,omitempty"`
-	Remark      string `json:"remark,omitempty"`
-	Group       string `json:"group,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	Jump        string `json:"jump,omitempty"`
+	Name         string `json:"name"`
+	IP           string `json:"ip"`
+	AuthRef      string `json:"auth_ref,omitempty"`
+	User         string `json:"user"`
+	Password     string `json:"password,omitempty"`
+	PasswordEnc  string `json:"password_enc,omitempty"`
+	KeyPath      string `json:"key_path,omitempty"`
+	Remark       string `json:"remark,omitempty"`
+	Group        string `json:"group,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	Jump         string `json:"jump,omitempty"`
+	Backend      string `json:"backend,omitempty"`
+	Via          string `json:"via,omitempty"`
+	RunTemplate  string `json:"run_template,omitempty"`
+	LoginCommand string `json:"login_command,omitempty"`
 
 	ConnectTimeout  string `json:"connect_timeout,omitempty"`
 	RunTimeout      string `json:"run_timeout,omitempty"`
@@ -81,7 +89,7 @@ func (s *Store) Upsert(host Host) error {
 		return err
 	}
 	for i, item := range s.Hosts {
-		if item.Name == host.Name || item.IP == host.IP {
+		if item.Name == host.Name || (strings.TrimSpace(item.IP) != "" && strings.TrimSpace(item.IP) == strings.TrimSpace(host.IP)) {
 			s.Hosts[i] = host
 			return nil
 		}
@@ -154,12 +162,37 @@ func formatHostCandidates(hosts []Host) string {
 	items := make([]string, 0, len(hosts))
 	for _, host := range hosts {
 		name := HostLogName(host)
+		if IsCommandProxyHost(host) {
+			items = append(items, fmt.Sprintf("%s (via:%s)", name, strings.TrimSpace(host.Via)))
+			continue
+		}
 		items = append(items, fmt.Sprintf("%s (%s:%d)", name, host.IP, host.Port))
 	}
 	return strings.Join(items, ", ")
 }
 
 func validateHost(host Host) error {
+	if err := validateHostBackend(host); err != nil {
+		return err
+	}
+	if IsCommandProxyHost(host) {
+		if strings.TrimSpace(host.Name) == "" {
+			return errors.New("name is required for command_proxy host")
+		}
+		if strings.TrimSpace(host.Via) == "" {
+			return errors.New("via is required for command_proxy host")
+		}
+		if strings.TrimSpace(host.RunTemplate) == "" && strings.TrimSpace(host.LoginCommand) == "" {
+			return errors.New("run_template or login_command is required for command_proxy host")
+		}
+		if err := ValidateCommandProxyTemplate(host); err != nil {
+			return err
+		}
+		if host.Port < 0 || host.Port > 65535 {
+			return fmt.Errorf("invalid ssh port %d", host.Port)
+		}
+		return nil
+	}
 	if strings.TrimSpace(host.IP) == "" {
 		return errors.New("ip is required")
 	}
@@ -178,6 +211,55 @@ func validateHost(host Host) error {
 		}
 	}
 	return nil
+}
+
+func HostBackend(host Host) string {
+	backend := strings.TrimSpace(host.Backend)
+	if backend == "" {
+		return HostBackendSSH
+	}
+	return backend
+}
+
+func IsCommandProxyHost(host Host) bool {
+	return HostBackend(host) == HostBackendCommandProxy
+}
+
+func validateHostBackend(host Host) error {
+	switch HostBackend(host) {
+	case HostBackendSSH, HostBackendCommandProxy:
+		return nil
+	default:
+		return fmt.Errorf("invalid backend %q, want ssh or command_proxy", strings.TrimSpace(host.Backend))
+	}
+}
+
+func ValidateCommandProxyTemplate(host Host) error {
+	template := strings.TrimSpace(host.RunTemplate)
+	if template != "" && !strings.Contains(template, CommandProxyCmdToken) {
+		return fmt.Errorf("run_template for host %q must contain %s", HostLogName(host), CommandProxyCmdToken)
+	}
+	return nil
+}
+
+func NormalizeHostFields(host *Host) {
+	host.Name = strings.TrimSpace(host.Name)
+	host.IP = strings.TrimSpace(host.IP)
+	host.AuthRef = strings.TrimSpace(host.AuthRef)
+	host.User = strings.TrimSpace(host.User)
+	host.KeyPath = strings.TrimSpace(host.KeyPath)
+	host.Jump = strings.TrimSpace(host.Jump)
+	host.Backend = strings.TrimSpace(host.Backend)
+	host.Via = strings.TrimSpace(host.Via)
+	host.RunTemplate = strings.TrimSpace(host.RunTemplate)
+	host.LoginCommand = strings.TrimSpace(host.LoginCommand)
+	host.Remark = strings.TrimSpace(host.Remark)
+	host.Group = strings.TrimSpace(host.Group)
+	host.ConnectTimeout = strings.TrimSpace(host.ConnectTimeout)
+	host.RunTimeout = strings.TrimSpace(host.RunTimeout)
+	host.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
+	host.HostKeyCheck = strings.TrimSpace(host.HostKeyCheck)
+	host.KnownHostsPath = strings.TrimSpace(host.KnownHostsPath)
 }
 
 func HostGroupName(host Host) string {

@@ -118,12 +118,14 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 	}
 	applyDefaults(&effective, c.Defaults)
 
-	if ref := strings.TrimSpace(host.AuthRef); ref != "" {
-		profile, ok := c.FindAuthProfile(ref)
-		if !ok {
-			return EffectiveHost{}, false, fmt.Errorf("auth profile %q not found for host %q", ref, HostLogName(host))
+	if !IsCommandProxyHost(host) {
+		if ref := strings.TrimSpace(host.AuthRef); ref != "" {
+			profile, ok := c.FindAuthProfile(ref)
+			if !ok {
+				return EffectiveHost{}, false, fmt.Errorf("auth profile %q not found for host %q", ref, HostLogName(host))
+			}
+			applyAuthProfile(&effective, profile)
 		}
-		applyAuthProfile(&effective, profile)
 	}
 
 	applyHostInline(&effective, host)
@@ -139,6 +141,9 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 }
 
 func (c Config) ResolveConnection(host Host) (ResolvedConnection, error) {
+	if IsCommandProxyHost(host) {
+		return ResolvedConnection{}, fmt.Errorf("host %q uses command_proxy backend; ssh connection is not supported", HostLogName(host))
+	}
 	conn := ResolvedConnection{Target: host}
 	jumpName := strings.TrimSpace(host.Jump)
 	if jumpName == "" {
@@ -297,6 +302,9 @@ func effectivePort(host Host) int {
 }
 
 func validateEffectiveHost(host EffectiveHost) error {
+	if IsCommandProxyHost(host.Host) {
+		return validateHost(host.Host)
+	}
 	if strings.TrimSpace(host.IP) == "" {
 		return fmt.Errorf("ip is required")
 	}

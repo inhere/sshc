@@ -66,7 +66,13 @@ func buildHostListTable(hosts []core.Host, showIP bool) string {
 		if remark == "" {
 			remark = "-"
 		}
-		tb.AddRow(name, core.HostGroupName(host), fmt.Sprintf("%s@%s:%d", host.User, displayHostIP(host.IP, showIP), host.Port), core.AuthLabel(host), remark)
+		address := fmt.Sprintf("%s@%s:%d", host.User, displayHostIP(host.IP, showIP), host.Port)
+		auth := core.AuthLabel(host)
+		if core.IsCommandProxyHost(host) {
+			address = fmt.Sprintf("via:%s", strings.TrimSpace(host.Via))
+			auth = core.HostBackendCommandProxy
+		}
+		tb.AddRow(name, core.HostGroupName(host), address, auth, remark)
 	}
 	return tb.String()
 }

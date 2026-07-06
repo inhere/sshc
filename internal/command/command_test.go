@@ -179,6 +179,23 @@ func TestBuildHostListTable(t *testing.T) {
 	}
 }
 
+func TestBuildHostListTableShowsCommandProxy(t *testing.T) {
+	hosts := []core.Host{{
+		Name:        "lxc-app",
+		Backend:     core.HostBackendCommandProxy,
+		Via:         "pve-host",
+		RunTemplate: "pct exec 101 -- sh -lc {{cmd}}",
+		Group:       "lxc",
+	}}
+
+	out := buildHostListTable(hosts, false)
+	for _, want := range []string{"lxc-app", "lxc", "via:pve-host", core.HostBackendCommandProxy} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("table output %q does not contain %q", out, want)
+		}
+	}
+}
+
 func TestListCommandMasksIPByDefault(t *testing.T) {
 	withTempConfig(t)
 	store := &core.Store{Hosts: []core.Host{{
@@ -231,6 +248,37 @@ func TestHostAddWithAuthRef(t *testing.T) {
 	}
 	if len(config.Hosts) != 1 || config.Hosts[0].AuthRef != "dev-root" || config.Hosts[0].Jump != "bastion" {
 		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostAddCommandProxy(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{
+		"host", "add",
+		"--name", "lxc-app",
+		"--backend", core.HostBackendCommandProxy,
+		"--via", "pve-host",
+		"--run-template", "pct exec 101 -- sh -lc {{cmd}}",
+		"--login-command", "pct enter 101",
+		"--group", "lxc",
+	}); err != nil {
+		t.Fatalf("host add command_proxy: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 2 {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+	host := config.Hosts[1]
+	if host.Backend != core.HostBackendCommandProxy || host.Via != "pve-host" || host.RunTemplate == "" || host.LoginCommand != "pct enter 101" {
+		t.Fatalf("host = %+v", host)
 	}
 }
 

@@ -24,6 +24,10 @@ type hostImportOptions struct {
 	Group          string
 	Remark         string
 	Jump           string
+	Backend        string
+	Via            string
+	RunTemplate    string
+	LoginCommand   string
 	HostKeyCheck   string
 	KnownHostsPath string
 	Port           int
@@ -41,6 +45,10 @@ type hostSetOptions struct {
 	Remark          string
 	Group           string
 	Jump            string
+	Backend         string
+	Via             string
+	RunTemplate     string
+	LoginCommand    string
 	Port            int
 	ConnectTimeout  string
 	RunTimeout      string
@@ -56,6 +64,10 @@ type hostUnsetOptions struct {
 	Remark          bool
 	Group           bool
 	Jump            bool
+	Backend         bool
+	Via             bool
+	RunTemplate     bool
+	LoginCommand    bool
 	ConnectTimeout  bool
 	RunTimeout      bool
 	RemoteScriptDir bool
@@ -124,6 +136,10 @@ Examples:
 			c.StrOpt(&opts.Group, "group", "", "", "default host group")
 			c.StrOpt(&opts.Remark, "remark", "", "", "default host remark")
 			c.StrOpt(&opts.Jump, "jump", "", "", "default jump host name or ip")
+			c.StrOpt(&opts.Backend, "backend", "", "", "default host backend: ssh or command_proxy")
+			c.StrOpt(&opts.Via, "via", "", "", "default command_proxy via host")
+			c.StrOpt(&opts.RunTemplate, "run-template", "", "", "default command_proxy run template")
+			c.StrOpt(&opts.LoginCommand, "login-command", "", "", "default command_proxy login command")
 			c.IntOpt(&opts.Port, "port", "", 0, "default ssh port")
 			c.StrOpt(&opts.HostKeyCheck, "host-key-check", "", "", "default host key check policy: known_hosts or insecure")
 			c.StrOpt(&opts.KnownHostsPath, "known-hosts-path", "", "", "default known_hosts file path")
@@ -295,6 +311,10 @@ func hostImportDefaults(opts hostImportOptions, configDefaults core.Defaults) co
 		Remark:         strings.TrimSpace(opts.Remark),
 		Port:           port,
 		Jump:           strings.TrimSpace(opts.Jump),
+		Backend:        strings.TrimSpace(opts.Backend),
+		Via:            strings.TrimSpace(opts.Via),
+		RunTemplate:    strings.TrimSpace(opts.RunTemplate),
+		LoginCommand:   strings.TrimSpace(opts.LoginCommand),
 		HostKeyCheck:   hostKeyCheck,
 		KnownHostsPath: knownHostsPath,
 	}
@@ -407,6 +427,10 @@ func newHostSetCmd() *gcli.Command {
 			c.StrOpt(&opts.Remark, "remark", "", "", "host remark")
 			c.StrOpt(&opts.Group, "group", "", "", "host group")
 			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
+			c.StrOpt(&opts.Backend, "backend", "", "", "host backend: ssh or command_proxy")
+			c.StrOpt(&opts.Via, "via", "", "", "command_proxy via host name or ip")
+			c.StrOpt(&opts.RunTemplate, "run-template", "", "", "command_proxy run template")
+			c.StrOpt(&opts.LoginCommand, "login-command", "", "", "command_proxy login command")
 			c.IntOpt(&opts.Port, "port", "", 0, "ssh port")
 			c.StrOpt(&opts.ConnectTimeout, "connect-timeout", "", "", "ssh connect timeout")
 			c.StrOpt(&opts.RunTimeout, "run-timeout", "", "", "remote command timeout")
@@ -453,6 +477,10 @@ func newHostUnsetCmd() *gcli.Command {
 			c.BoolOpt(&opts.Remark, "remark", "", false, "unset host remark")
 			c.BoolOpt(&opts.Group, "group", "", false, "unset host group")
 			c.BoolOpt(&opts.Jump, "jump", "", false, "unset jump host")
+			c.BoolOpt(&opts.Backend, "backend", "", false, "unset host backend")
+			c.BoolOpt(&opts.Via, "via", "", false, "unset command_proxy via host")
+			c.BoolOpt(&opts.RunTemplate, "run-template", "", false, "unset command_proxy run template")
+			c.BoolOpt(&opts.LoginCommand, "login-command", "", false, "unset command_proxy login command")
 			c.BoolOpt(&opts.ConnectTimeout, "connect-timeout", "", false, "unset ssh connect timeout")
 			c.BoolOpt(&opts.RunTimeout, "run-timeout", "", false, "unset remote command timeout")
 			c.BoolOpt(&opts.RemoteScriptDir, "remote-script-dir", "", false, "unset remote script directory")
@@ -605,6 +633,10 @@ func setHostFieldsFromOptions(host *core.Host, opts hostSetOptions) int {
 	setString(&host.Remark, opts.Remark)
 	setString(&host.Group, opts.Group)
 	setString(&host.Jump, opts.Jump)
+	setString(&host.Backend, opts.Backend)
+	setString(&host.Via, opts.Via)
+	setString(&host.RunTemplate, opts.RunTemplate)
+	setString(&host.LoginCommand, opts.LoginCommand)
 	setString(&host.ConnectTimeout, opts.ConnectTimeout)
 	setString(&host.RunTimeout, opts.RunTimeout)
 	setString(&host.RemoteScriptDir, opts.RemoteScriptDir)
@@ -635,6 +667,10 @@ func unsetHostFieldsFromOptions(host *core.Host, opts hostUnsetOptions) int {
 	unsetString(opts.Remark, &host.Remark)
 	unsetString(opts.Group, &host.Group)
 	unsetString(opts.Jump, &host.Jump)
+	unsetString(opts.Backend, &host.Backend)
+	unsetString(opts.Via, &host.Via)
+	unsetString(opts.RunTemplate, &host.RunTemplate)
+	unsetString(opts.LoginCommand, &host.LoginCommand)
 	unsetString(opts.ConnectTimeout, &host.ConnectTimeout)
 	unsetString(opts.RunTimeout, &host.RunTimeout)
 	unsetString(opts.RemoteScriptDir, &host.RemoteScriptDir)
@@ -656,13 +692,30 @@ func saveUpdatedHost(config *core.Config, idx int, host core.Host) error {
 	if _, _, err := updated.EffectiveHost(host, core.HostOverrides{}); err != nil {
 		return err
 	}
-	if jump := strings.TrimSpace(host.Jump); jump != "" {
+	if core.IsCommandProxyHost(host) {
+		if issues := core.CheckConfig(updated); core.HasDoctorErrors(issues) {
+			return errors.New(formatDoctorErrors(issues))
+		}
+	} else if jump := strings.TrimSpace(host.Jump); jump != "" {
 		if _, err := updated.ResolveConnection(host); err != nil {
 			return err
 		}
 	}
 	config.Hosts = updated.Hosts
 	return core.SaveConfig(config)
+}
+
+func formatDoctorErrors(issues []core.DoctorIssue) string {
+	var messages []string
+	for _, issue := range issues {
+		if issue.Level == core.DoctorError {
+			messages = append(messages, issue.Message)
+		}
+	}
+	if len(messages) == 0 {
+		return "config doctor found errors"
+	}
+	return strings.Join(messages, "; ")
 }
 
 func validateHostUniqueness(hosts []core.Host, current int) error {

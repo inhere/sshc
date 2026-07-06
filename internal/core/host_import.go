@@ -25,6 +25,10 @@ type HostImportDefaults struct {
 	Remark          string
 	Port            int
 	Jump            string
+	Backend         string
+	Via             string
+	RunTemplate     string
+	LoginCommand    string
 	ConnectTimeout  string
 	RunTimeout      string
 	RemoteScriptDir string
@@ -400,6 +404,14 @@ func setHostImportField(host *Host, key, value string, line int) *HostImportErro
 		host.Port = port
 	case "jump":
 		host.Jump = value
+	case "backend":
+		host.Backend = value
+	case "via":
+		host.Via = value
+	case "run_template":
+		host.RunTemplate = value
+	case "login_command":
+		host.LoginCommand = value
 	case "connect_timeout":
 		host.ConnectTimeout = value
 	case "run_timeout":
@@ -426,6 +438,10 @@ func applyHostImportDefaults(host *Host, defaults HostImportDefaults) {
 	setStringDefault(&host.Group, defaults.Group)
 	setStringDefault(&host.Remark, defaults.Remark)
 	setStringDefault(&host.Jump, defaults.Jump)
+	setStringDefault(&host.Backend, defaults.Backend)
+	setStringDefault(&host.Via, defaults.Via)
+	setStringDefault(&host.RunTemplate, defaults.RunTemplate)
+	setStringDefault(&host.LoginCommand, defaults.LoginCommand)
 	setStringDefault(&host.ConnectTimeout, defaults.ConnectTimeout)
 	setStringDefault(&host.RunTimeout, defaults.RunTimeout)
 	setStringDefault(&host.RemoteScriptDir, defaults.RemoteScriptDir)
@@ -443,19 +459,7 @@ func setStringDefault(dst *string, value string) {
 }
 
 func normalizeImportedHost(host *Host) {
-	host.Name = strings.TrimSpace(host.Name)
-	host.IP = strings.TrimSpace(host.IP)
-	host.AuthRef = strings.TrimSpace(host.AuthRef)
-	host.User = strings.TrimSpace(host.User)
-	host.KeyPath = strings.TrimSpace(host.KeyPath)
-	host.Remark = strings.TrimSpace(host.Remark)
-	host.Group = strings.TrimSpace(host.Group)
-	host.Jump = strings.TrimSpace(host.Jump)
-	host.ConnectTimeout = strings.TrimSpace(host.ConnectTimeout)
-	host.RunTimeout = strings.TrimSpace(host.RunTimeout)
-	host.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
-	host.HostKeyCheck = strings.TrimSpace(host.HostKeyCheck)
-	host.KnownHostsPath = strings.TrimSpace(host.KnownHostsPath)
+	NormalizeHostFields(host)
 	if host.Name == "" {
 		host.Name = host.IP
 	}
@@ -463,7 +467,7 @@ func normalizeImportedHost(host *Host) {
 
 func validateImportedHost(host Host, line int) []HostImportError {
 	var errs []HostImportError
-	if strings.TrimSpace(host.IP) == "" {
+	if strings.TrimSpace(host.IP) == "" && !IsCommandProxyHost(host) {
 		errs = append(errs, HostImportError{Line: line, Field: "ip", Message: "ip is required"})
 	}
 	if host.Port < 0 || host.Port > 65535 {
@@ -471,6 +475,23 @@ func validateImportedHost(host Host, line int) []HostImportError {
 	}
 	if value := strings.TrimSpace(host.HostKeyCheck); value != "" && value != HostKeyCheckKnownHosts && value != HostKeyCheckInsecure {
 		errs = append(errs, HostImportError{Line: line, Field: "host_key_check", Message: fmt.Sprintf("invalid host_key_check %q, want known_hosts or insecure", value)})
+	}
+	if err := validateHostBackend(host); err != nil {
+		errs = append(errs, HostImportError{Line: line, Field: "backend", Message: err.Error()})
+	}
+	if IsCommandProxyHost(host) {
+		if strings.TrimSpace(host.Name) == "" {
+			errs = append(errs, HostImportError{Line: line, Field: "name", Message: "name is required for command_proxy host"})
+		}
+		if strings.TrimSpace(host.Via) == "" {
+			errs = append(errs, HostImportError{Line: line, Field: "via", Message: "via is required for command_proxy host"})
+		}
+		if strings.TrimSpace(host.RunTemplate) == "" && strings.TrimSpace(host.LoginCommand) == "" {
+			errs = append(errs, HostImportError{Line: line, Field: "run_template", Message: "run_template or login_command is required for command_proxy host"})
+		}
+		if err := ValidateCommandProxyTemplate(host); err != nil {
+			errs = append(errs, HostImportError{Line: line, Field: "run_template", Message: err.Error()})
+		}
 	}
 	return errs
 }
@@ -490,6 +511,10 @@ func normalizeHostImportField(field string) string {
 		return "key_path"
 	case "jump_host":
 		return "jump"
+	case "run-template":
+		return "run_template"
+	case "login-command":
+		return "login_command"
 	default:
 		return field
 	}
@@ -498,7 +523,7 @@ func normalizeHostImportField(field string) string {
 func isHostImportField(field string) bool {
 	switch field {
 	case "name", "ip", "auth_ref", "user", "password", "key_path",
-		"group", "remark", "port", "jump", "connect_timeout", "run_timeout",
+		"group", "remark", "port", "jump", "backend", "via", "run_template", "login_command", "connect_timeout", "run_timeout",
 		"remote_script_dir", "host_key_check", "known_hosts_path":
 		return true
 	default:
@@ -541,6 +566,15 @@ func validateHostImportInputDuplicates(hosts []Host) []HostImportError {
 func validatePlannedHost(config Config, host Host) error {
 	if _, _, err := config.EffectiveHost(host, HostOverrides{}); err != nil {
 		return err
+	}
+	if IsCommandProxyHost(host) {
+		checkConfig := config
+		checkConfig.Hosts = append(append([]Host(nil), config.Hosts...), host)
+		for _, issue := range CheckConfig(checkConfig) {
+			if issue.Level == DoctorError && strings.Contains(issue.Message, HostLogName(host)) {
+				return errors.New(issue.Message)
+			}
+		}
 	}
 	if jump := strings.TrimSpace(host.Jump); jump != "" {
 		if _, err := config.ResolveConnection(host); err != nil {

@@ -71,6 +71,38 @@ group=testing
 	}
 }
 
+func TestHostImportPlainCommandProxy(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}}}); err != nil {
+		t.Fatal(err)
+	}
+	input := `name=lxc-app
+backend=command_proxy
+via=pve-host
+run_template=pct exec 101 -- sh -lc {{cmd}}
+login_command=pct enter 101
+group=lxc
+`
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte(input), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--format", "plain", "--yes"}); err != nil {
+		t.Fatalf("host import plain command_proxy: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[1]
+	if host.Name != "lxc-app" || host.Backend != core.HostBackendCommandProxy || host.Via != "pve-host" || host.RunTemplate == "" || host.LoginCommand != "pct enter 101" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
 func TestHostImportCSVCommand(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{
@@ -283,6 +315,65 @@ func TestHostSetUpdatesFields(t *testing.T) {
 	}
 	if host.RemoteScriptDir != "/var/tmp" || host.HostKeyCheck != core.HostKeyCheckInsecure || host.KnownHostsPath != "~/.ssh/known_hosts" {
 		t.Fatalf("host defaults = %+v", host)
+	}
+}
+
+func TestHostSetCommandProxyFields(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{
+		"host", "set", "lxc-app",
+		"--backend", core.HostBackendCommandProxy,
+		"--via", "pve-host",
+		"--run-template", "pct exec 101 -- sh -lc {{cmd}}",
+		"--login-command", "pct enter 101",
+	}); err != nil {
+		t.Fatalf("host set command_proxy: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[1]
+	if host.Backend != core.HostBackendCommandProxy || host.Via != "pve-host" || host.RunTemplate == "" || host.LoginCommand != "pct enter 101" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestHostUnsetCommandProxyFields(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{
+		Name:         "lxc-app",
+		IP:           "10.0.0.8",
+		User:         "root",
+		KeyPath:      "~/.ssh/id_rsa",
+		Port:         22,
+		Backend:      core.HostBackendCommandProxy,
+		Via:          "pve-host",
+		RunTemplate:  "pct exec 101 -- sh -lc {{cmd}}",
+		LoginCommand: "pct enter 101",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "unset", "lxc-app", "--backend", "--via", "--run-template", "--login-command"}); err != nil {
+		t.Fatalf("host unset command_proxy: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[0]
+	if host.Backend != "" || host.Via != "" || host.RunTemplate != "" || host.LoginCommand != "" {
+		t.Fatalf("host = %+v", host)
 	}
 }
 
