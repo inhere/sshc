@@ -63,6 +63,9 @@ Path rules:
 			if err != nil {
 				return err
 			}
+			if err := core.RejectCommandProxyTransfer(host); err != nil {
+				return err
+			}
 
 			result, err := downloadRemote(host, remotePath, localPath, core.TransferOptions{SHA256: downloadOpts.SHA256})
 			if err != nil {

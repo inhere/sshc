@@ -302,6 +302,9 @@ func UploadRemote(host Host, localPath, remotePath string, opts TransferOptions)
 }
 
 func UploadRemoteBatch(host Host, jobs []TransferJob, opts TransferOptions) (result TransferResult, err error) {
+	if err := RejectCommandProxyTransfer(host); err != nil {
+		return result, err
+	}
 	started := time.Now()
 	defer func() {
 		result.Elapsed = time.Since(started)
@@ -481,6 +484,9 @@ func (result *TransferResult) add(partial TransferResult) {
 }
 
 func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) (result TransferResult, err error) {
+	if err := RejectCommandProxyTransfer(host); err != nil {
+		return result, err
+	}
 	started := time.Now()
 	defer func() {
 		result.Elapsed = time.Since(started)
@@ -560,6 +566,13 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 		result.Files++
 	}
 	return result, nil
+}
+
+func RejectCommandProxyTransfer(host Host) error {
+	if !IsCommandProxyHost(host) {
+		return nil
+	}
+	return fmt.Errorf("host %s uses command_proxy backend; upload/download is not supported yet", HostLogName(host))
 }
 
 func newSSHClient(host Host) (RemoteClient, error) {

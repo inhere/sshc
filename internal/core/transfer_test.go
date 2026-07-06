@@ -144,6 +144,25 @@ func TestUploadRemoteRejectsRemoveDirForFileBeforeConnect(t *testing.T) {
 	}
 }
 
+func TestUploadRemoteRejectsCommandProxyHost(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "data.txt")
+	if err := os.WriteFile(file, []byte("data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := UploadRemote(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host"}, file, "/tmp/data.txt", TransferOptions{})
+	if err == nil || !strings.Contains(err.Error(), "uses command_proxy backend") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestFetchRemoteRejectsCommandProxyHost(t *testing.T) {
+	_, err := FetchRemote(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host"}, "/tmp/data.txt", "data.txt", TransferOptions{})
+	if err == nil || !strings.Contains(err.Error(), "uses command_proxy backend") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestExpandUploadJobsRepeatedLocalUsesRemoteDirectory(t *testing.T) {
 	dir := t.TempDir()
 	fileA := filepath.Join(dir, "a.jar")

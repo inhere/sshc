@@ -61,6 +61,9 @@ Path rules:
 			if err != nil {
 				return err
 			}
+			if err := core.RejectCommandProxyTransfer(host); err != nil {
+				return err
+			}
 
 			result, err := scpUpload(host, jobs, core.TransferOptions{
 				SHA256:    opts.SHA256,

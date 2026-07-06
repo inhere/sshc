@@ -199,6 +199,26 @@ func TestSCPRequiresSavedHost(t *testing.T) {
 	}
 }
 
+func TestSCPRejectsCommandProxyHost(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", RunTemplate: "pct exec 101 -- sh -lc {{cmd}}"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		t.Fatal("upload should not be called")
+		return core.TransferResult{}, nil
+	}))
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"scp", "-l", "local.txt", "-r", "/tmp/remote.txt", "lxc-app"})
+	if err == nil || !strings.Contains(err.Error(), "uses command_proxy backend") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestFormatElapsedRoundsToMilliseconds(t *testing.T) {
 	if got := formatElapsed(1500*time.Millisecond + 499*time.Microsecond); got != "1.5s" {
 		t.Fatalf("elapsed = %q, want 1.5s", got)
@@ -299,6 +319,26 @@ func TestDownloadRequiresSavedHost(t *testing.T) {
 	app := newTestApp()
 	err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "missing"})
 	if err == nil || !strings.Contains(err.Error(), `host "missing" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDownloadRejectsCommandProxyHost(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", LoginCommand: "pct enter 101"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
+		t.Fatal("download should not be called")
+		return core.TransferResult{}, nil
+	}))
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"download", "-r", "/tmp/remote.txt", "-l", "local.txt", "lxc-app"})
+	if err == nil || !strings.Contains(err.Error(), "uses command_proxy backend") {
 		t.Fatalf("err = %v", err)
 	}
 }
