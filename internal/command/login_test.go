@@ -1,7 +1,9 @@
 package command
 
 import (
+	"bytes"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/inhere/sshc/internal/core"
@@ -88,5 +90,60 @@ func TestLoginSelectsHostWhenTargetMatchesMultiple(t *testing.T) {
 	}
 	if gotHost.Name != "testing-db" || gotHost.User != "root" || gotHost.Jump != "prod-db" {
 		t.Fatalf("host = %+v", gotHost)
+	}
+}
+
+func TestLoginCommandProxyPassesHostAndWritesLog(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22, HostKeyCheck: core.HostKeyCheckInsecure},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", LoginCommand: "pct enter 101", Group: "lxc"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	var gotHost core.Host
+	t.Cleanup(setLoginRemoteForTest(func(host core.Host, opts core.LoginOptions) error {
+		gotHost = host
+		return nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"login", "lxc-app"}); err != nil {
+		t.Fatalf("login command_proxy: %v", err)
+	}
+	if gotHost.Backend != core.HostBackendCommandProxy || gotHost.Via != "pve-host" || gotHost.LoginCommand != "pct enter 101" {
+		t.Fatalf("host = %+v", gotHost)
+	}
+	if !strings.Contains(out.String(), "connecting to lxc-app (command_proxy via:pve-host)") {
+		t.Fatalf("output = %q", out.String())
+	}
+	lines, err := core.ReadRunLogs("lxc-app", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 ||
+		!strings.Contains(lines[0], `"backend":"command_proxy"`) ||
+		!strings.Contains(lines[0], `"via":"pve-host"`) ||
+		!strings.Contains(lines[0], `"proxied_command":"pct enter 101"`) {
+		t.Fatalf("logs = %#v", lines)
+	}
+}
+
+func TestLoginCommandProxyRejectsJumpOption(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "lxc-app", Backend: core.HostBackendCommandProxy, Via: "pve-host", LoginCommand: "pct enter 101"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"login", "lxc-app", "--jump", "bastion"})
+	if err == nil || !strings.Contains(err.Error(), "--jump is not supported for command_proxy") {
+		t.Fatalf("err = %v", err)
 	}
 }

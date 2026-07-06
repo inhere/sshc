@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-06 | Codex | 初版，基于 command_proxy 设计拆分配置模型、run/batch-run、login 和文档验收阶段 |
+| v0.2 | 2026-07-06 | Codex | 记录 P1/P2 已提交，P3 login 支持完成 |
 
 ## 关联文档
 
@@ -270,6 +271,8 @@ logs/lxc-app.log
 
 ### P1: 配置模型、校验和 host 管理
 
+状态：已完成，提交 `9a6df23 feat(host): add command proxy config`。
+
 目标：
 
 - 配置能保存 command_proxy host。
@@ -343,6 +346,8 @@ feat(host): add command proxy config
 ```
 
 ### P2: run 和 batch-run 支持 command_proxy
+
+状态：已完成，提交 `c882b49 feat(run): execute command proxy hosts`。
 
 目标：
 
@@ -421,6 +426,8 @@ feat(run): execute command proxy hosts
 ```
 
 ### P3: login 支持 command_proxy
+
+状态：已完成，提交 `feat(login): support command proxy hosts`。
 
 目标：
 

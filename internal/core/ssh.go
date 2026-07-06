@@ -128,18 +128,24 @@ func LoginRemote(host Host) error {
 }
 
 func LoginRemoteWithOptions(host Host, opts LoginOptions) error {
+	if IsCommandProxyHost(host) {
+		return LoginCommandProxy(host, opts)
+	}
+	client, err := newSSHClient(host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return loginWithClient(client, "", opts)
+}
+
+func loginWithClient(client RemoteClient, command string, opts LoginOptions) error {
 	opts = normalizeLoginOptions(opts)
 	fd := int(opts.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return fmt.Errorf("interactive login requires terminal stdin")
 	}
 	width, height := loginTerminalSize(fd)
-
-	client, err := newSSHClient(host)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -168,6 +174,9 @@ func LoginRemoteWithOptions(host Host, opts LoginOptions) error {
 	stopResize := startPTYResizeLoop(fd, session)
 	defer stopResize()
 
+	if strings.TrimSpace(command) != "" {
+		return session.Run(command)
+	}
 	if err := session.Shell(); err != nil {
 		return err
 	}

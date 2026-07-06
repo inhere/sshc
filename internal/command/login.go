@@ -51,15 +51,19 @@ Notes:
 			}
 
 			startedAt := core.Now()
-			fmt.Fprintf(cmdOutput(c), "connecting to %s (%s@%s:%d)\n", core.HostLogName(host), host.User, host.IP, host.Port)
+			fmt.Fprintln(cmdOutput(c), loginConnectMessage(host))
+			logBackend, logVia, proxiedCommand := commandProxyLoginLogFields(host)
 			err = loginRemote(host, core.LoginOptions{Term: termName})
 			logErr := core.AppendRunLog(host, core.RunLogRecord{
-				Target:     selectedTarget,
-				Command:    "login",
-				Status:     core.RunStatus(err),
-				StartedAt:  startedAt,
-				DurationMS: core.SinceMS(startedAt),
-				Error:      core.ErrorString(err),
+				Target:         selectedTarget,
+				Command:        "login",
+				Status:         core.RunStatus(err),
+				StartedAt:      startedAt,
+				DurationMS:     core.SinceMS(startedAt),
+				Error:          core.ErrorString(err),
+				Backend:        logBackend,
+				Via:            logVia,
+				ProxiedCommand: proxiedCommand,
 			})
 			if err == nil && logErr != nil {
 				return logErr
@@ -117,6 +121,9 @@ func effectiveLoginHost(config *core.Config, host core.Host, opts core.ResolveCo
 		return core.Host{}, "", err
 	}
 	resolved := effective.ToHost()
+	if core.IsCommandProxyHost(resolved) && strings.TrimSpace(opts.Jump) != "" {
+		return core.Host{}, "", fmt.Errorf("--jump is not supported for command_proxy targets; configure jump on the via host")
+	}
 	if jump := strings.TrimSpace(opts.Jump); jump != "" {
 		resolved.Jump = jump
 	}
@@ -157,6 +164,14 @@ func formatLoginHostChoice(host core.Host) string {
 	if remark == "" {
 		remark = "-"
 	}
+	if core.IsCommandProxyHost(host) {
+		return fmt.Sprintf("%s  %s  command_proxy via:%s  %s",
+			core.HostLogName(host),
+			core.HostGroupName(host),
+			strings.TrimSpace(host.Via),
+			remark,
+		)
+	}
 	return fmt.Sprintf("%s  %s  %s@%s:%d  %s  %s",
 		core.HostLogName(host),
 		core.HostGroupName(host),
@@ -166,6 +181,26 @@ func formatLoginHostChoice(host core.Host) string {
 		core.AuthLabel(host),
 		remark,
 	)
+}
+
+func loginConnectMessage(host core.Host) string {
+	if core.IsCommandProxyHost(host) {
+		return fmt.Sprintf("connecting to %s (command_proxy via:%s)", core.HostLogName(host), strings.TrimSpace(host.Via))
+	}
+	return fmt.Sprintf("connecting to %s (%s@%s:%d)", core.HostLogName(host), host.User, host.IP, host.Port)
+}
+
+func commandProxyLoginLogFields(host core.Host) (backend, via, proxiedCommand string) {
+	if !core.IsCommandProxyHost(host) {
+		return "", "", ""
+	}
+	backend = core.HostBackendCommandProxy
+	via = strings.TrimSpace(host.Via)
+	plan, err := core.PlanCommandProxyLogin(host)
+	if err != nil {
+		return backend, via, strings.TrimSpace(host.LoginCommand)
+	}
+	return backend, core.HostLogName(plan.Via), plan.LoginCommand
 }
 
 func setSelectLoginHostForTest(fn func([]core.Host, io.Reader, io.Writer) (core.Host, error)) func() {

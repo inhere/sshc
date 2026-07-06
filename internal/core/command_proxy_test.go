@@ -82,6 +82,31 @@ func TestExecuteCommandProxyRejectsScript(t *testing.T) {
 	}
 }
 
+func TestPlanCommandProxyLoginUsesViaHost(t *testing.T) {
+	withTempConfig(t)
+	if err := SaveConfig(&Config{Hosts: []Host{
+		{Name: "pve-host", IP: "192.168.1.20", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22, HostKeyCheck: HostKeyCheckInsecure},
+		{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host", LoginCommand: "pct enter 101"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := PlanCommandProxyLogin(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host", LoginCommand: "pct enter 101"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Via.Name != "pve-host" || plan.LoginCommand != "pct enter 101" {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+func TestPlanCommandProxyLoginRejectsMissingLoginCommand(t *testing.T) {
+	_, err := PlanCommandProxyLogin(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host"})
+	if err == nil || !strings.Contains(err.Error(), "login_command is required") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 type fakeRemoteClient struct {
 	run func(string) ([]byte, error)
 }
