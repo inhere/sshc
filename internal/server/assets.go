@@ -39,6 +39,9 @@ func (s *Server) handleAssets(c *rux.Context) {
 	if s.config.WebDir != "" && s.serveWebDir(c) {
 		return
 	}
+	if serveEmbeddedAssets(c) {
+		return
+	}
 	c.Resp.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Resp.WriteHeader(http.StatusOK)
 	_, _ = c.Resp.Write([]byte(fallbackIndexHTML))

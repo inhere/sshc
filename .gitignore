@@ -2,3 +2,5 @@
 *.exe
 /tmp/
 /dist/
+/web/node_modules/
+/web/dist/
