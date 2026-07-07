@@ -67,7 +67,7 @@ Notes:
 `),
 		Config: func(c *gcli.Command) {
 			c.BoolOpt(&addOpts.Interactive, "interactive", "I", false, "interactive host entry")
-			c.BoolOpt(&addOpts.FromClipboard, "from-clipboard", "", false, "read host fields from clipboard")
+			c.BoolOpt(&addOpts.FromClipboard, "from-clipboard", "fc", false, "read host fields from clipboard")
 			c.StrOpt(&addOpts.IP, "ip", "", "", "ssh host ip or hostname")
 			c.StrOpt(&addOpts.Name, "name", "", "", "host alias")
 			c.StrOpt(&addOpts.User, "user", "u", "", "ssh username")

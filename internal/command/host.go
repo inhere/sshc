@@ -131,7 +131,7 @@ Examples:
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.File, "file", "f", "", "input file, or - for stdin")
-			c.BoolOpt(&opts.FromClipboard, "from-clipboard", "", false, "read import data from clipboard")
+			c.BoolOpt(&opts.FromClipboard, "from-clipboard", "fc", false, "read import data from clipboard")
 			c.StrOpt(&opts.Format, "format", "", "", "input format: ips, plain, or csv")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "default auth profile name")
 			c.StrOpt(&opts.User, "user", "u", "", "default ssh username")
