@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-07 | Codex | 初版，基于 serve 整体设计拆分 v1 本地 Web 管理台和 Web Terminal 实施阶段 |
 | v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和 sysutil.OpenBrowser 打开浏览器 |
 | v0.3 | 2026-07-07 | Codex | P5 访问控制落地，token 自动生成入口调整为 `--token random` |
+| v0.4 | 2026-07-07 | Codex | P4 Web Terminal session、WebSocket、resize 和 terminal audit log 落地 |
 
 ## 关联文档
 
@@ -826,6 +827,6 @@ git diff --check -- .
 - [x] P1: serve 基础 server
 - [x] P2: config/host/auth/log 管理 API
 - [x] P3: Web UI v1
-- [ ] P4: Web Terminal
+- [x] P4: Web Terminal
 - [x] P5: 安全和本地访问控制
 - [ ] P6: 文档和收口

@@ -28,9 +28,10 @@ type Config struct {
 }
 
 type Server struct {
-	config Config
-	router http.Handler
-	http   *http.Server
+	config    Config
+	router    http.Handler
+	http      *http.Server
+	terminals *terminalManager
 	authState
 }
 
@@ -39,7 +40,7 @@ func New(config Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{config: normalized}
+	s := &Server{config: normalized, terminals: newTerminalManager()}
 	if normalized.Token != "" {
 		s.tokenEnabled = true
 		s.tokenHash = sha256Token(normalized.Token)
@@ -162,6 +163,11 @@ func (s *Server) routes() http.Handler {
 	r.GET("/api/logs", s.handleLogsList)
 	r.GET("/api/logs/{task_id}", s.handleLogsShow)
 	r.GET("/api/logs/{task_id}/output", s.handleLogOutput)
+	r.POST("/api/terminal/sessions", s.handleTerminalCreate)
+	r.GET("/api/terminal/sessions", s.handleTerminalList)
+	r.GET("/api/terminal/sessions/{id}/ws", s.handleTerminalWS)
+	r.POST("/api/terminal/sessions/{id}/resize", s.handleTerminalResize)
+	r.DELETE("/api/terminal/sessions/{id}", s.handleTerminalDelete)
 	r.GET("/", s.handleAssets)
 	r.GET("/*path", s.handleAssets)
 	return r

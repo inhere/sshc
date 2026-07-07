@@ -589,22 +589,30 @@ func RejectCommandProxyTransfer(host Host) error {
 }
 
 func newSSHClient(host Host) (RemoteClient, error) {
+	return newSSHClientWithOptions(host, sshClientOptions{})
+}
+
+type sshClientOptions struct {
+	NoHostKeyPrompt bool
+}
+
+func newSSHClientWithOptions(host Host, opts sshClientOptions) (RemoteClient, error) {
 	if strings.TrimSpace(host.Jump) == "" {
-		return newDirectSSHClient(host)
+		return newDirectSSHClient(host, opts)
 	}
 	conn, err := ResolveConnectionForHost(host)
 	if err != nil {
 		return nil, err
 	}
-	return newSSHClientForConnection(conn)
+	return newSSHClientForConnection(conn, opts)
 }
 
-func newSSHClientForConnection(conn ResolvedConnection) (RemoteClient, error) {
+func newSSHClientForConnection(conn ResolvedConnection, opts sshClientOptions) (RemoteClient, error) {
 	if conn.Jump == nil {
-		return newDirectSSHClient(conn.Target)
+		return newDirectSSHClient(conn.Target, opts)
 	}
 
-	jump, err := newDirectSSHClient(*conn.Jump)
+	jump, err := newDirectSSHClient(*conn.Jump, opts)
 	if err != nil {
 		return nil, fmt.Errorf("connect jump host %s: %w", HostLogName(*conn.Jump), err)
 	}
@@ -616,7 +624,7 @@ func newSSHClientForConnection(conn ResolvedConnection) (RemoteClient, error) {
 		return nil, fmt.Errorf("connect target host %s via jump %s: %w", HostLogName(conn.Target), HostLogName(*conn.Jump), err)
 	}
 
-	config, err := sshClientConfig(conn.Target)
+	config, err := sshClientConfig(conn.Target, opts)
 	if err != nil {
 		_ = rawConn.Close()
 		_ = jump.Close()
@@ -650,8 +658,8 @@ func newSSHClientForConnection(conn ResolvedConnection) (RemoteClient, error) {
 	}, nil
 }
 
-func newDirectSSHClient(host Host) (*remoteClient, error) {
-	config, err := gophClientConfig(host)
+func newDirectSSHClient(host Host, opts sshClientOptions) (*remoteClient, error) {
+	config, err := gophClientConfig(host, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -671,7 +679,7 @@ func newDirectSSHClient(host Host) (*remoteClient, error) {
 	}, nil
 }
 
-func gophClientConfig(host Host) (*goph.Config, error) {
+func gophClientConfig(host Host, opts sshClientOptions) (*goph.Config, error) {
 	auth, err := hostAuth(host)
 	if err != nil {
 		return nil, err
@@ -680,7 +688,7 @@ func gophClientConfig(host Host) (*goph.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	callback, err := hostKeyCallback(host)
+	callback, err := hostKeyCallback(host, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -698,8 +706,8 @@ func gophConfig(host Host, auth goph.Auth, timeout time.Duration, callback ssh.H
 	}
 }
 
-func sshClientConfig(host Host) (*ssh.ClientConfig, error) {
-	gophConfig, err := gophClientConfig(host)
+func sshClientConfig(host Host, opts sshClientOptions) (*ssh.ClientConfig, error) {
+	gophConfig, err := gophClientConfig(host, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -723,7 +731,11 @@ func clientConnectTimeout(host Host) (time.Duration, error) {
 	return timeout, nil
 }
 
-func hostKeyCallback(host Host) (ssh.HostKeyCallback, error) {
+func hostKeyCallback(host Host, opts ...sshClientOptions) (ssh.HostKeyCallback, error) {
+	var option sshClientOptions
+	if len(opts) > 0 {
+		option = opts[0]
+	}
 	switch strings.TrimSpace(host.HostKeyCheck) {
 	case "", HostKeyCheckKnownHosts:
 		path := knownHostsPath(host)
@@ -733,6 +745,9 @@ func hostKeyCallback(host Host) (ssh.HostKeyCallback, error) {
 		callback, err := knownhosts.New(path)
 		if err != nil {
 			return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
+		}
+		if option.NoHostKeyPrompt {
+			return callback, nil
 		}
 		return trustOnUnknownHostKeyCallback(path, callback), nil
 	case HostKeyCheckInsecure:
@@ -931,7 +946,7 @@ func scanRemoteSSHHostKeyViaJump(host Host) (ssh.PublicKey, net.Addr, error) {
 		return scanRemoteSSHHostKey(clearHostJump(host))
 	}
 
-	jump, err := newDirectSSHClient(*conn.Jump)
+	jump, err := newDirectSSHClient(*conn.Jump, sshClientOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect jump host %s: %w", HostLogName(*conn.Jump), err)
 	}

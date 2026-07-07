@@ -302,6 +302,32 @@ th {
   font-size: 15px;
 }
 
+.terminal-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.terminal-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 90px 90px max-content max-content;
+  gap: 10px;
+  align-items: end;
+}
+
+.terminal-container {
+  min-height: 460px;
+  height: min(62vh, 680px);
+  border: 1px solid #1f2937;
+  background: #111827;
+  border-radius: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.terminal-container .xterm {
+  height: 100%;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -337,5 +363,9 @@ th {
 
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .terminal-toolbar {
+    grid-template-columns: 1fr 1fr;
   }
 }

@@ -57,6 +57,13 @@ export type LogRecord = {
   [key: string]: unknown;
 };
 
+export type TerminalSession = {
+  id: string;
+  host: string;
+  remote_addr?: string;
+  started_at?: string;
+};
+
 export class APIError extends Error {
   constructor(
     message: string,

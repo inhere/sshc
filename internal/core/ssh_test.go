@@ -47,7 +47,7 @@ func TestNewSSHClientWithoutJumpUsesDirectConnection(t *testing.T) {
 	)
 	defer restore()
 
-	client, err := newSSHClientForConnection(ResolvedConnection{Target: sshTestHost("target", "10.0.0.8")})
+	client, err := newSSHClientForConnection(ResolvedConnection{Target: sshTestHost("target", "10.0.0.8")}, sshClientOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestNewSSHClientWithJumpWrapsJumpConnectError(t *testing.T) {
 	)
 	defer restore()
 
-	_, err := newSSHClientForConnection(sshTestConnection())
+	_, err := newSSHClientForConnection(sshTestConnection(), sshClientOptions{})
 	if err == nil || !strings.Contains(err.Error(), "connect jump host bastion") || !strings.Contains(err.Error(), "jump down") {
 		t.Fatalf("err = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestNewSSHClientWithJumpDialsTargetThroughJump(t *testing.T) {
 	}
 	defer func() { remoteClientDialForTest = oldDial }()
 
-	_, err := newSSHClientForConnection(sshTestConnection())
+	_, err := newSSHClientForConnection(sshTestConnection(), sshClientOptions{})
 	if err == nil || !strings.Contains(err.Error(), "connect target host inner-db via jump bastion") {
 		t.Fatalf("err = %v", err)
 	}
@@ -120,7 +120,7 @@ func TestNewSSHClientWithJumpClosesJumpOnTargetError(t *testing.T) {
 	}
 	defer func() { remoteClientDialForTest = oldDial }()
 
-	_, _ = newSSHClientForConnection(sshTestConnection())
+	_, _ = newSSHClientForConnection(sshTestConnection(), sshClientOptions{})
 	if closed != 1 {
 		t.Fatalf("closed raw connections = %d, want 1", closed)
 	}

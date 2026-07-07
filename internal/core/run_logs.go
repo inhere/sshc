@@ -476,6 +476,10 @@ func runLogPath(host Host) (string, error) {
 }
 
 func runLogDir() (string, error) {
+	return LogsDir()
+}
+
+func LogsDir() (string, error) {
 	root, err := configRoot()
 	if err != nil {
 		return "", err

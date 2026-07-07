@@ -1,7 +1,8 @@
 import "./styles/app.css";
-import { APIError, apiDelete, apiGet, apiPost, apiPut, login, type AuthProfile, type ConfigSummary, type Host, type LogRecord } from "./api";
+import { APIError, apiDelete, apiGet, apiPost, apiPut, login, type AuthProfile, type ConfigSummary, type Host, type LogRecord, type TerminalSession } from "./api";
+import { mountTerminal, type TerminalMount } from "./terminal";
 
-type ViewName = "hosts" | "auth" | "logs" | "config";
+type ViewName = "hosts" | "auth" | "logs" | "config" | "terminal";
 
 const state = {
   view: "hosts" as ViewName,
@@ -9,6 +10,10 @@ const state = {
   message: "",
   error: "",
   needsLogin: false,
+  terminalHost: "",
+  pendingConnectHost: "",
+  terminalSessionID: "",
+  terminalMount: null as TerminalMount | null,
 };
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -27,6 +32,7 @@ function renderShell() {
         <div class="brand">sshc</div>
         <nav class="nav">
           ${navButton("hosts", "Hosts")}
+          ${navButton("terminal", "Terminal")}
           ${navButton("auth", "Auth")}
           ${navButton("logs", "Logs")}
           ${navButton("config", "Config")}
@@ -47,6 +53,7 @@ function renderShell() {
   `;
   for (const button of app.querySelectorAll<HTMLButtonElement>("[data-view]")) {
     button.addEventListener("click", () => {
+      disposeTerminal();
       state.view = button.dataset.view as ViewName;
       state.message = "";
       state.error = "";
@@ -65,6 +72,7 @@ async function loadView() {
   setContent(`<div class="loading">Loading...</div>`);
   try {
     if (state.view === "hosts") await renderHosts();
+    if (state.view === "terminal") await renderTerminal();
     if (state.view === "auth") await renderAuth();
     if (state.view === "logs") await renderLogs();
     if (state.view === "config") await renderConfig();
@@ -181,6 +189,9 @@ async function renderHosts() {
   for (const button of queryAll<HTMLButtonElement>("[data-host-trust]")) {
     button.addEventListener("click", () => void trustHost(button.dataset.hostTrust || ""));
   }
+  for (const button of queryAll<HTMLButtonElement>("[data-host-connect]")) {
+    button.addEventListener("click", () => void openHostTerminal(button.dataset.hostConnect || ""));
+  }
 }
 
 function hostRow(host: Host) {
@@ -194,11 +205,116 @@ function hostRow(host: Host) {
       <td>${escapeHTML(host.remark || "")}</td>
       <td class="row-actions">
         <button data-host-edit="${escapeAttr(host.name)}" type="button">Edit</button>
+        <button data-host-connect="${escapeAttr(host.name)}" type="button">Connect</button>
         <button data-host-trust="${escapeAttr(host.name)}" type="button">Trust</button>
         <button data-host-delete="${escapeAttr(host.name)}" type="button">Delete</button>
       </td>
     </tr>
   `;
+}
+
+async function openHostTerminal(name: string) {
+  disposeTerminal();
+  state.view = "terminal";
+  state.terminalHost = name;
+  state.pendingConnectHost = name;
+  state.message = "";
+  state.error = "";
+  renderShell();
+  await loadView();
+}
+
+async function renderTerminal() {
+  setTitle("Terminal", "SSH browser terminal");
+  setActions(`<button id="reload-terminal" type="button">Refresh</button>`);
+  query("#reload-terminal").addEventListener("click", () => void renderTerminal());
+  const sessions = await apiGet<TerminalSession[]>("/api/terminal/sessions");
+  setContent(`
+    <div class="terminal-layout">
+      <form id="terminal-form" class="terminal-toolbar">
+        <label><span>Host</span><input name="host" value="${escapeAttr(state.terminalHost)}" required></label>
+        <label><span>Cols</span><input name="cols" type="number" value="120" min="1"></label>
+        <label><span>Rows</span><input name="rows" type="number" value="36" min="1"></label>
+        <button type="submit">Connect</button>
+        <button id="terminal-close" type="button" ${state.terminalSessionID ? "" : "disabled"}>Disconnect</button>
+      </form>
+      <div id="terminal-container" class="terminal-container"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Host</th><th>Started</th><th></th></tr></thead>
+          <tbody>${sessions.map(terminalRow).join("") || `<tr><td colspan="4" class="empty">No sessions</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `);
+  query<HTMLFormElement>("#terminal-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = formValue<{ host?: string; cols?: string; rows?: string }>(event.currentTarget as HTMLFormElement);
+    await connectTerminal(String(values.host || ""), Number(values.cols || 120), Number(values.rows || 36));
+  });
+  query("#terminal-close").addEventListener("click", () => void closeTerminal(state.terminalSessionID));
+  for (const button of queryAll<HTMLButtonElement>("[data-terminal-close]")) {
+    button.addEventListener("click", () => void closeTerminal(button.dataset.terminalClose || ""));
+  }
+  if (state.pendingConnectHost) {
+    const host = state.pendingConnectHost;
+    state.pendingConnectHost = "";
+    await connectTerminal(host, 120, 36);
+  }
+}
+
+function terminalRow(session: TerminalSession) {
+  return `
+    <tr>
+      <td class="mono">${escapeHTML(session.id)}</td>
+      <td>${escapeHTML(session.host)}</td>
+      <td>${escapeHTML(session.started_at || "")}</td>
+      <td class="row-actions"><button data-terminal-close="${escapeAttr(session.id)}" type="button">Close</button></td>
+    </tr>
+  `;
+}
+
+async function connectTerminal(host: string, cols: number, rows: number) {
+  host = host.trim();
+  if (!host) return;
+  disposeTerminal();
+  try {
+    const session = await apiPost<TerminalSession>("/api/terminal/sessions", { host, cols, rows, term: "xterm-256color" });
+    state.terminalHost = host;
+    state.terminalSessionID = session.id;
+    const container = query("#terminal-container");
+    state.terminalMount = mountTerminal(container, session.id, (nextCols, nextRows) => {
+      void apiPost(`/api/terminal/sessions/${encodeURIComponent(session.id)}/resize`, { cols: nextCols, rows: nextRows }).catch(() => {});
+    });
+    state.terminalMount.terminal.writeln(`connected to ${session.host}`);
+    state.error = "";
+    updateNotice();
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+    updateNotice();
+  }
+}
+
+async function closeTerminal(id: string) {
+  if (!id) return;
+  disposeTerminal();
+  try {
+    await apiDelete(`/api/terminal/sessions/${encodeURIComponent(id)}`);
+    if (state.terminalSessionID === id) state.terminalSessionID = "";
+    state.message = `closed terminal ${id}`;
+    state.error = "";
+    await renderTerminal();
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+    updateNotice();
+  }
+}
+
+function disposeTerminal() {
+  if (state.terminalMount) {
+    state.terminalMount.dispose();
+    state.terminalMount = null;
+  }
 }
 
 function bindHostForm() {
