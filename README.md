@@ -587,8 +587,11 @@ prints the config file as stored on disk and is intended for local debugging.
 - Prefer SSH keys over passwords when possible.
 - If both password and `--key` are provided, key authentication is tried first.
 - SSH host keys are checked against `~/.ssh/known_hosts` by default.
-- If a host is not trusted yet, connect once with `ssh devhost` or add its key
-  to `known_hosts` before using `sshc`.
+- If an interactive command sees an unknown host key, sshc asks whether to append
+  it to `known_hosts` and then continues the same connection.
+- In non-interactive scripts, pre-add host keys to `known_hosts` before running
+  sshc, or explicitly configure `host_key_check=insecure` for trusted temporary environments.
+- If a known host key changes, sshc still fails instead of overwriting the saved key.
 - Set `host_key_check` to `insecure` only when you explicitly want to skip host key verification.
 - With `--script --sudo-user`, the uploaded temporary script is readable by local
   remote users so the target sudo user can execute it. For sensitive scripts,

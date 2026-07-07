@@ -5,10 +5,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func TestHostAuthUsesKeyAndPassword(t *testing.T) {
@@ -133,9 +136,85 @@ func TestHostKeyCallbackUsesInsecureOnlyWhenConfigured(t *testing.T) {
 		t.Fatalf("insecure callback: %v", err)
 	}
 
-	_, err := hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: filepath.Join(t.TempDir(), "missing_known_hosts")})
-	if err == nil || !strings.Contains(err.Error(), "load known_hosts") {
+	path := filepath.Join(t.TempDir(), "missing_known_hosts")
+	if _, err := hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: path}); err != nil {
 		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("known_hosts file not created: %v", err)
+	}
+}
+
+func TestHostKeyCallbackPromptsAndAppendsUnknownKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	key := testPublicKey(t)
+	t.Cleanup(setConfirmUnknownHostKeyForTest(func(info UnknownHostKey) (bool, error) {
+		if info.Hostname != "example.com:22" || info.KnownHostsPath != path {
+			t.Fatalf("info = %+v", info)
+		}
+		return true, nil
+	}))
+
+	callback, err := hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback("example.com:22", testRemoteAddr(), key); err != nil {
+		t.Fatalf("callback: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "example.com") {
+		t.Fatalf("known_hosts content = %q", string(content))
+	}
+
+	callback, err = hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback("example.com:22", testRemoteAddr(), key); err != nil {
+		t.Fatalf("trusted callback: %v", err)
+	}
+}
+
+func TestHostKeyCallbackRejectsUnknownKeyWhenNotConfirmed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	t.Cleanup(setConfirmUnknownHostKeyForTest(func(info UnknownHostKey) (bool, error) {
+		return false, nil
+	}))
+
+	callback, err := hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = callback("example.com:22", testRemoteAddr(), testPublicKey(t))
+	if err == nil || !strings.Contains(err.Error(), "host key for example.com:22 is unknown") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHostKeyCallbackDoesNotPromptOnChangedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	firstKey := testPublicKey(t)
+	secondKey := testPublicKey(t)
+	if err := appendKnownHostKey(path, "example.com:22", firstKey); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setConfirmUnknownHostKeyForTest(func(info UnknownHostKey) (bool, error) {
+		t.Fatal("changed host key should not prompt")
+		return false, nil
+	}))
+
+	callback, err := hostKeyCallback(Host{HostKeyCheck: HostKeyCheckKnownHosts, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = callback("example.com:22", testRemoteAddr(), secondKey)
+	if err == nil {
+		t.Fatal("expected changed host key error")
 	}
 }
 
@@ -151,4 +230,27 @@ func writeTestPrivateKey(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func testPublicKey(t *testing.T) ssh.PublicKey {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := ssh.NewPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return publicKey
+}
+
+func testRemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 22}
+}
+
+func setConfirmUnknownHostKeyForTest(fn func(UnknownHostKey) (bool, error)) func() {
+	old := confirmUnknownHostKey
+	confirmUnknownHostKey = fn
+	return func() { confirmUnknownHostKey = old }
 }

@@ -572,8 +572,10 @@ sshc cfg doctor
 - 尽量优先使用 SSH key，而不是密码。
 - 如果同时提供密码和 `--key`，会优先尝试 key 认证。
 - 默认会使用 `~/.ssh/known_hosts` 校验 SSH host key。
-- 如果目标主机还未建立信任，先使用 `ssh devhost` 连接一次，或手动把 host key
-  加入 `known_hosts`。
+- 交互式命令遇到未知 host key 时，sshc 会询问是否追加到 `known_hosts`，确认后继续当前连接。
+- 非交互脚本中请先把 host key 写入 `known_hosts`，或只在可信临时环境中显式配置
+  `host_key_check=insecure`。
+- 如果已知主机的 host key 发生变化，sshc 仍会失败，不会覆盖已保存 key。
 - 只有显式把 `host_key_check` 设置为 `insecure` 时才会跳过 host key 校验。
 - 使用 `--script --sudo-user` 时，上传的远端临时脚本会对远端本机用户可读，
   这样目标 sudo 用户才能执行。脚本包含敏感内容时，建议配合 `--remote-script-dir`

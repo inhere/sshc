@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -93,6 +95,7 @@ var (
 	newGophConn             = goph.NewConn
 	newSSHClientConn        = ssh.NewClientConn
 	remoteClientDialForTest func(*remoteClient, string, string) (net.Conn, error)
+	confirmUnknownHostKey   = promptConfirmUnknownHostKey
 )
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
@@ -713,21 +716,114 @@ func clientConnectTimeout(host Host) (time.Duration, error) {
 func hostKeyCallback(host Host) (ssh.HostKeyCallback, error) {
 	switch strings.TrimSpace(host.HostKeyCheck) {
 	case "", HostKeyCheckKnownHosts:
-		path := strings.TrimSpace(host.KnownHostsPath)
-		if path == "" {
-			path = DefaultKnownHostsPath
+		path := knownHostsPath(host)
+		if err := ensureKnownHostsFile(path); err != nil {
+			return nil, err
 		}
-		path = expandUserPath(path)
 		callback, err := knownhosts.New(path)
 		if err != nil {
 			return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
 		}
-		return callback, nil
+		return trustOnUnknownHostKeyCallback(path, callback), nil
 	case HostKeyCheckInsecure:
 		return ssh.InsecureIgnoreHostKey(), nil
 	default:
 		return nil, fmt.Errorf("invalid host_key_check %q, want known_hosts or insecure", host.HostKeyCheck)
 	}
+}
+
+func knownHostsPath(host Host) string {
+	path := strings.TrimSpace(host.KnownHostsPath)
+	if path == "" {
+		path = DefaultKnownHostsPath
+	}
+	return expandUserPath(path)
+}
+
+func ensureKnownHostsFile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create known_hosts directory %s: %w", filepath.Dir(path), err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("load known_hosts %s: %w", path, err)
+	}
+	return file.Close()
+}
+
+func trustOnUnknownHostKeyCallback(path string, callback ssh.HostKeyCallback) ssh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := callback(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		var keyErr *knownhosts.KeyError
+		if !errors.As(err, &keyErr) || len(keyErr.Want) > 0 {
+			return err
+		}
+		if err := trustUnknownHostKey(UnknownHostKey{
+			Hostname:       hostname,
+			Remote:         remote,
+			Key:            key,
+			KnownHostsPath: path,
+		}); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+type UnknownHostKey struct {
+	Hostname       string
+	Remote         net.Addr
+	Key            ssh.PublicKey
+	KnownHostsPath string
+}
+
+func trustUnknownHostKey(info UnknownHostKey) error {
+	ok, err := confirmUnknownHostKey(info)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("host key for %s is unknown", info.Hostname)
+	}
+	return appendKnownHostKey(info.KnownHostsPath, info.Hostname, info.Key)
+}
+
+func promptConfirmUnknownHostKey(info UnknownHostKey) (bool, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false, fmt.Errorf("host key for %s is unknown; run from an interactive terminal to trust it, pre-add it to %s, or set host_key_check=insecure", info.Hostname, info.KnownHostsPath)
+	}
+	fmt.Fprintf(os.Stderr, "The authenticity of host %q can't be established.\n", info.Hostname)
+	fmt.Fprintf(os.Stderr, "%s key fingerprint is %s.\n", info.Key.Type(), ssh.FingerprintSHA256(info.Key))
+	fmt.Fprintf(os.Stderr, "Add this host key to %s and continue? [y/N]: ", info.KnownHostsPath)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
+}
+
+func appendKnownHostKey(path, hostname string, key ssh.PublicKey) error {
+	if strings.TrimSpace(hostname) == "" {
+		return errors.New("known_hosts hostname is required")
+	}
+	if err := ensureKnownHostsFile(path); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return fmt.Errorf("open known_hosts %s: %w", path, err)
+	}
+	defer file.Close()
+
+	line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
+	if _, err := file.WriteString(line + "\n"); err != nil {
+		return fmt.Errorf("write known_hosts %s: %w", path, err)
+	}
+	return nil
 }
 
 func hostAuth(host Host) (goph.Auth, error) {
