@@ -16,11 +16,8 @@ var listOpts = struct {
 }{}
 
 func NewListCmd() *gcli.Command {
-	cmd := &gcli.Command{
-		Name:    "list",
-		Desc:    "list saved ssh hosts",
-		Aliases: []string{"ls"},
-		Help: strings.TrimSpace(`
+	cmd := newHostListCmd()
+	cmd.Help = `
 Examples:
   sshc list --show-ip
 
@@ -32,22 +29,7 @@ Notes:
   - Use --show-ip to print full IP addresses.
   - Hosts are read from ~/.config/sshc/sshc.config.json by default.
   - Set SSHC_CONFIG to use a different hosts file.
-`),
-		Config: func(c *gcli.Command) {
-			c.BoolOpt(&listOpts.ShowIP, "show-ip", "", false, "show full host IP address")
-		},
-		Func: func(c *gcli.Command, _ []string) error {
-			store, err := core.LoadStoreWithSSHConfig()
-			if err != nil {
-				return err
-			}
-			out := buildHostListTable(store.Hosts, listOpts.ShowIP)
-			if out != "" {
-				fmt.Fprint(cmdOutput(c), out)
-			}
-			return nil
-		},
-	}
+`
 	return cmd
 }
 

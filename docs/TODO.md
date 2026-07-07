@@ -46,12 +46,19 @@
 
 ## 新增功能
 
-- [ ] sshc serve 启动 server + web，还需要思考完善逻辑
+- [ ] sshc serve v1 启动 server + webui(内嵌)
+  - [ ] 使用亮色简洁美观的 UI 设计
+  - [ ] 首版本地访问即可，方便通过UI管理信息
+  - [ ] 查看并管理 config, host, auth 等
+  - [ ] 通过 xterm.js 连接访问目标主机 
+- [ ] sshc serve v2 还需要思考完善逻辑
   - [ ] 允许通过浏览器 xterm 访问已配置的 hosts，避免直接给出 host 密码
-  - [ ] 分享单个 /host/{uni-hashid} 主机，免密 + 时效 + 审计 xterm访问
+  - [ ] 分享单个 /xterm/{uni-hashid} 主机 xterm.js 访问，免密 + 时效 + 审计
+    - 也可以生成一次性的临时 token 给对方使用
 
 ## 优化增强
 
+- [ ] 使用 log/slog 记录 sshc 自己的运行日志到文件
 - [x] host 日志优化： 现在 host 日志 jsonl 完整记录了输入输出内容，但是果输出内容很大时音响json日志文件的查看/审计
   - [x] 为每个执行任务都生成 task_id(format=yyyymmdd-hhmmss-shorthash，jsonl 里要记录下来
   - [x] 输出大时，使用独立的文件来保存，文件名(`{task_id}.out.log`) , jsonl 里不再记录完整输出
