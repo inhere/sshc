@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-07 | Codex | 初版，规划 sshc serve 本地 Web 管理台、Web Terminal、分享链接和安全边界 |
 | v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和默认打开浏览器行为 |
+| v0.3 | 2026-07-07 | Codex | 对齐 v1 实现状态：`--token random`、管理 API、Web UI、Web Terminal 和 terminal audit log 已落地 |
 
 ## 背景
 
@@ -100,16 +101,16 @@ sshc serve --web-dir ./web/dist
 ### 安全相关命令选项
 
 ```bash
-sshc serve --token
+sshc serve --token random
 sshc serve --token abc...
-sshc serve --addr 0.0.0.0:8822 --token
+sshc serve --addr 0.0.0.0:8822 --token random
 ```
 
 建议规则：
 
 - 默认 localhost 访问可以使用进程内 session cookie。
 - 如果监听地址不是 loopback，必须启用 token。
-- `--token` 不带值时自动生成随机 token，只在启动日志中打印一次。
+- `--token random` 自动生成随机 token，只在启动日志中打印一次。
 - `--token <value>` 允许用户显式设置访问 token，适合脚本或临时内网使用。
 
 ### 后续分享命令
@@ -401,6 +402,25 @@ v1 不建议支持：
 - 在 terminal 内弹 CLI known_hosts prompt。
 - Web Terminal 完整输入输出审计。
 - 浏览器直接传 password 建立临时 host。
+
+### v1 实现状态
+
+当前 v1 已完成：
+
+- `sshc serve` 基础 server、静态资源和自动打开浏览器。
+- Host/Auth/Config/Logs 管理 API 和 Web UI。
+- token 登录、session cookie、CSRF header。
+- `--token random` 一次性 token 生成和打印。
+- Web Terminal session、WebSocket 字节转发、resize 和断线清理。
+- 普通 SSH host 和单级 jump host 的 Web Terminal。
+- `{logs_path}/terminal/{yyyyMMdd}.jsonl` terminal 审计元信息。
+
+当前 v1 明确不支持：
+
+- command_proxy 的 Web Terminal。CLI `sshc login <command_proxy_host>` 仍可使用。
+- Web Terminal 内部 unknown host key prompt。需要先用 `sshc host trust <host>` 或 UI Trust。
+- 完整 terminal 输入输出录制。
+- share link。
 
 ## Web UI 设计
 

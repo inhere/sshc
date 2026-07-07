@@ -30,6 +30,7 @@
   - 支持单文件传输 SHA256 校验
 - 在 `~/.config/sshc/logs/` 下按主机保存 JSONL 执行日志
 - 通过 `login/connect` 打开交互式远端 PTY
+- 通过 `serve` 启动本地 Web 管理台，管理 host/auth/config/log 并打开浏览器终端
 
 ## 安装
 
@@ -66,6 +67,7 @@ sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
 sshc log devhost --tail 20
+sshc serve
 ```
 
 ## 命令概览
@@ -82,6 +84,7 @@ sshc login           打开交互式 SSH shell
 sshc scp|upload      上传文件或目录
 sshc download|dl     下载文件或目录
 sshc log             查看或搜索执行日志
+sshc serve           启动本地 Web 管理台
 ```
 
 查看某个命令的完整参数：
@@ -437,6 +440,45 @@ sshc login lxc-app
 没有时回退到 `xterm-256color`。
 不传目标，或者目标匹配到多个主机时，`sshc` 会打开交互式主机选择器。
 
+### Web 管理台
+
+```bash
+sshc serve
+sshc serve --addr 127.0.0.1:8822
+sshc serve --addr 127.0.0.1:0 --no-open
+sshc serve --readonly
+sshc serve --web-dir ./web/dist
+sshc serve --addr 0.0.0.0:8822 --token random
+sshc serve --addr 0.0.0.0:8822 --token "change-me"
+```
+
+`sshc serve` 会启动本地 Web 管理台，用于管理主机、凭证配置、配置摘要、执行日志，
+并通过浏览器打开 SSH terminal。默认监听 `127.0.0.1:8822`，启动后自动打开浏览器。
+在纯终端或服务进程里运行时，可以使用 `--no-open`。
+
+浏览器 terminal 复用 `sshc login` 的已保存主机配置，包括单级 jump host。Web
+Terminal 不会在浏览器里弹出 unknown host key 交互提示。首次连接前请先信任主机：
+
+```bash
+sshc host trust devhost
+```
+
+v1 暂不支持 command_proxy 主机的浏览器 terminal。command_proxy 主机仍可以继续使用
+CLI 的 `sshc login lxc-app`。
+
+监听非 loopback 地址，例如 `0.0.0.0` 时，必须设置 `--token`。使用
+`--token random` 会自动生成一次性访问 token 并在启动时打印；也可以传入明确的 token。
+服务端只在内存中保存 token hash，并使用 session cookie 和 `X-SSHC-CSRF` 保护 Web
+写请求。
+
+terminal 审计元信息写入：
+
+```text
+{logs_path}/terminal/{yyyyMMdd}.jsonl
+```
+
+审计日志记录 start、resize、close 等生命周期事件，不记录完整 terminal 输入或输出。
+
 ## 主机匹配
 
 大多数命令都支持保存的主机名或 IP。`sshc` 会优先使用精确匹配，然后在主机名、
@@ -584,6 +626,10 @@ sshc cfg doctor
   这样目标 sudo 用户才能执行。脚本包含敏感内容时，建议配合 `--remote-script-dir`
   使用权限受控的远端目录。
 - `login` 会打开交互式 PTY。会话日志只记录连接元信息，不记录输入命令或终端输出。
+- `sshc serve` 默认只监听 localhost。绑定 `0.0.0.0` 等价于把 Web SSH 管理入口暴露到网络，
+  必须使用 `--token`。
+- 不要把 `sshc serve` 裸露到公网。需要远程访问时，应放在可信隧道或受控网络后面。
+- Web API 和 UI 会隐藏 `password`、`password_enc` 字段，Web 管理台不会展示密码。
 
 ## 文档
 
@@ -595,6 +641,8 @@ sshc cfg doctor
 ```bash
 go test ./...
 go build -o tmp/sshc ./cmd/sshc
+npm --prefix web run build
+go build -tags embed_web -o tmp/sshc ./cmd/sshc
 ```
 
 Windows：
@@ -602,7 +650,12 @@ Windows：
 ```powershell
 go test ./...
 go build -o tmp\sshc.exe ./cmd/sshc
+npm --prefix web run build
+go build -tags embed_web -o tmp\sshc.exe ./cmd/sshc
 ```
+
+`web/dist` 是前端构建产物，不提交到仓库。需要内嵌 Web UI 的发布构建，必须先执行
+`npm --prefix web run build`，再执行 `go build -tags embed_web`。
 
 Release 构建由 tag 触发：
 

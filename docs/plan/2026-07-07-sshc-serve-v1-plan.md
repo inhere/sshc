@@ -8,6 +8,7 @@
 | v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和 sysutil.OpenBrowser 打开浏览器 |
 | v0.3 | 2026-07-07 | Codex | P5 访问控制落地，token 自动生成入口调整为 `--token random` |
 | v0.4 | 2026-07-07 | Codex | P4 Web Terminal session、WebSocket、resize 和 terminal audit log 落地 |
+| v0.5 | 2026-07-07 | Codex | P6 文档收口，README、设计文档和 TODO 对齐 serve v1 实现 |
 
 ## 关联文档
 
@@ -695,7 +696,7 @@ feat(serve): add local access control
 ```bash
 sshc serve
 sshc serve --addr 127.0.0.1:8822
-sshc serve --addr 0.0.0.0:8822 --token
+sshc serve --addr 0.0.0.0:8822 --token random
 ```
 
 ### 安全说明
@@ -829,4 +830,4 @@ git diff --check -- .
 - [x] P3: Web UI v1
 - [x] P4: Web Terminal
 - [x] P5: 安全和本地访问控制
-- [ ] P6: 文档和收口
+- [x] P6: 文档和收口
