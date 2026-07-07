@@ -657,9 +657,7 @@ func newHostRenameCmd() *gcli.Command {
 			if err != nil {
 				return err
 			}
-			if idx, _, err := findHostIndex(config.Hosts, newName); err != nil {
-				return err
-			} else if idx >= 0 {
+			if findHostNameIndex(config.Hosts, newName) >= 0 {
 				return fmt.Errorf("host %q already exists", newName)
 			}
 			idx, _, err := findHostIndex(config.Hosts, oldName)
@@ -818,6 +816,19 @@ func validateHostUniqueness(hosts []core.Host, current int) error {
 		}
 	}
 	return nil
+}
+
+func findHostNameIndex(hosts []core.Host, name string) int {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return -1
+	}
+	for i, host := range hosts {
+		if strings.TrimSpace(host.Name) == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func findHostIndex(hosts []core.Host, target string) (int, core.Host, error) {

@@ -412,6 +412,28 @@ func TestHostRemoveWithYesAndRename(t *testing.T) {
 	}
 }
 
+func TestHostRenameChecksNewNameOnly(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "pve-v7-01", IP: "172.20.0.12", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+		{Name: "other-host", IP: "pve-v7", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "rename", "pve-v7-01", "pve-v7"}); err != nil {
+		t.Fatalf("host rename: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Hosts[0].Name != "pve-v7" || config.Hosts[1].Name != "other-host" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
 func TestDisplayHostIP(t *testing.T) {
 	tests := []struct {
 		name   string
