@@ -20,6 +20,12 @@ func setDownloadRemoteForTest(fn func(core.Host, string, string, core.TransferOp
 	return func() { downloadRemote = old }
 }
 
+func setHostTrustForTest(fn func(core.Host) (core.HostKeyTrustResult, error)) func() {
+	old := hostTrust
+	hostTrust = fn
+	return func() { hostTrust = old }
+}
+
 func setReadClipboardForTest(fn func() (string, error)) func() {
 	old := readClipboard
 	readClipboard = fn

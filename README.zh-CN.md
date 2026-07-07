@@ -151,6 +151,7 @@ sshc host add --name lxc-app --backend command_proxy --via pve-host --run-templa
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
+sshc host trust devhost
 sshc host rm devhost --yes
 sshc host rename old-name new-name
 ```
@@ -573,6 +574,8 @@ sshc cfg doctor
 - 如果同时提供密码和 `--key`，会优先尝试 key 认证。
 - 默认会使用 `~/.ssh/known_hosts` 校验 SSH host key。
 - 交互式命令遇到未知 host key 时，sshc 会询问是否追加到 `known_hosts`，确认后继续当前连接。
+- 可以使用 `sshc host trust devhost` 或 `sshc host trust 192.168.1.10 --port 2222`
+  提前扫描并添加主机 key 到 `known_hosts`。
 - 非交互脚本中请先把 host key 写入 `known_hosts`，或只在可信临时环境中显式配置
   `host_key_check=insecure`。
 - 如果已知主机的 host key 发生变化，sshc 仍会失败，不会覆盖已保存 key。

@@ -218,6 +218,80 @@ func TestHostKeyCallbackDoesNotPromptOnChangedKey(t *testing.T) {
 	}
 }
 
+func TestTrustHostKeyAddsUnknownKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	key := testPublicKey(t)
+	t.Cleanup(setScanSSHHostKeyForTest(func(host Host) (ssh.PublicKey, net.Addr, error) {
+		if host.IP != "example.com" || host.Port != 2222 {
+			t.Fatalf("host = %+v", host)
+		}
+		return key, testRemoteAddr(), nil
+	}))
+
+	result, err := TrustHostKey(Host{Name: "devhost", IP: "example.com", Port: 2222, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "added" || result.Address != "example.com:2222" || result.Fingerprint != ssh.FingerprintSHA256(key) {
+		t.Fatalf("result = %+v", result)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "[example.com]:2222") {
+		t.Fatalf("known_hosts content = %q", string(content))
+	}
+}
+
+func TestTrustHostKeyAlreadyTrusted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	key := testPublicKey(t)
+	if err := appendKnownHostKey(path, "example.com:22", key); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setScanSSHHostKeyForTest(func(host Host) (ssh.PublicKey, net.Addr, error) {
+		return key, testRemoteAddr(), nil
+	}))
+
+	result, err := TrustHostKey(Host{Name: "devhost", IP: "example.com", Port: 22, KnownHostsPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "already_trusted" {
+		t.Fatalf("result = %+v", result)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(content), "example.com") != 1 {
+		t.Fatalf("known_hosts content = %q", string(content))
+	}
+}
+
+func TestTrustHostKeyRejectsChangedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	if err := appendKnownHostKey(path, "example.com:22", testPublicKey(t)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setScanSSHHostKeyForTest(func(host Host) (ssh.PublicKey, net.Addr, error) {
+		return testPublicKey(t), testRemoteAddr(), nil
+	}))
+
+	_, err := TrustHostKey(Host{Name: "devhost", IP: "example.com", Port: 22, KnownHostsPath: path})
+	if err == nil || !strings.Contains(err.Error(), "has changed") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTrustHostKeyRejectsCommandProxyHost(t *testing.T) {
+	_, err := TrustHostKey(Host{Name: "lxc-app", Backend: HostBackendCommandProxy, Via: "pve-host"})
+	if err == nil || !strings.Contains(err.Error(), "trust the via host instead") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func writeTestPrivateKey(t *testing.T) string {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
@@ -253,4 +327,10 @@ func setConfirmUnknownHostKeyForTest(fn func(UnknownHostKey) (bool, error)) func
 	old := confirmUnknownHostKey
 	confirmUnknownHostKey = fn
 	return func() { confirmUnknownHostKey = old }
+}
+
+func setScanSSHHostKeyForTest(fn func(Host) (ssh.PublicKey, net.Addr, error)) func() {
+	old := scanSSHHostKey
+	scanSSHHostKey = fn
+	return func() { scanSSHHostKey = old }
 }

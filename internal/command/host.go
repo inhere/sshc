@@ -75,6 +75,8 @@ type hostUnsetOptions struct {
 	KnownHostsPath  bool
 }
 
+var hostTrust = core.TrustHostKey
+
 func NewHostCmd() *gcli.Command {
 	cmd := &gcli.Command{
 		Name:     "host",
@@ -90,6 +92,7 @@ Examples:
   sshc host list --match devhost
   sshc host list --show-ip
   sshc host show devhost
+  sshc host trust devhost
   sshc host set lxc-app --run-template "pct exec 101 -- sh -lc {{cmd}}"
   sshc host set devhost --remark "testing host" --jump bastion
   sshc host unset devhost --remark --jump
@@ -109,6 +112,7 @@ Notes:
 		newHostImportCmd(),
 		newHostListCmd(),
 		newHostShowCmd(),
+		newHostTrustCmd(),
 		newHostSetCmd(),
 		newHostUnsetCmd(),
 		newHostRemoveCmd(),
@@ -414,6 +418,85 @@ func newHostShowCmd() *gcli.Command {
 			return writeJSON(c, host)
 		},
 	}
+}
+
+func newHostTrustCmd() *gcli.Command {
+	var port int
+	return &gcli.Command{
+		Name: "trust",
+		Desc: "scan and trust ssh host key",
+		Help: strings.TrimSpace(`
+Examples:
+  sshc host trust devhost
+  sshc host trust 192.168.1.10
+  sshc host trust 192.168.1.10 --port 2222
+
+Notes:
+  - Existing trusted keys are kept unchanged.
+  - Changed host keys are reported as errors and must be resolved manually.
+  - command_proxy targets are logical hosts; trust their via host instead.
+`),
+		Config: func(c *gcli.Command) {
+			c.IntOpt(&port, "port", "", 0, "ssh port for raw host targets")
+			c.AddArg("target", "host ip or name", true)
+		},
+		Func: func(c *gcli.Command, _ []string) error {
+			target := strings.TrimSpace(c.Arg("target").String())
+			host, err := resolveTrustHost(target, port)
+			if err != nil {
+				return err
+			}
+			result, err := hostTrust(host)
+			if err != nil {
+				return err
+			}
+			switch result.Status {
+			case "already_trusted":
+				fmt.Fprintf(cmdOutput(c), "host key already trusted: %s %s %s\n", result.Address, result.KeyType, result.Fingerprint)
+			default:
+				fmt.Fprintf(cmdOutput(c), "trusted host key: %s %s %s\n", result.Address, result.KeyType, result.Fingerprint)
+			}
+			fmt.Fprintf(cmdOutput(c), "known_hosts=%s\n", result.KnownHostsPath)
+			return nil
+		},
+	}
+}
+
+func resolveTrustHost(target string, port int) (core.Host, error) {
+	if strings.TrimSpace(target) == "" {
+		return core.Host{}, errors.New("target is required")
+	}
+	config, err := core.LoadConfigWithSSHConfig()
+	if err != nil {
+		return core.Host{}, err
+	}
+	effective, ok, err := config.ResolveEffectiveHost(target, core.HostOverrides{})
+	if err != nil {
+		return core.Host{}, err
+	}
+	if ok {
+		host := effective.ToHost()
+		if port > 0 {
+			host.Port = port
+		}
+		return host, nil
+	}
+	host := core.Host{
+		Name:           target,
+		IP:             target,
+		Port:           port,
+		HostKeyCheck:   core.HostKeyCheckKnownHosts,
+		KnownHostsPath: config.Defaults.KnownHostsPath,
+		ConnectTimeout: config.Defaults.ConnectTimeout,
+	}
+	if host.Port == 0 {
+		if config.Defaults.Port > 0 {
+			host.Port = config.Defaults.Port
+		} else {
+			host.Port = core.DefaultSSHPort
+		}
+	}
+	return host, nil
 }
 
 func newHostSetCmd() *gcli.Command {

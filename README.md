@@ -153,6 +153,7 @@ sshc host add --name lxc-app --backend command_proxy --via pve-host --run-templa
 sshc host list --group testing --show-ip
 sshc host list --match devhost
 sshc host show devhost
+sshc host trust devhost
 sshc host rm devhost --yes
 sshc host rename old-name new-name
 ```
@@ -589,6 +590,8 @@ prints the config file as stored on disk and is intended for local debugging.
 - SSH host keys are checked against `~/.ssh/known_hosts` by default.
 - If an interactive command sees an unknown host key, sshc asks whether to append
   it to `known_hosts` and then continues the same connection.
+- Use `sshc host trust devhost` or `sshc host trust 192.168.1.10 --port 2222`
+  to pre-scan and add a host key to `known_hosts`.
 - In non-interactive scripts, pre-add host keys to `known_hosts` before running
   sshc, or explicitly configure `host_key_check=insecure` for trusted temporary environments.
 - If a known host key changes, sshc still fails instead of overwriting the saved key.

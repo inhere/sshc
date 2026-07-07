@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -459,6 +460,73 @@ func TestHostUnsetRejectsInvalidAuth(t *testing.T) {
 	}
 	if config.Hosts[0].User != "root" || config.Hosts[0].KeyPath != "~/.ssh/id_rsa" {
 		t.Fatalf("host was changed: %+v", config.Hosts[0])
+	}
+}
+
+func TestHostTrustUsesSavedHost(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{
+		Name:           "devhost",
+		IP:             "10.0.0.8",
+		User:           "root",
+		KeyPath:        "~/.ssh/id_rsa",
+		Port:           2222,
+		KnownHostsPath: "~/.ssh/custom_known_hosts",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotHost core.Host
+	t.Cleanup(setHostTrustForTest(func(host core.Host) (core.HostKeyTrustResult, error) {
+		gotHost = host
+		return core.HostKeyTrustResult{
+			Address:        "10.0.0.8:2222",
+			KnownHostsPath: "~/.ssh/custom_known_hosts",
+			KeyType:        "ssh-ed25519",
+			Fingerprint:    "SHA256:test",
+			Status:         "added",
+		}, nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "trust", "devhost"}); err != nil {
+		t.Fatalf("host trust: %v", err)
+	}
+	if gotHost.IP != "10.0.0.8" || gotHost.Port != 2222 || gotHost.KnownHostsPath != "~/.ssh/custom_known_hosts" {
+		t.Fatalf("host = %+v", gotHost)
+	}
+	if !strings.Contains(out.String(), "trusted host key: 10.0.0.8:2222 ssh-ed25519 SHA256:test") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestHostTrustRawTargetWithPort(t *testing.T) {
+	withTempConfig(t)
+	var gotHost core.Host
+	t.Cleanup(setHostTrustForTest(func(host core.Host) (core.HostKeyTrustResult, error) {
+		gotHost = host
+		return core.HostKeyTrustResult{
+			Address:        "192.168.1.10:2222",
+			KnownHostsPath: "~/.ssh/known_hosts",
+			KeyType:        "ssh-rsa",
+			Fingerprint:    "SHA256:raw",
+			Status:         "already_trusted",
+		}, nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "trust", "192.168.1.10", "--port", "2222"}); err != nil {
+		t.Fatalf("host trust raw: %v", err)
+	}
+	if gotHost.IP != "192.168.1.10" || gotHost.Port != 2222 {
+		t.Fatalf("host = %+v", gotHost)
+	}
+	if !strings.Contains(out.String(), "host key already trusted: 192.168.1.10:2222 ssh-rsa SHA256:raw") {
+		t.Fatalf("output = %q", out.String())
 	}
 }
 

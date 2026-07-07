@@ -96,7 +96,17 @@ var (
 	newSSHClientConn        = ssh.NewClientConn
 	remoteClientDialForTest func(*remoteClient, string, string) (net.Conn, error)
 	confirmUnknownHostKey   = promptConfirmUnknownHostKey
+	scanSSHHostKey          = scanRemoteSSHHostKey
 )
+
+type HostKeyTrustResult struct {
+	Host           Host
+	Address        string
+	KnownHostsPath string
+	KeyType        string
+	Fingerprint    string
+	Status         string
+}
 
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	if IsCommandProxyHost(host) {
@@ -824,6 +834,160 @@ func appendKnownHostKey(path, hostname string, key ssh.PublicKey) error {
 		return fmt.Errorf("write known_hosts %s: %w", path, err)
 	}
 	return nil
+}
+
+func TrustHostKey(host Host) (HostKeyTrustResult, error) {
+	if IsCommandProxyHost(host) {
+		return HostKeyTrustResult{}, fmt.Errorf("host %s uses command_proxy backend; trust the via host instead", HostLogName(host))
+	}
+	if strings.TrimSpace(host.IP) == "" {
+		return HostKeyTrustResult{}, errors.New("ip is required")
+	}
+	if host.Port == 0 {
+		host.Port = DefaultSSHPort
+	}
+
+	path := knownHostsPath(host)
+	if err := ensureKnownHostsFile(path); err != nil {
+		return HostKeyTrustResult{}, err
+	}
+	key, remote, err := scanSSHHostKey(host)
+	if err != nil {
+		return HostKeyTrustResult{}, err
+	}
+	address := knownHostAddress(host)
+	result := HostKeyTrustResult{
+		Host:           host,
+		Address:        address,
+		KnownHostsPath: path,
+		KeyType:        key.Type(),
+		Fingerprint:    ssh.FingerprintSHA256(key),
+	}
+
+	callback, err := knownhosts.New(path)
+	if err != nil {
+		return HostKeyTrustResult{}, fmt.Errorf("load known_hosts %s: %w", path, err)
+	}
+	err = callback(address, remote, key)
+	if err == nil {
+		result.Status = "already_trusted"
+		return result, nil
+	}
+	var keyErr *knownhosts.KeyError
+	if !errors.As(err, &keyErr) {
+		return HostKeyTrustResult{}, err
+	}
+	if len(keyErr.Want) > 0 {
+		return HostKeyTrustResult{}, fmt.Errorf("host key for %s has changed; remove or update the existing known_hosts entry manually", address)
+	}
+	if err := appendKnownHostKey(path, address, key); err != nil {
+		return HostKeyTrustResult{}, err
+	}
+	result.Status = "added"
+	return result, nil
+}
+
+func scanRemoteSSHHostKey(host Host) (ssh.PublicKey, net.Addr, error) {
+	if strings.TrimSpace(host.Jump) != "" {
+		return scanRemoteSSHHostKeyViaJump(host)
+	}
+	address := knownHostAddress(host)
+	timeout, err := clientConnectTimeout(host)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect %s: %w", address, err)
+	}
+	defer conn.Close()
+	remote := conn.RemoteAddr()
+	var key ssh.PublicKey
+	config := &ssh.ClientConfig{
+		User:            firstNonEmptyString(host.User, "sshc"),
+		Auth:            []ssh.AuthMethod{},
+		Timeout:         timeout,
+		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error { key = serverKey; return nil },
+	}
+	sshConn, _, _, err := newSSHClientConn(conn, address, config)
+	if sshConn != nil {
+		_ = sshConn.Close()
+	}
+	if key == nil {
+		if err != nil {
+			return nil, remote, fmt.Errorf("scan host key for %s: %w", address, err)
+		}
+		return nil, remote, fmt.Errorf("scan host key for %s: server did not provide a host key", address)
+	}
+	return key, remote, nil
+}
+
+func scanRemoteSSHHostKeyViaJump(host Host) (ssh.PublicKey, net.Addr, error) {
+	conn, err := ResolveConnectionForHost(host)
+	if err != nil {
+		return nil, nil, err
+	}
+	if conn.Jump == nil {
+		return scanRemoteSSHHostKey(clearHostJump(host))
+	}
+
+	jump, err := newDirectSSHClient(*conn.Jump)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect jump host %s: %w", HostLogName(*conn.Jump), err)
+	}
+	defer jump.Close()
+
+	address := knownHostAddress(conn.Target)
+	rawConn, err := jump.Dial("tcp", address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect target host %s via jump %s: %w", HostLogName(conn.Target), HostLogName(*conn.Jump), err)
+	}
+	defer rawConn.Close()
+
+	timeout, err := clientConnectTimeout(conn.Target)
+	if err != nil {
+		return nil, nil, err
+	}
+	var key ssh.PublicKey
+	config := &ssh.ClientConfig{
+		User:            firstNonEmptyString(conn.Target.User, "sshc"),
+		Auth:            []ssh.AuthMethod{},
+		Timeout:         timeout,
+		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error { key = serverKey; return nil },
+	}
+	sshConn, _, _, err := newSSHClientConn(rawConn, address, config)
+	if sshConn != nil {
+		_ = sshConn.Close()
+	}
+	if key == nil {
+		if err != nil {
+			return nil, rawConn.RemoteAddr(), fmt.Errorf("scan host key for %s via jump %s: %w", address, HostLogName(*conn.Jump), err)
+		}
+		return nil, rawConn.RemoteAddr(), fmt.Errorf("scan host key for %s via jump %s: server did not provide a host key", address, HostLogName(*conn.Jump))
+	}
+	return key, rawConn.RemoteAddr(), nil
+}
+
+func clearHostJump(host Host) Host {
+	host.Jump = ""
+	return host
+}
+
+func knownHostAddress(host Host) string {
+	port := host.Port
+	if port == 0 {
+		port = DefaultSSHPort
+	}
+	return net.JoinHostPort(strings.TrimSpace(host.IP), fmt.Sprint(port))
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func hostAuth(host Host) (goph.Auth, error) {
