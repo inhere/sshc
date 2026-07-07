@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-07 | Codex | 初版，规划 sshc serve 本地 Web 管理台、Web Terminal、分享链接和安全边界 |
+| v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和默认打开浏览器行为 |
 
 ## 背景
 
@@ -80,7 +81,6 @@ browser(remote) -> token/share link -> sshc serve -> selected host terminal
 ```bash
 sshc serve
 sshc serve --addr 127.0.0.1:8822
-sshc serve --open
 sshc serve --no-open
 sshc serve --readonly
 sshc serve --web-dir ./web/dist
@@ -91,9 +91,11 @@ sshc serve --web-dir ./web/dist
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--addr` | `127.0.0.1:8822` | HTTP 监听地址 |
-| `--open` | true | 启动后打开浏览器 |
+| `--no-open` | false | 默认启动后打开浏览器，设置后不自动打开 |
 | `--readonly` | false | 只读模式下禁止修改配置和打开终端 |
 | `--web-dir` | 空 | 开发调试时读取外部 Web dist，正式版使用 go:embed |
+
+打开浏览器统一使用 `github.com/gookit/goutil/sysutil.OpenBrowser`，不在 serve 命令里自建平台分支。
 
 ### 安全相关命令选项
 
@@ -161,7 +163,7 @@ web/
 |- dist/
 ```
 
-正式构建产物通过 `go:embed` 打包进二进制。开发时可以用 `--web-dir web/dist` 指定本地构建产物。
+正式构建产物通过 `go:embed` 打包进二进制。`web/dist` 不提交到仓库，由构建流程生成后嵌入；开发时可以用 `--web-dir web/dist` 指定本地构建产物。
 
 ## 后端架构
 
@@ -689,10 +691,10 @@ terminal 审计日志：
 
 - 新增 `sshc serve` 命令。
 - 新增 `internal/server` 基础结构。
-- 支持 `--addr`、`--open`、`--no-open`、`--readonly`、`--web-dir`。
+- 支持 `--addr`、`--no-open`、`--readonly`、`--web-dir`。
 - 提供 `/api/health`。
 - 支持 go:embed 静态文件。
-- 开发模式支持外部 `web/dist`。
+- `web/dist` 不提交到仓库，构建时生成并嵌入；开发模式支持外部 `web/dist`。
 
 验收：
 

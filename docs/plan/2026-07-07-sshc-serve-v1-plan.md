@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-07 | Codex | 初版，基于 serve 整体设计拆分 v1 本地 Web 管理台和 Web Terminal 实施阶段 |
+| v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和 sysutil.OpenBrowser 打开浏览器 |
 
 ## 关联文档
 
@@ -42,6 +43,10 @@ v1 只聚焦本机使用体验：
 - v1 Web Terminal 的 unknown host key 不走 CLI stdin prompt，应返回错误并提示先 trust。
 - 前端采用 Vite + TypeScript + xterm.js。
 - 正式版通过 `go:embed` 内嵌 Web dist，开发时支持 `--web-dir`。
+- `web/dist` 不提交到仓库，由构建流程生成并嵌入。
+- terminal audit log 使用 `{logs_path}/terminal/{yyyyMMdd}.jsonl`。
+- `sshc serve` 默认打开浏览器，使用 `--no-open` 禁止自动打开。
+- 打开浏览器统一使用 `github.com/gookit/goutil/sysutil.OpenBrowser`。
 - 每个阶段完成后独立提交，避免一次提交过大。
 
 ## 非目标
@@ -102,7 +107,7 @@ npm install @xterm/xterm @xterm/addon-fit
 - v1 不引入 Vue/React。
 - UI 以工具型界面为主。
 - build 产物由 Go `embed` 使用。
-- `web/dist` 不建议提交，除非后续 release 流程明确需要。
+- `web/dist` 不提交到仓库。
 
 ## 目标目录结构
 
@@ -147,7 +152,6 @@ sshc/
 ```bash
 sshc serve
 sshc serve --addr 127.0.0.1:8822
-sshc serve --open
 sshc serve --no-open
 sshc serve --readonly
 sshc serve --web-dir ./web/dist
@@ -164,7 +168,7 @@ sshc serve --addr 0.0.0.0:8822 --token
 规则：
 
 - `--addr` 默认 `127.0.0.1:8822`。
-- `--open` 默认 true。
+- 默认启动后打开浏览器。
 - `--no-open` 禁止启动后打开浏览器。
 - `--web-dir` 指向本地 Web dist，用于开发调试。
 - `--readonly` 禁止写配置和打开 terminal。
@@ -266,7 +270,7 @@ POST /api/terminal/sessions/{id}/resize
 - 提供 `/api/health`。
 - 提供静态资源服务。
 - 支持 embedded assets 和 `--web-dir`。
-- 支持 `--addr`、`--open`、`--no-open`、`--readonly`。
+- 支持 `--addr`、`--no-open`、`--readonly`。
 
 ### 关键实现
 
@@ -303,8 +307,8 @@ r.GET("/*", s.handleAssets)
 注意：
 
 - 如果 `--addr :0`，启动后需要打印实际监听地址。
-- `--open` 只在明确可获取访问 URL 时执行。
-- Windows 打开浏览器使用现有或新增 util，不要把平台命令散落在 handler 中。
+- 默认打开浏览器只在明确可获取访问 URL 时执行。
+- 打开浏览器使用 `sysutil.OpenBrowser`，不要把平台命令散落在 handler 中。
 
 ### 测试
 
@@ -801,21 +805,18 @@ git diff --check -- .
 
 风险：
 
-- dist 是否入仓和 release 流程未定。
+- release 构建流程如果漏掉前端 build，会导致嵌入的 Web UI 不是最新版本。
 
 处理：
 
-- v1 先不提交 `web/dist`。
+- 不提交 `web/dist`。
 - Go embed 可先嵌入一个最小 fallback 静态页面。
-- release 构建流程再决定是否生成并嵌入 dist。
+- release 构建流程必须先生成 `web/dist` 再执行 Go build。
 
 ## 待确认事项
 
 - P4 是否必须在 v1 支持 command_proxy `login_command`。
-- `web/dist` 是否提交到仓库，还是只在 release workflow 中生成。
 - token 登录是否 v1 就默认开启，还是仅非 loopback 时要求。
-- terminal audit log 是否使用 `{logs_path}/terminal/{yyyyMMdd}.jsonl`。
-- `--open` 默认 true 是否适合 Windows/Linux/macOS 全平台。
 - Web UI 是否需要 `host trust` 按钮作为 v1 必做项。
 
 ## 当前状态
