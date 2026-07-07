@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"os"
+	"os/signal"
 	"fmt"
 	"strings"
 	"time"
@@ -89,4 +91,8 @@ Notes:
 			return srv.Shutdown(shutdownCtx)
 		},
 	}
+}
+
+func signalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt)
 }
