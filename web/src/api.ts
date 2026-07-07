@@ -66,6 +66,16 @@ export class APIError extends Error {
   }
 }
 
+let csrfToken = "";
+
+export async function login(token: string): Promise<void> {
+  const data = await request<{ csrf?: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+  csrfToken = data.csrf || "";
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
 }
@@ -87,10 +97,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body) {
     headers.set("Content-Type", "application/json");
   }
+  if (csrfToken && isWriteMethod(init.method || "GET")) {
+    headers.set("X-SSHC-CSRF", csrfToken);
+  }
   const res = await fetch(path, { ...init, headers });
   const payload = (await res.json()) as APIResponse<T>;
   if (!res.ok || !payload.ok) {
     throw new APIError(payload.error || res.statusText, res.status);
   }
   return payload.data as T;
+}
+
+function isWriteMethod(method: string) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
 }

@@ -12,7 +12,7 @@ func TestServeHelp(t *testing.T) {
 		t.Fatalf("serve --help: %v", err)
 	}
 	help := NewServeCmd().Help
-	for _, want := range []string{"sshc serve", "--no-open", "--readonly", "--web-dir", "--token"} {
+	for _, want := range []string{"sshc serve", "--no-open", "--readonly", "--web-dir", "--token", "--token random"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help text missing %q:\n%s", want, help)
 		}

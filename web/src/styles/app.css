@@ -148,6 +148,7 @@ h2 {
 }
 
 .editor,
+.login-panel,
 .table-wrap,
 .summary-item,
 .output {
@@ -161,6 +162,13 @@ h2 {
   display: grid;
   gap: 10px;
   align-content: start;
+}
+
+.login-panel {
+  width: min(360px, 100%);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
 }
 
 label {

@@ -1,5 +1,5 @@
 import "./styles/app.css";
-import { apiDelete, apiGet, apiPost, apiPut, type AuthProfile, type ConfigSummary, type Host, type LogRecord } from "./api";
+import { APIError, apiDelete, apiGet, apiPost, apiPut, login, type AuthProfile, type ConfigSummary, type Host, type LogRecord } from "./api";
 
 type ViewName = "hosts" | "auth" | "logs" | "config";
 
@@ -8,6 +8,7 @@ const state = {
   showIP: false,
   message: "",
   error: "",
+  needsLogin: false,
 };
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -68,10 +69,43 @@ async function loadView() {
     if (state.view === "logs") await renderLogs();
     if (state.view === "config") await renderConfig();
   } catch (err) {
+    if (err instanceof APIError && err.status === 401) {
+      state.needsLogin = true;
+      state.error = "";
+      renderLogin();
+      return;
+    }
     state.error = err instanceof Error ? err.message : String(err);
     updateNotice();
     setContent("");
   }
+}
+
+function renderLogin() {
+  setTitle("Login", "Access token required");
+  setActions("");
+  setContent(`
+    <form id="login-form" class="login-panel">
+      <label><span>Token</span><input name="token" type="password" required autofocus></label>
+      <div class="form-actions">
+        <button type="submit">Login</button>
+      </div>
+    </form>
+  `);
+  query<HTMLFormElement>("#login-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const tokenInput = query<HTMLInputElement>('input[name="token"]');
+    try {
+      await login(tokenInput.value);
+      state.needsLogin = false;
+      state.error = "";
+      state.message = "";
+      await loadView();
+    } catch (err) {
+      state.error = err instanceof Error ? err.message : String(err);
+      updateNotice();
+    }
+  });
 }
 
 function setTitle(title: string, meta = "") {

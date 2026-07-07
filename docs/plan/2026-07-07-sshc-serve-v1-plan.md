@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-07 | Codex | 初版，基于 serve 整体设计拆分 v1 本地 Web 管理台和 Web Terminal 实施阶段 |
 | v0.2 | 2026-07-07 | Codex | 确认 web/dist 不入仓、terminal audit log 路径和 sysutil.OpenBrowser 打开浏览器 |
+| v0.3 | 2026-07-07 | Codex | P5 访问控制落地，token 自动生成入口调整为 `--token random` |
 
 ## 关联文档
 
@@ -160,9 +161,9 @@ sshc serve --web-dir ./web/dist
 ### v1 可选安全参数
 
 ```bash
-sshc serve --token
+sshc serve --token random
 sshc serve --token abc...
-sshc serve --addr 0.0.0.0:8822 --token
+sshc serve --addr 0.0.0.0:8822 --token random
 ```
 
 规则：
@@ -172,6 +173,7 @@ sshc serve --addr 0.0.0.0:8822 --token
 - `--no-open` 禁止启动后打开浏览器。
 - `--web-dir` 指向本地 Web dist，用于开发调试。
 - `--readonly` 禁止写配置和打开 terminal。
+- `--token random` 自动生成一次性 token 并在启动后打印。
 - 非 loopback addr 必须启用 token。
 
 ## API 范围
@@ -637,11 +639,11 @@ feat(serve): add web terminal sessions
 ### Token 规则
 
 ```bash
-sshc serve --token
+sshc serve --token random
 sshc serve --token abc
 ```
 
-- `--token` 不带值时自动生成。
+- `--token random` 自动生成。
 - 自动 token 只打印一次。
 - 内存中只保存 token hash。
 - token 登录成功后设置 cookie。
@@ -825,5 +827,5 @@ git diff --check -- .
 - [x] P2: config/host/auth/log 管理 API
 - [x] P3: Web UI v1
 - [ ] P4: Web Terminal
-- [ ] P5: 安全和本地访问控制
+- [x] P5: 安全和本地访问控制
 - [ ] P6: 文档和收口

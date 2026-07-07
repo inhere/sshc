@@ -31,12 +31,14 @@ Examples:
   sshc serve --addr 127.0.0.1:0 --no-open
   sshc serve --readonly
   sshc serve --web-dir ./web/dist
+  sshc serve --addr 0.0.0.0:8822 --token random
   sshc serve --addr 0.0.0.0:8822 --token "change-me"
 
 Notes:
   - serve opens the browser by default; use --no-open to disable it.
   - :0 is normalized to 127.0.0.1:0 to avoid exposing the console on all interfaces.
   - Binding a non-loopback address requires --token.
+  - Use --token random to generate a one-time access token.
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.Addr, "addr", "", server.DefaultAddr, "HTTP listen address")
@@ -46,12 +48,22 @@ Notes:
 			c.StrOpt(&opts.Token, "token", "", "", "access token for non-loopback listen address")
 		},
 		Func: func(c *gcli.Command, _ []string) error {
+			token := strings.TrimSpace(opts.Token)
+			generatedToken := ""
+			if strings.EqualFold(token, "random") {
+				var err error
+				generatedToken, err = server.GenerateToken()
+				if err != nil {
+					return err
+				}
+				token = generatedToken
+			}
 			srv, err := server.New(server.Config{
 				Addr:     opts.Addr,
 				Open:     !opts.NoOpen,
 				Readonly: opts.Readonly,
 				WebDir:   opts.WebDir,
-				Token:    opts.Token,
+				Token:    token,
 			})
 			if err != nil {
 				return err
@@ -63,6 +75,9 @@ Notes:
 				return err
 			}
 			fmt.Fprintf(cmdOutput(c), "sshc serve listening on %s\n", url)
+			if generatedToken != "" {
+				fmt.Fprintf(cmdOutput(c), "sshc serve token: %s\n", generatedToken)
+			}
 			if srv.Config().Open {
 				if err := openBrowser(url); err != nil {
 					fmt.Fprintf(cmdOutput(c), "warning: open browser failed: %v\n", err)

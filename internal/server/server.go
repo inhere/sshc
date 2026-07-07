@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -30,6 +31,7 @@ type Server struct {
 	config Config
 	router http.Handler
 	http   *http.Server
+	authState
 }
 
 func New(config Config) (*Server, error) {
@@ -38,6 +40,12 @@ func New(config Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{config: normalized}
+	if normalized.Token != "" {
+		s.tokenEnabled = true
+		s.tokenHash = sha256Token(normalized.Token)
+		s.sessions = make(map[string]authSession)
+		s.config.Token = ""
+	}
 	s.router = s.routes()
 	s.http = &http.Server{
 		Handler:           s.router,
@@ -136,7 +144,9 @@ func listenerURL(addr net.Addr) string {
 
 func (s *Server) routes() http.Handler {
 	r := rux.New()
+	r.Use(s.authGuard)
 	r.GET("/api/health", s.handleHealth)
+	r.POST("/api/auth/login", s.handleAuthLogin)
 	r.GET("/api/config/summary", s.handleConfigSummary)
 	r.GET("/api/hosts", s.handleHostsList)
 	r.POST("/api/hosts", s.handleHostsCreate)
@@ -155,4 +165,8 @@ func (s *Server) routes() http.Handler {
 	r.GET("/", s.handleAssets)
 	r.GET("/*path", s.handleAssets)
 	return r
+}
+
+func sha256Token(token string) [32]byte {
+	return sha256.Sum256([]byte(strings.TrimSpace(token)))
 }
