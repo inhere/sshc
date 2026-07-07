@@ -108,6 +108,22 @@ func ParseHostImport(reader io.Reader, format HostImportFormat, defaults HostImp
 	}
 }
 
+func ParseHostKV(text string, defaults HostImportDefaults) (Host, []HostImportError) {
+	var lines []plainLine
+	for idx, raw := range strings.Split(text, "\n") {
+		lineNo := idx + 1
+		line := strings.TrimSpace(strings.TrimRight(raw, "\r"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		lines = append(lines, plainLine{Line: lineNo, Text: line})
+	}
+	if len(lines) == 0 {
+		return Host{}, []HostImportError{{Message: "host fields are empty"}}
+	}
+	return parseHostImportPlainBlock(lines, defaults)
+}
+
 func PlanHostImport(config Config, hosts []Host, opts HostImportOptions) (HostImportPlan, error) {
 	plan := HostImportPlan{Hosts: append([]Host(nil), hosts...)}
 	if opts.SkipExisting && opts.Overwrite {
@@ -507,7 +523,7 @@ func normalizeHostImportField(field string) string {
 		return "user"
 	case "pwd":
 		return "password"
-	case "key", "keypath":
+	case "key", "keypath", "keyfile":
 		return "key_path"
 	case "jump_host":
 		return "jump"

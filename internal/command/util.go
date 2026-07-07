@@ -52,8 +52,12 @@ func parseClipboardHost(text string) (core.Host, error) {
 		return core.Host{}, fmt.Errorf("clipboard is empty")
 	}
 	var host core.Host
-	if strings.Contains(text, "=") {
-		host = parseClipboardKeyValues(text)
+	if clipboardLooksKV(text) {
+		parsed, errs := core.ParseHostKV(text, core.HostImportDefaults{Group: core.DefaultGroup, Port: core.DefaultSSHPort})
+		if len(errs) > 0 {
+			return host, fmt.Errorf("invalid clipboard host: %s", errs[0].Error())
+		}
+		host = parsed
 	} else {
 		fields := strings.Split(text, ",")
 		if len(fields) < 3 || len(fields) > 5 {
@@ -80,55 +84,20 @@ func parseClipboardHost(text string) (core.Host, error) {
 	return host, nil
 }
 
-func parseClipboardKeyValues(text string) core.Host {
-	host := core.Host{}
+func clipboardLooksKV(text string) bool {
 	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			key, value, ok = strings.Cut(line, ":")
-			if !ok {
-				continue
-			}
+		if _, _, ok := strings.Cut(line, "="); ok {
+			return true
 		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		switch key {
-		case "ip", "host", "hostname":
-			host.IP = value
-		case "name":
-			host.Name = value
-		case "user", "username":
-			host.User = value
-		case "password", "pwd":
-			host.Password = value
-		case "key", "key_path", "keypath", "keyfile":
-			host.KeyPath = value
-		case "jump", "jump_host":
-			host.Jump = value
-		case "backend":
-			host.Backend = value
-		case "via":
-			host.Via = value
-		case "run_template", "run-template":
-			host.RunTemplate = value
-		case "login_command", "login-command":
-			host.LoginCommand = value
-		case "remark":
-			host.Remark = value
-		case "group":
-			host.Group = value
-		case "port":
-			if port, err := strconv.Atoi(value); err == nil {
-				host.Port = port
-			}
+		if key, _, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(key) != "" && !strings.Contains(key, ",") {
+			return true
 		}
 	}
-	return host
+	return false
 }
 
 func readSystemClipboard() (string, error) {

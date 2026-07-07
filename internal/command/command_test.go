@@ -97,12 +97,47 @@ func TestParseClipboardHostCSV(t *testing.T) {
 	}
 }
 
+func TestParseClipboardHostKVUsesImportFields(t *testing.T) {
+	input := `hostname: 10.0.0.8
+name: devhost
+auth: dev-root
+group: testing
+remark: app server
+keyfile: ~/.ssh/id_rsa
+jump_host: bastion
+connect_timeout: 10s
+run_timeout: 1m
+remote_script_dir: /var/tmp
+host_key_check: insecure
+known_hosts_path: ~/.ssh/known_hosts
+`
+	host, err := parseClipboardHost(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.AuthRef != "dev-root" || host.KeyPath != "~/.ssh/id_rsa" {
+		t.Fatalf("host = %+v", host)
+	}
+	if host.Group != "testing" || host.Remark != "app server" || host.Jump != "bastion" {
+		t.Fatalf("host metadata = %+v", host)
+	}
+	if host.ConnectTimeout != "10s" || host.RunTimeout != "1m" || host.RemoteScriptDir != "/var/tmp" {
+		t.Fatalf("host timeouts = %+v", host)
+	}
+	if host.HostKeyCheck != core.HostKeyCheckInsecure || host.KnownHostsPath != "~/.ssh/known_hosts" {
+		t.Fatalf("host key config = %+v", host)
+	}
+}
+
 func TestParseClipboardHostErrors(t *testing.T) {
 	if _, err := parseClipboardHost(""); err == nil {
 		t.Fatal("expected empty clipboard error")
 	}
 	if _, err := parseClipboardHost("only,two"); err == nil {
 		t.Fatal("expected CSV format error")
+	}
+	if _, err := parseClipboardHost("ip=10.0.0.8\nbad=value"); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected KV format error, got %v", err)
 	}
 }
 

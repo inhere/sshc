@@ -85,7 +85,7 @@ func TestParseHostImportPlainSupportsAliases(t *testing.T) {
 	input := `hostname=10.0.0.8
 username=root
 pwd=secret
-keypath=~/.ssh/id_rsa
+keyfile=~/.ssh/id_rsa
 jump_host=bastion
 `
 	hosts, errs := ParseHostImportPlain(strings.NewReader(input), HostImportDefaults{})
@@ -94,6 +94,16 @@ jump_host=bastion
 	}
 	host := hosts[0]
 	if host.IP != "10.0.0.8" || host.User != "root" || host.Password != "secret" || host.KeyPath != "~/.ssh/id_rsa" || host.Jump != "bastion" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestParseHostKV(t *testing.T) {
+	host, errs := ParseHostKV("host: 10.0.0.8\nname: devhost\nauth: dev-root\nport: 2222\n", HostImportDefaults{Group: "testing"})
+	if len(errs) != 0 {
+		t.Fatalf("errs = %+v", errs)
+	}
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.AuthRef != "dev-root" || host.Port != 2222 || host.Group != "testing" {
 		t.Fatalf("host = %+v", host)
 	}
 }
