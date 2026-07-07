@@ -44,6 +44,7 @@ func NewApp() *gcli.App {
 		command.NewListCmd(),
 		command.NewLogCmd(),
 		command.NewLoginCmd(),
+		command.NewServeCmd(),
 	)
 	return app
 }
