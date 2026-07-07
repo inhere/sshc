@@ -822,7 +822,7 @@ git diff --check -- .
 ## 当前状态
 
 - [x] P1: serve 基础 server
-- [ ] P2: config/host/auth/log 管理 API
+- [x] P2: config/host/auth/log 管理 API
 - [ ] P3: Web UI v1
 - [ ] P4: Web Terminal
 - [ ] P5: 安全和本地访问控制
