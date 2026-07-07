@@ -18,7 +18,7 @@ const state = {
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) {
-	throw new Error("missing app root");
+  throw new Error("missing app root");
 }
 const app = appRoot;
 
@@ -29,18 +29,23 @@ function renderShell() {
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand">sshc</div>
+        <div class="brand"><span class="prompt-mark">$</span><span>sshc</span></div>
+        <div class="rail-meta">
+          <span>local console</span>
+          <strong>known_hosts first</strong>
+        </div>
         <nav class="nav">
-          ${navButton("hosts", "Hosts")}
-          ${navButton("terminal", "Terminal")}
-          ${navButton("auth", "Auth")}
-          ${navButton("logs", "Logs")}
-          ${navButton("config", "Config")}
+          ${navButton("hosts", "Hosts", "targets")}
+          ${navButton("terminal", "Terminal", "pty")}
+          ${navButton("auth", "Auth", "credentials")}
+          ${navButton("logs", "Logs", "jsonl")}
+          ${navButton("config", "Config", "local")}
         </nav>
       </aside>
       <main class="main">
         <header class="toolbar">
           <div>
+            <span id="view-route" class="view-route">sshc://${state.view}</span>
             <h1 id="view-title">Hosts</h1>
             <p id="view-meta"></p>
           </div>
@@ -63,8 +68,13 @@ function renderShell() {
   }
 }
 
-function navButton(view: ViewName, label: string) {
-  return `<button class="${state.view === view ? "active" : ""}" data-view="${view}" type="button">${label}</button>`;
+function navButton(view: ViewName, label: string, meta: string) {
+  return `
+    <button class="${state.view === view ? "active" : ""}" data-view="${view}" type="button">
+      <span>${label}</span>
+      <small>${meta}</small>
+    </button>
+  `;
 }
 
 async function loadView() {
@@ -117,6 +127,7 @@ function renderLogin() {
 }
 
 function setTitle(title: string, meta = "") {
+  text("#view-route", `sshc://${state.view}`);
   text("#view-title", title);
   text("#view-meta", meta);
 }
@@ -139,7 +150,7 @@ function updateNotice() {
 }
 
 async function renderHosts() {
-  setTitle("Hosts", "Configured SSH targets");
+  setTitle("Hosts", "Scan targets, connect, trust keys, and keep host records tight.");
   setActions(`
     <label class="toggle"><input id="show-ip" type="checkbox" ${state.showIP ? "checked" : ""}> Show IP</label>
     <button id="reload-hosts" type="button">Refresh</button>
@@ -150,10 +161,18 @@ async function renderHosts() {
   });
   query("#reload-hosts").addEventListener("click", () => void renderHosts());
   const hosts = await apiGet<Host[]>(`/api/hosts${state.showIP ? "?show_ip=1" : ""}`);
+  const groupCount = new Set(hosts.map((host) => host.group || "default")).size;
+  const jumpCount = hosts.filter((host) => host.jump).length;
   setContent(`
+    <div class="ops-strip">
+      ${metric("Targets", String(hosts.length))}
+      ${metric("Groups", String(groupCount))}
+      ${metric("Jump routes", String(jumpCount))}
+      ${metric("IP mode", state.showIP ? "full" : "masked")}
+    </div>
     <div class="split">
       <form id="host-form" class="editor">
-        <h2>Host</h2>
+        <h2>Host record</h2>
         ${input("name", "Name", true)}
         ${input("ip", "Address", true)}
         ${input("user", "User")}
@@ -170,10 +189,10 @@ async function renderHosts() {
         </div>
       </form>
       <div class="table-wrap">
-        <table>
-          <thead><tr><th>Name</th><th>Group</th><th>Address</th><th>Auth</th><th>Remark</th><th></th></tr></thead>
+        <table class="resource-table">
+          <thead><tr><th>Target</th><th>Group</th><th>Address</th><th>Auth</th><th>Route</th><th></th></tr></thead>
           <tbody>
-            ${hosts.map(hostRow).join("") || `<tr><td colspan="6" class="empty">No hosts</td></tr>`}
+            ${hosts.map(hostRow).join("") || `<tr><td colspan="6" class="empty">No hosts yet. Add the first target from the form.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -196,17 +215,22 @@ async function renderHosts() {
 
 function hostRow(host: Host) {
   const auth = host.auth_ref || host.user || "";
+  const route = host.jump ? `via ${host.jump}` : host.backend === "command_proxy" ? `via ${host.via || ""}` : "direct";
+  const backend = host.backend || "ssh";
   return `
     <tr>
-      <td>${escapeHTML(host.name)}</td>
-      <td>${escapeHTML(host.group || "")}</td>
-      <td>${escapeHTML([host.ip, host.port ? `:${host.port}` : ""].join(""))}</td>
-      <td>${escapeHTML(auth)}</td>
-      <td>${escapeHTML(host.remark || "")}</td>
+      <td>
+        <strong class="host-name">${escapeHTML(host.name)}</strong>
+        <span class="subline">${escapeHTML(host.remark || backend)}</span>
+      </td>
+      <td>${badge(host.group || "default")}</td>
+      <td class="mono">${host.ip ? escapeHTML([host.ip, host.port ? `:${host.port}` : ""].join("")) : `<span class="muted">logical</span>`}</td>
+      <td>${auth ? badge(auth) : `<span class="muted">inline</span>`}</td>
+      <td><span class="route-chip">${escapeHTML(route)}</span></td>
       <td class="row-actions">
-        <button data-host-edit="${escapeAttr(host.name)}" type="button">Edit</button>
         <button data-host-connect="${escapeAttr(host.name)}" type="button">Connect</button>
         <button data-host-trust="${escapeAttr(host.name)}" type="button">Trust</button>
+        <button data-host-edit="${escapeAttr(host.name)}" type="button">Edit</button>
         <button data-host-delete="${escapeAttr(host.name)}" type="button">Delete</button>
       </td>
     </tr>
@@ -225,7 +249,7 @@ async function openHostTerminal(name: string) {
 }
 
 async function renderTerminal() {
-  setTitle("Terminal", "SSH browser terminal");
+  setTitle("Terminal", "Open a browser PTY using saved SSH routes.");
   setActions(`<button id="reload-terminal" type="button">Refresh</button>`);
   query("#reload-terminal").addEventListener("click", () => void renderTerminal());
   const sessions = await apiGet<TerminalSession[]>("/api/terminal/sessions");
@@ -238,7 +262,13 @@ async function renderTerminal() {
         <button type="submit">Connect</button>
         <button id="terminal-close" type="button" ${state.terminalSessionID ? "" : "disabled"}>Disconnect</button>
       </form>
-      <div id="terminal-container" class="terminal-container"></div>
+      <div class="terminal-frame">
+        <div class="terminal-bar">
+          <span>${escapeHTML(state.terminalHost || "no session")}</span>
+          <strong>${state.terminalSessionID ? "connected" : "idle"}</strong>
+        </div>
+        <div id="terminal-container" class="terminal-container"></div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>ID</th><th>Host</th><th>Started</th><th></th></tr></thead>
@@ -369,14 +399,14 @@ async function trustHost(name: string) {
 }
 
 async function renderAuth() {
-  setTitle("Auth", "Reusable SSH credentials");
+  setTitle("Auth", "Reusable SSH identities without exposing saved secrets.");
   setActions(`<button id="reload-auth" type="button">Refresh</button>`);
   query("#reload-auth").addEventListener("click", () => void renderAuth());
   const profiles = await apiGet<AuthProfile[]>("/api/auth-profiles");
   setContent(`
     <div class="split">
       <form id="auth-form" class="editor">
-        <h2>Auth</h2>
+        <h2>Credential profile</h2>
         ${input("name", "Name", true)}
         ${input("user", "User")}
         ${input("password", "Password", false, "password")}
@@ -388,7 +418,7 @@ async function renderAuth() {
         </div>
       </form>
       <div class="table-wrap">
-        <table>
+        <table class="resource-table">
           <thead><tr><th>Name</th><th>User</th><th>Key</th><th>Remark</th><th></th></tr></thead>
           <tbody>${profiles.map(authRow).join("") || `<tr><td colspan="5" class="empty">No auth profiles</td></tr>`}</tbody>
         </table>
@@ -407,9 +437,9 @@ async function renderAuth() {
 function authRow(profile: AuthProfile) {
   return `
     <tr>
-      <td>${escapeHTML(profile.name)}</td>
+      <td><strong class="host-name">${escapeHTML(profile.name)}</strong></td>
       <td>${escapeHTML(profile.user || "")}</td>
-      <td>${escapeHTML(profile.key_path || "")}</td>
+      <td class="mono">${escapeHTML(profile.key_path || "")}</td>
       <td>${escapeHTML(profile.remark || "")}</td>
       <td class="row-actions">
         <button data-auth-edit="${escapeAttr(profile.name)}" type="button">Edit</button>
@@ -462,7 +492,7 @@ async function deleteAuth(name: string) {
 }
 
 async function renderLogs() {
-  setTitle("Logs", "Recent command execution records");
+  setTitle("Logs", "Read JSONL run history by target, text match, or task output.");
   setActions(`
     <input id="log-target" class="compact-input" placeholder="target">
     <input id="log-match" class="compact-input" placeholder="match">
@@ -477,7 +507,7 @@ async function renderLogs() {
     const records = await apiGet<LogRecord[]>(`/api/logs?${params.toString()}`);
     setContent(`
       <div class="table-wrap">
-        <table>
+        <table class="resource-table">
           <thead><tr><th>Time</th><th>Host</th><th>Status</th><th>Command</th><th>Duration</th><th></th></tr></thead>
           <tbody>${records.map(logRow).join("") || `<tr><td colspan="6" class="empty">No logs</td></tr>`}</tbody>
         </table>
@@ -514,7 +544,7 @@ async function showLogOutput(taskID: string) {
 }
 
 async function renderConfig() {
-  setTitle("Config", "Local sshc configuration");
+  setTitle("Config", "Local paths, defaults, and config doctor results.");
   setActions(`<button id="reload-config" type="button">Refresh</button>`);
   query("#reload-config").addEventListener("click", () => void renderConfig());
   const summary = await apiGet<ConfigSummary>("/api/config/summary");
@@ -538,6 +568,14 @@ async function renderConfig() {
 
 function summaryItem(label: string, value: string) {
   return `<div class="summary-item"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`;
+}
+
+function metric(label: string, value: string) {
+  return `<div class="metric"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`;
+}
+
+function badge(value: string) {
+  return `<span class="badge">${escapeHTML(value)}</span>`;
 }
 
 function input(name: string, label: string, required = false, type = "text") {
