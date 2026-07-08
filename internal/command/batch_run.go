@@ -239,7 +239,151 @@ func runBatch(c *gcli.Command, req batchRunRequest) error {
 }
 
 func rerunFailedBatch(c *gcli.Command, opts batchRunFlagOptions, command string) error {
-	return errors.New("--rerun-failed is not implemented yet")
+	if err := validateRerunFailedOptions(opts, command); err != nil {
+		return err
+	}
+	record, ok, err := core.ReadBatchRunByID(opts.RerunFailed)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("batch %q not found", strings.TrimSpace(opts.RerunFailed))
+	}
+	failedHosts := core.FailedBatchRunHosts(record)
+	if len(failedHosts) == 0 {
+		fmt.Fprintf(cmdOutput(c), "No failed hosts in batch %s\n", record.BatchID)
+		return nil
+	}
+	runOptions, runFlags, err := runOptionsFromBatchRecord(record)
+	if err != nil {
+		return err
+	}
+	hosts, err := core.ResolveBatchHosts(batchSourceForRerun(record, failedHosts))
+	if err != nil {
+		return fmt.Errorf("resolve failed hosts for batch %s: %w", record.BatchID, err)
+	}
+	if opts.Parallel < 1 {
+		return errors.New("--parallel must be greater than 0")
+	}
+	fmt.Fprintf(cmdOutput(c), "Rerun failed batch: %s\n", record.BatchID)
+	rerunSource := record.Source
+	rerunSource.Kind = "rerun_failed"
+	rerunSource.Value = record.BatchID
+	return runBatch(c, batchRunRequest{
+		Hosts:      hosts,
+		Command:    record.Command,
+		RunOptions: runOptions,
+		RunFlags:   runFlags,
+		Source:     rerunSource,
+		Parallel:   opts.Parallel,
+		FailFast:   opts.FailFast,
+		Summary:    opts.Summary,
+		RerunOf:    record.BatchID,
+	})
+}
+
+func validateRerunFailedOptions(opts batchRunFlagOptions, command string) error {
+	if command != "" {
+		return errors.New("--rerun-failed cannot be used with inline command")
+	}
+	if strings.TrimSpace(opts.Hosts) != "" || strings.TrimSpace(opts.HostsFile) != "" || strings.TrimSpace(opts.Group) != "" {
+		return errors.New("--rerun-failed cannot be used with --hosts, --hosts-file, or --group")
+	}
+	if strings.TrimSpace(opts.AuthRef) != "" || strings.TrimSpace(opts.User) != "" || strings.TrimSpace(opts.KeyPath) != "" || opts.Port != 0 || opts.PasswordPrompt {
+		return errors.New("--rerun-failed cannot be used with raw host auth options")
+	}
+	if hasRunFlagOptions(opts.Run) {
+		return errors.New("--rerun-failed reuses original run options; only --parallel, --fail-fast, and --summary can be changed")
+	}
+	return nil
+}
+
+func hasRunFlagOptions(opts runFlagOptions) bool {
+	return strings.TrimSpace(opts.Timeout) != "" ||
+		strings.TrimSpace(opts.KillAfter) != "" ||
+		len(opts.Env.Strings()) > 0 ||
+		strings.TrimSpace(opts.EnvFile) != "" ||
+		strings.TrimSpace(opts.CWD) != "" ||
+		strings.TrimSpace(opts.Script) != "" ||
+		strings.TrimSpace(opts.RemoteScriptDir) != "" ||
+		opts.Sudo ||
+		strings.TrimSpace(opts.SudoUser) != "" ||
+		opts.KeepRemoteScript
+}
+
+func batchSourceForRerun(record core.BatchRunRecord, failedHosts []string) core.BatchHostSource {
+	source := record.Source
+	return core.BatchHostSource{
+		Hosts: []string{strings.Join(failedHosts, ",")},
+		Overrides: core.HostOverrides{
+			User:    strings.TrimSpace(source.User),
+			KeyPath: strings.TrimSpace(source.KeyPath),
+			Port:    source.Port,
+		},
+		AuthRef:  strings.TrimSpace(source.AuthRef),
+		AllowRaw: source.AllowRaw,
+	}
+}
+
+func runOptionsFromBatchRecord(record core.BatchRunRecord) (core.RunOptions, runFlagOptions, error) {
+	opts := record.Options
+	if core.HasMaskedRunEnv(opts.Env) {
+		return core.RunOptions{}, runFlagOptions{}, fmt.Errorf("batch %s contains masked env values and cannot be rerun safely", record.BatchID)
+	}
+	timeout, err := core.ParseTimeout(opts.Timeout)
+	if err != nil {
+		return core.RunOptions{}, runFlagOptions{}, err
+	}
+	killAfter, err := core.ParseTimeout(opts.KillAfter)
+	if err != nil {
+		return core.RunOptions{}, runFlagOptions{}, err
+	}
+	runOptions := core.RunOptions{
+		Timeout:          timeout,
+		KillAfter:        killAfter,
+		Env:              copyStringMap(opts.Env),
+		CWD:              strings.TrimSpace(opts.CWD),
+		Sudo:             opts.Sudo,
+		SudoUser:         strings.TrimSpace(opts.SudoUser),
+		ScriptPath:       strings.TrimSpace(firstNonEmptyBatchValue(opts.ScriptPath, record.Script)),
+		RemoteScriptDir:  strings.TrimSpace(opts.RemoteScriptDir),
+		KeepRemoteScript: opts.KeepRemoteScript,
+	}
+	runFlags := runFlagOptions{
+		Timeout:          opts.Timeout,
+		KillAfter:        opts.KillAfter,
+		EnvFile:          strings.TrimSpace(opts.EnvFile),
+		CWD:              strings.TrimSpace(opts.CWD),
+		Sudo:             opts.Sudo,
+		SudoUser:         strings.TrimSpace(opts.SudoUser),
+		Script:           runOptions.ScriptPath,
+		RemoteScriptDir:  strings.TrimSpace(opts.RemoteScriptDir),
+		KeepRemoteScript: opts.KeepRemoteScript,
+	}
+	if strings.TrimSpace(record.Command) == "" && strings.TrimSpace(runOptions.ScriptPath) == "" {
+		return core.RunOptions{}, runFlagOptions{}, fmt.Errorf("batch %s has no command or script to rerun", record.BatchID)
+	}
+	return runOptions, runFlags, nil
+}
+
+func copyStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func firstNonEmptyBatchValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type batchRunResult struct {

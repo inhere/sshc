@@ -769,7 +769,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(batch): write batch run summaries
 ```
 
-### P1.6: batch-run --rerun-failed
+### P1.6: batch-run --rerun-failed（已完成）
 
 目标：
 
@@ -832,6 +832,17 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe batch-run --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- `batch-run --rerun-failed <batch_id>` 已读取 batch summary，筛选失败 host 并只重跑失败项。
+- rerun 会复用原始 command/script、cwd、timeout、kill_after、env、sudo、remote_script_dir、keep_remote_script 等 run options。
+- rerun 允许覆盖 `--parallel`、`--fail-fast` 和 `--summary`，拒绝同时传入 source、inline command、script/env/cwd/sudo 等 run 参数。
+- rerun 会生成新的 batch summary，`rerun_of` 指向原始 batch_id，source 记录为 `rerun_failed`。
+- 无失败 host 时输出提示并正常退出。
+- 历史 batch 中存在 masked env 值时拒绝自动 rerun，避免把 `***` 当成真实 secret 使用。
+- raw IP rerun 会复用原始 summary 中的 auth_ref/user/key_path/port/allow_raw；无法恢复一次性密码时会在解析 raw host 阶段明确报错。
+- 验证通过：`go test ./internal/core`、`go test ./internal/command`。
 
 提交：
 

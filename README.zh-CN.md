@@ -419,6 +419,7 @@ sshc batch-run --group testing --parallel 5 --script ./deploy.sh
 sshc batch-run --hosts-file hosts.txt -- hostname
 sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
 sshc batch-run --hosts devhost,web-2 --summary table -- uptime
+sshc batch-run --rerun-failed 20260708-120102-a1b2 --parallel 5
 ```
 
 `--hosts` 接收逗号分隔的主机列表。`--hosts-file` 每行读取一个目标，忽略空行和
@@ -432,6 +433,10 @@ host，并等待已经运行中的 host 结束。
 批量汇总日志。记录包含来源、命令或脚本、已遮蔽敏感值的运行环境变量、host 列表、
 每台主机的状态、对应 `task_id` 以及成功/失败/跳过数量。`--summary table` 是默认
 输出模式。
+
+使用 `--rerun-failed <batch_id>` 可以只重跑上次失败的主机。它会复用原始命令或脚本
+以及运行参数，同时允许为本次重跑调整 `--parallel` 和 `--fail-fast`。如果历史批次里
+包含已遮蔽的环境变量值，sshc 会拒绝自动重跑，避免把 `***` 当成真实密钥使用。
 
 ### sudo
 

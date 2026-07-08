@@ -431,6 +431,7 @@ sshc batch-run --group testing --parallel 5 --script ./deploy.sh
 sshc batch-run --hosts-file hosts.txt -- hostname
 sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
 sshc batch-run --hosts devhost,web-2 --summary table -- uptime
+sshc batch-run --rerun-failed 20260708-120102-a1b2 --parallel 5
 ```
 
 `--hosts` accepts a comma-separated list. `--hosts-file` reads one host target per
@@ -445,6 +446,12 @@ Every batch run prints a `Batch ID` and writes a summary JSONL record to
 `{logs_path}/batch/{yyyyMMdd}.jsonl`. The record includes the source, command or
 script, masked run environment, host list, per-host status, per-host `task_id`,
 and success/failure/skipped counts. `--summary table` is the default output mode.
+
+Use `--rerun-failed <batch_id>` to rerun only hosts that failed in a previous
+batch. It reuses the original command or script and run options, while allowing
+`--parallel` and `--fail-fast` to be changed for the rerun. If the previous batch
+contains masked environment values, sshc refuses to rerun it instead of treating
+masked values as real secrets.
 
 ### Sudo
 

@@ -237,6 +237,145 @@ func TestBatchRunSummaryRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
+func TestBatchRunRerunFailed(t *testing.T) {
+	withTempConfig(t)
+	fixed := time.Date(2026, 7, 8, 12, 1, 2, 123000000, time.Local)
+	t.Cleanup(core.SetNowForTest(func() time.Time { return fixed }))
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{
+		{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22},
+		{Name: "web-2", IP: "10.0.0.9", User: "root", Password: "secret", Port: 22},
+	}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	appendTestBatchRecord(t, core.BatchRunRecord{
+		BatchID:   "20260708-120102-a1b2",
+		StartedAt: "2026-07-08T12:01:02.123",
+		EndedAt:   "2026-07-08T12:01:03.123",
+		Source:    core.BatchRunSourceLog{Kind: "hosts", Value: "devhost,web-2"},
+		Command:   "hostname",
+		Options:   core.BatchRunOptions{CWD: "/opt/app", Env: map[string]string{"APP_ENV": "prod"}},
+		Hosts:     []string{"devhost", "web-2"},
+		Results: []core.BatchRunResult{
+			{Host: "devhost", Status: "success", TaskID: "task-ok", DurationMS: 10},
+			{Host: "web-2", Status: "error", TaskID: "task-bad", DurationMS: 20, Error: "exit status 1"},
+		},
+		SuccessCount: 1,
+		FailedCount:  1,
+	})
+
+	var gotHosts []string
+	var gotOptions core.RunOptions
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		gotHosts = append(gotHosts, host.Name)
+		gotOptions = opts
+		if command != "hostname" {
+			t.Fatalf("command = %q", command)
+		}
+		return []byte("ok\n"), nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "20260708-120102-a1b2", "--parallel", "1"}); err != nil {
+		t.Fatalf("rerun failed: %v", err)
+	}
+	if strings.Join(gotHosts, ",") != "web-2" {
+		t.Fatalf("hosts = %#v", gotHosts)
+	}
+	if gotOptions.CWD != "/opt/app" || gotOptions.Env["APP_ENV"] != "prod" {
+		t.Fatalf("options = %+v", gotOptions)
+	}
+	records := readBatchRecords(t, fixed)
+	last := records[len(records)-1]
+	if last.RerunOf != "20260708-120102-a1b2" || last.Source.Kind != "rerun_failed" || last.Source.Value != "20260708-120102-a1b2" {
+		t.Fatalf("rerun record = %+v", last)
+	}
+	if !strings.Contains(out.String(), "Rerun failed batch: 20260708-120102-a1b2") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestBatchRunRerunFailedNoFailures(t *testing.T) {
+	withTempConfig(t)
+	fixed := time.Date(2026, 7, 8, 12, 1, 2, 123000000, time.Local)
+	t.Cleanup(core.SetNowForTest(func() time.Time { return fixed }))
+	appendTestBatchRecord(t, core.BatchRunRecord{
+		BatchID:      "20260708-120102-a1b2",
+		StartedAt:    "2026-07-08T12:01:02.123",
+		EndedAt:      "2026-07-08T12:01:03.123",
+		Source:       core.BatchRunSourceLog{Kind: "hosts", Value: "devhost"},
+		Command:      "hostname",
+		Hosts:        []string{"devhost"},
+		Results:      []core.BatchRunResult{{Host: "devhost", Status: "success", TaskID: "task-ok", DurationMS: 10}},
+		SuccessCount: 1,
+	})
+
+	calls := 0
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		calls++
+		return []byte("ok\n"), nil
+	}))
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "20260708-120102-a1b2"}); err != nil {
+		t.Fatalf("rerun failed: %v", err)
+	}
+	if calls != 0 || !strings.Contains(out.String(), "No failed hosts") {
+		t.Fatalf("calls=%d output=%q", calls, out.String())
+	}
+}
+
+func TestBatchRunRerunFailedRejectsExtraSource(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "batch-1", "--hosts", "devhost"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used with --hosts") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBatchRunRerunFailedRejectsInlineCommand(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "batch-1", "--", "hostname"})
+	if err == nil || !strings.Contains(err.Error(), "inline command") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBatchRunRerunFailedMissingBatchID(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "missing"})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBatchRunRerunFailedRejectsMaskedEnv(t *testing.T) {
+	withTempConfig(t)
+	appendTestBatchRecord(t, core.BatchRunRecord{
+		BatchID:     "20260708-120102-a1b2",
+		StartedAt:   "2026-07-08T12:01:02.123",
+		EndedAt:     "2026-07-08T12:01:03.123",
+		Source:      core.BatchRunSourceLog{Kind: "hosts", Value: "devhost"},
+		Command:     "hostname",
+		Options:     core.BatchRunOptions{Env: map[string]string{"API_TOKEN": core.MaskedSecret}},
+		Hosts:       []string{"devhost"},
+		Results:     []core.BatchRunResult{{Host: "devhost", Status: "error", TaskID: "task-bad", DurationMS: 10, Error: "exit status 1"}},
+		FailedCount: 1,
+	})
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--rerun-failed", "20260708-120102-a1b2"})
+	if err == nil || !strings.Contains(err.Error(), "masked env") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestBatchRunReturnsErrorWhenAnyHostFails(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveStore(&core.Store{Hosts: []core.Host{
@@ -411,4 +550,33 @@ func readOnlyBatchRecord(t *testing.T, when time.Time) core.BatchRunRecord {
 		t.Fatal(err)
 	}
 	return record
+}
+
+func appendTestBatchRecord(t *testing.T, record core.BatchRunRecord) {
+	t.Helper()
+	if err := core.AppendBatchRunLog(record); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readBatchRecords(t *testing.T, when time.Time) []core.BatchRunRecord {
+	t.Helper()
+	path, err := core.BatchLogPath(when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	records := make([]core.BatchRunRecord, 0, len(lines))
+	for _, line := range lines {
+		var record core.BatchRunRecord
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
 }
