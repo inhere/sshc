@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-08 | Codex | 初版，整理与同类 SSH 工具对比后的可优化功能点和优先级 |
 | v0.2 | 2026-07-08 | Codex | 补充 `task run`、`run --task`、`batch-run --task` 的命令关系、互斥规则、覆盖优先级和日志字段 |
+| v0.3 | 2026-07-08 | Codex | 将 `group set` 和后续 `host set` 统一为 `key=value...` 多字段设置语法 |
 
 ## 背景
 
@@ -346,10 +347,28 @@ host：
 ```bash
 sshc group list
 sshc group show testing
-sshc group set testing auth_ref dev-root
-sshc group set testing jump bastion
-sshc group unset testing jump
+sshc group set testing auth=dev-root jump=bastion port=22
+sshc group set testing connect_timeout=10s run_timeout=60s remote_script_dir=/tmp
+sshc group unset testing jump port
 ```
+
+`group set` 使用：
+
+```text
+sshc group set <group> <key=value>...
+```
+
+`group unset` 使用：
+
+```text
+sshc group unset <group> <field>...
+```
+
+规则：
+
+- `set` 一次可设置多个字段，任意字段校验失败则整体不保存。
+- `unset` 一次可删除多个字段，不使用 `key=value`。
+- `auth` 是 `auth_ref` 的别名，`key` 是 `key_path` 的别名。
 
 也可以先不做 `group` 命令，只支持配置和 `cfg set groups.testing.auth_ref`。但从可用性看，建议后续有独立 `group` 管理命令。
 

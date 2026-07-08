@@ -105,10 +105,10 @@ sshc add --name lxc-app --backend command_proxy --via pve-host --run-template "p
 新增：
 
 ```bash
-sshc host set lxc-app --backend command_proxy --via pve-host
-sshc host set lxc-app --run-template "pct exec 101 -- sh -lc {{cmd}}"
-sshc host set lxc-app --login-command "pct enter 101"
-sshc host unset lxc-app --backend --via --run-template --login-command
+sshc host set lxc-app backend=command_proxy via=pve-host
+sshc host set lxc-app run_template="pct exec 101 -- sh -lc {{cmd}}"
+sshc host set lxc-app login_command="pct enter 101"
+sshc host unset lxc-app backend via run_template login_command
 ```
 
 规则：

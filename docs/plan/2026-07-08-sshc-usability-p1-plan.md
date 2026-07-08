@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-08 | Codex | 初版，规划 check、host tags、group defaults、ssh config import、batch summary 和 rerun failed |
+| v0.2 | 2026-07-08 | Codex | 调整 `host set` 和 `group set` 为 `key=value...` 多字段设置语法，放入 P1.1/P1.2 实施 |
 
 ## 关联文档
 
@@ -65,8 +66,8 @@ host 新增字段：
 
 ```bash
 sshc host add --ip 10.0.0.8 --name devhost --tags app,testing
-sshc host set devhost --tags app,testing,gpu
-sshc host unset devhost --tags
+sshc host set devhost tags=app,testing,gpu remark="app server"
+sshc host unset devhost tags remark
 sshc host list --tag testing
 sshc host list --tag app,gpu
 sshc list --tag testing
@@ -81,6 +82,29 @@ sshc list --tag testing
 - `--tag app,gpu` 初版按 AND 处理，即 host 必须同时包含两个 tag。
 - `--match` 应匹配 tags，方便 `sshc run "gpu app" -- ...` 的唯一模糊匹配。
 - list/table 输出增加 `tags` 列；tags 多时用 `,` 连接。
+
+`host set` 需要在 tags 阶段一起重构为多字段 `key=value` 语法：
+
+```bash
+sshc host set devhost user=root port=22 group=testing tags=app,gpu
+sshc host set devhost auth=dev-root jump=bastion
+sshc host set lxc-app backend=command_proxy via=pve-host run_template="pct exec 101 -- sh -lc {{cmd}}"
+```
+
+`host unset` 改为一次删除多个字段：
+
+```bash
+sshc host unset devhost tags remark jump
+sshc host unset lxc-app backend via run_template login_command
+```
+
+规则：
+
+- `host set <host> <key=value>...` 一次可设置多个字段。
+- 任意字段解析或校验失败时整体不保存，避免半成功。
+- `auth` 是 `auth_ref` 的别名，`key` 是 `key_path` 的别名。
+- `tags` 值使用逗号分隔并归一化。
+- 因工具尚未正式发布，允许破坏旧的 `host set --field value` 语法，不保留兼容层。
 
 ### group defaults
 
@@ -121,16 +145,19 @@ sshc list --tag testing
 ```bash
 sshc group list
 sshc group show testing
-sshc group set testing auth_ref dev-root
-sshc group set testing jump bastion
-sshc group set testing port 22
-sshc group unset testing jump
+sshc group set testing auth=dev-root jump=bastion port=22
+sshc group set testing connect_timeout=10s run_timeout=60s remote_script_dir=/tmp
+sshc group unset testing jump port
 sshc group rm testing --yes
 ```
 
 说明：
 
 - `group` 是管理命令，设置 `Category: "Management"`。
+- `group set <group> <key=value>...` 一次可设置多个字段。
+- `group unset <group> <field>...` 一次可删除多个字段。
+- 任意字段解析或校验失败时整体不保存。
+- `auth` 是 `auth_ref` 的别名，`key` 是 `key_path` 的别名。
 - `group list` 展示 group defaults，不等同于 `host list --group`。
 - `host list --group testing` 仍展示主机。
 
@@ -290,6 +317,7 @@ sshc batch-run --rerun-failed 20260708-120102-a1b2 --parallel 5
 
 目标：
 
+- `host set/unset` 重构为 `key=value...` / `field...` 多字段语法。
 - host 支持 `tags []string`。
 - add/set/import/list/match 能理解 tags。
 
@@ -316,22 +344,47 @@ README.zh-CN.md
 1. `core.Host` 新增 `Tags []string json:"tags,omitempty"`。
 2. 新增 `NormalizeTags(value string) []string` 和 `HostHasTags(host, tags)`。
 3. `host add/add` 支持 `--tags app,testing`。
-4. `host set` 支持 `--tags`。
-5. `host unset` 支持 `--tags`。
-6. `host list/list` 支持 `--tag app,gpu`。
-7. `filterHosts` 同时支持 group、tag、match。
-8. `match` 范围包含 tags。
-9. `host import` 支持 `tags` 字段和 `--tags` 默认值。
-10. Web API host JSON 接收和返回 tags。
-11. README 中补 tags 示例。
+4. `host set` 从 flag-style 改为 `host set <host> <key=value>...`。
+5. `host set` 支持字段：
+   - `name`
+   - `ip`
+   - `auth` / `auth_ref`
+   - `user`
+   - `key` / `key_path`
+   - `group`
+   - `remark`
+   - `tags`
+   - `port`
+   - `jump`
+   - `backend`
+   - `via`
+   - `run_template`
+   - `login_command`
+   - `connect_timeout`
+   - `run_timeout`
+   - `remote_script_dir`
+   - `host_key_check`
+   - `known_hosts_path`
+6. `host set` 任意字段解析或校验失败时整体不保存。
+7. `host unset` 改为 `host unset <host> <field>...`。
+8. `host unset` 支持一次删除多个字段，例如 `tags remark jump`。
+9. `host list/list` 支持 `--tag app,gpu`。
+10. `filterHosts` 同时支持 group、tag、match。
+11. `match` 范围包含 tags。
+12. `host import` 支持 `tags` 字段和 `--tags` 默认值。
+13. Web API host JSON 接收和返回 tags。
+14. README 中补 tags 示例和新的 `host set` 示例。
 
 测试：
 
 ```text
 TestNormalizeTags
 TestHostAddWithTags
+TestHostSetKeyValueFields
+TestHostSetRejectsInvalidFieldWithoutSaving
 TestHostSetTags
 TestHostUnsetTags
+TestHostUnsetMultipleFields
 TestHostListFiltersByTag
 TestHostListTagFilterUsesAND
 TestHostMatchIncludesTags
@@ -349,6 +402,7 @@ go test ./internal/server
 go test ./...
 go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe host add --help | Out-String
+.\tmp\sshc.exe host set --help | Out-String
 .\tmp\sshc.exe host list --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
@@ -407,10 +461,23 @@ README.zh-CN.md
 5. 新增 `group` 命令：
    - `group list`
    - `group show NAME`
-   - `group set NAME FIELD VALUE`
-   - `group unset NAME FIELD`
+   - `group set NAME key=value...`
+   - `group unset NAME field...`
    - `group rm NAME --yes`
-6. README 补 group defaults 示例。
+6. `group set` 支持字段：
+   - `auth` / `auth_ref`
+   - `user`
+   - `key` / `key_path`
+   - `port`
+   - `jump`
+   - `connect_timeout`
+   - `run_timeout`
+   - `remote_script_dir`
+   - `host_key_check`
+   - `known_hosts_path`
+7. `group set` 任意字段解析或校验失败时整体不保存。
+8. `group unset` 支持一次删除多个字段。
+9. README 补 group defaults 示例。
 
 测试：
 
@@ -421,7 +488,10 @@ TestResolveEffectiveHostGroupAuthRef
 TestResolveEffectiveHostHostAuthRefOverridesGroupAuthRef
 TestCfgDoctorReportsInvalidGroupAuthRef
 TestGroupSetAndShow
+TestGroupSetMultipleFields
+TestGroupSetRejectsInvalidFieldWithoutSaving
 TestGroupUnset
+TestGroupUnsetMultipleFields
 TestGroupRemove
 ```
 
@@ -787,9 +857,9 @@ CLI smoke：
 ```powershell
 $env:SSHC_CONFIG_DIR = "$PWD\tmp\p1-smoke"
 .\tmp\sshc.exe auth add dev-root -u root -p --remark "testing auth"
-.\tmp\sshc.exe group set testing auth_ref dev-root
-.\tmp\sshc.exe group set testing port 22
+.\tmp\sshc.exe group set testing auth=dev-root port=22
 .\tmp\sshc.exe host add --ip 10.0.0.8 --name devhost --group testing --tags app,gpu --auth dev-root
+.\tmp\sshc.exe host set devhost remark="app server" tags=app,gpu,testing
 .\tmp\sshc.exe list --tag app
 .\tmp\sshc.exe cfg doctor
 .\tmp\sshc.exe check --tag app --json
