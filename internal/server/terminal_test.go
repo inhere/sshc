@@ -88,6 +88,17 @@ func TestTerminalCreateReadonly(t *testing.T) {
 	}
 }
 
+func TestTerminalConnectErrorSuggestsForceTrustOnKeyMismatch(t *testing.T) {
+	err := terminalConnectError(core.Host{Name: "pve v7", IP: "172.20.0.12"}, errors.New("ssh: handshake failed: knownhosts: key mismatch"))
+	if err == nil {
+		t.Fatal("err = nil")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "host key mismatch") || !strings.Contains(message, `sshc host trust -f "pve v7"`) {
+		t.Fatalf("message = %q", message)
+	}
+}
+
 func TestTerminalWebSocketTransfersAndCleansUp(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{

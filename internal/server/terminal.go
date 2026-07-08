@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -184,10 +185,25 @@ func (s *terminalSession) close() error {
 }
 
 func terminalConnectError(host core.Host, err error) error {
-	if strings.Contains(err.Error(), "knownhosts: key is unknown") {
-		return fmt.Errorf("host key is unknown for %s; run `sshc host trust %s` first", core.HostLogName(host), core.HostLogName(host))
+	message := err.Error()
+	target := shellQuoteArg(core.HostLogName(host))
+	if strings.Contains(message, "knownhosts: key is unknown") {
+		return fmt.Errorf("host key is unknown for %s; run `sshc host trust %s` first", core.HostLogName(host), target)
+	}
+	if strings.Contains(message, "knownhosts: key mismatch") {
+		return fmt.Errorf("host key mismatch for %s; verify this is the expected host, then run `sshc host trust -f %s` to replace the stale known_hosts entry", core.HostLogName(host), target)
 	}
 	return err
+}
+
+func shellQuoteArg(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return `""`
+	}
+	if strings.ContainsAny(value, " \t\"'") {
+		return strconv.Quote(value)
+	}
+	return value
 }
 
 func copyWebSocketToPTY(ctx context.Context, pty io.Writer, read func(context.Context) ([]byte, error)) error {

@@ -75,7 +75,7 @@ type hostUnsetOptions struct {
 	KnownHostsPath  bool
 }
 
-var hostTrust = core.TrustHostKey
+var hostTrust = core.TrustHostKeyWithOptions
 
 func NewHostCmd() *gcli.Command {
 	cmd := &gcli.Command{
@@ -422,22 +422,26 @@ func newHostShowCmd() *gcli.Command {
 
 func newHostTrustCmd() *gcli.Command {
 	var port int
+	var force bool
 	return &gcli.Command{
 		Name: "trust",
 		Desc: "scan and trust ssh host key",
 		Help: strings.TrimSpace(`
 Examples:
   sshc host trust devhost
+  sshc host trust -f devhost
   sshc host trust 192.168.1.10
   sshc host trust 192.168.1.10 --port 2222
 
 Notes:
   - Existing trusted keys are kept unchanged.
-  - Changed host keys are reported as errors and must be resolved manually.
+  - Changed host keys are reported as errors by default.
+  - Use -f/--force only after verifying the host identity; it replaces stale known_hosts entries.
   - command_proxy targets are logical hosts; trust their via host instead.
 `),
 		Config: func(c *gcli.Command) {
 			c.IntOpt(&port, "port", "", 0, "ssh port for raw host targets")
+			c.BoolOpt(&force, "force", "f", false, "replace stale known_hosts entry after host identity is verified")
 			c.AddArg("target", "host ip or name", true)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
@@ -446,13 +450,15 @@ Notes:
 			if err != nil {
 				return err
 			}
-			result, err := hostTrust(host)
+			result, err := hostTrust(host, core.HostKeyTrustOptions{Force: force})
 			if err != nil {
 				return err
 			}
 			switch result.Status {
 			case "already_trusted":
 				fmt.Fprintf(cmdOutput(c), "host key already trusted: %s %s %s\n", result.Address, result.KeyType, result.Fingerprint)
+			case "replaced":
+				fmt.Fprintf(cmdOutput(c), "replaced host key: %s %s %s\n", result.Address, result.KeyType, result.Fingerprint)
 			default:
 				fmt.Fprintf(cmdOutput(c), "trusted host key: %s %s %s\n", result.Address, result.KeyType, result.Fingerprint)
 			}

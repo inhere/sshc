@@ -475,6 +475,9 @@ host keys. Trust the host first with:
 sshc host trust devhost
 ```
 
+If the browser terminal reports a host key mismatch, verify the target machine
+first, then replace the stale entry with `sshc host trust -f devhost`.
+
 `command_proxy` browser terminals are not supported in v1. CLI `sshc login
 lxc-app` remains available for command-proxy hosts.
 
@@ -665,7 +668,8 @@ prints the config file as stored on disk and is intended for local debugging.
   to pre-scan and add a host key to `known_hosts`.
 - In non-interactive scripts, pre-add host keys to `known_hosts` before running
   sshc, or explicitly configure `host_key_check=insecure` for trusted temporary environments.
-- If a known host key changes, sshc still fails instead of overwriting the saved key.
+- If a known host key changes, sshc fails by default. After verifying the host
+  identity, run `sshc host trust -f devhost` to replace the stale entry.
 - Set `host_key_check` to `insecure` only when you explicitly want to skip host key verification.
 - With `--script --sudo-user`, the uploaded temporary script is readable by local
   remote users so the target sudo user can execute it. For sensitive scripts,

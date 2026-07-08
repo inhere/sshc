@@ -20,7 +20,7 @@ func setDownloadRemoteForTest(fn func(core.Host, string, string, core.TransferOp
 	return func() { downloadRemote = old }
 }
 
-func setHostTrustForTest(fn func(core.Host) (core.HostKeyTrustResult, error)) func() {
+func setHostTrustForTest(fn func(core.Host, core.HostKeyTrustOptions) (core.HostKeyTrustResult, error)) func() {
 	old := hostTrust
 	hostTrust = fn
 	return func() { hostTrust = old }

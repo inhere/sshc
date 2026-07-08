@@ -477,8 +477,11 @@ func TestHostTrustUsesSavedHost(t *testing.T) {
 	}
 
 	var gotHost core.Host
-	t.Cleanup(setHostTrustForTest(func(host core.Host) (core.HostKeyTrustResult, error) {
+	t.Cleanup(setHostTrustForTest(func(host core.Host, opts core.HostKeyTrustOptions) (core.HostKeyTrustResult, error) {
 		gotHost = host
+		if opts.Force {
+			t.Fatal("force = true, want false")
+		}
 		return core.HostKeyTrustResult{
 			Address:        "10.0.0.8:2222",
 			KnownHostsPath: "~/.ssh/custom_known_hosts",
@@ -502,11 +505,52 @@ func TestHostTrustUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestHostTrustForcePassesOption(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{
+		Name:    "devhost",
+		IP:      "10.0.0.8",
+		User:    "root",
+		KeyPath: "~/.ssh/id_rsa",
+		Port:    22,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotForce bool
+	t.Cleanup(setHostTrustForTest(func(host core.Host, opts core.HostKeyTrustOptions) (core.HostKeyTrustResult, error) {
+		gotForce = opts.Force
+		return core.HostKeyTrustResult{
+			Address:        "10.0.0.8:22",
+			KnownHostsPath: "~/.ssh/known_hosts",
+			KeyType:        "ssh-ed25519",
+			Fingerprint:    "SHA256:test",
+			Status:         "replaced",
+		}, nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "trust", "-f", "devhost"}); err != nil {
+		t.Fatalf("host trust force: %v", err)
+	}
+	if !gotForce {
+		t.Fatal("force = false, want true")
+	}
+	if !strings.Contains(out.String(), "replaced host key: 10.0.0.8:22 ssh-ed25519 SHA256:test") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
 func TestHostTrustRawTargetWithPort(t *testing.T) {
 	withTempConfig(t)
 	var gotHost core.Host
-	t.Cleanup(setHostTrustForTest(func(host core.Host) (core.HostKeyTrustResult, error) {
+	t.Cleanup(setHostTrustForTest(func(host core.Host, opts core.HostKeyTrustOptions) (core.HostKeyTrustResult, error) {
 		gotHost = host
+		if opts.Force {
+			t.Fatal("force = true, want false")
+		}
 		return core.HostKeyTrustResult{
 			Address:        "192.168.1.10:2222",
 			KnownHostsPath: "~/.ssh/known_hosts",

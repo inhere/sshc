@@ -108,6 +108,10 @@ type HostKeyTrustResult struct {
 	Status         string
 }
 
+type HostKeyTrustOptions struct {
+	Force bool
+}
+
 func ExecuteRemote(host Host, command string, opts RunOptions) ([]byte, error) {
 	if IsCommandProxyHost(host) {
 		return ExecuteCommandProxy(host, command, opts)
@@ -852,6 +856,10 @@ func appendKnownHostKey(path, hostname string, key ssh.PublicKey) error {
 }
 
 func TrustHostKey(host Host) (HostKeyTrustResult, error) {
+	return TrustHostKeyWithOptions(host, HostKeyTrustOptions{})
+}
+
+func TrustHostKeyWithOptions(host Host, opts HostKeyTrustOptions) (HostKeyTrustResult, error) {
 	if IsCommandProxyHost(host) {
 		return HostKeyTrustResult{}, fmt.Errorf("host %s uses command_proxy backend; trust the via host instead", HostLogName(host))
 	}
@@ -893,13 +901,74 @@ func TrustHostKey(host Host) (HostKeyTrustResult, error) {
 		return HostKeyTrustResult{}, err
 	}
 	if len(keyErr.Want) > 0 {
-		return HostKeyTrustResult{}, fmt.Errorf("host key for %s has changed; remove or update the existing known_hosts entry manually", address)
+		if !opts.Force {
+			return HostKeyTrustResult{}, fmt.Errorf("host key for %s has changed; verify the host identity, then run host trust with --force to replace the stale known_hosts entry", address)
+		}
+		if _, err := removeKnownHostEntries(path, address); err != nil {
+			return HostKeyTrustResult{}, err
+		}
+		if err := appendKnownHostKey(path, address, key); err != nil {
+			return HostKeyTrustResult{}, err
+		}
+		result.Status = "replaced"
+		return result, nil
 	}
 	if err := appendKnownHostKey(path, address, key); err != nil {
 		return HostKeyTrustResult{}, err
 	}
 	result.Status = "added"
 	return result, nil
+}
+
+func removeKnownHostEntries(path, address string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("read known_hosts %s: %w", path, err)
+	}
+	content := string(data)
+	lines := strings.Split(content, "\n")
+	trailingNewline := strings.HasSuffix(content, "\n")
+	normalized := knownhosts.Normalize(address)
+	kept := make([]string, 0, len(lines))
+	removed := 0
+	for i, line := range lines {
+		if i == len(lines)-1 && line == "" && trailingNewline {
+			continue
+		}
+		if knownHostLineMatches(line, normalized) {
+			removed++
+			continue
+		}
+		kept = append(kept, line)
+	}
+	next := strings.Join(kept, "\n")
+	if trailingNewline && next != "" {
+		next += "\n"
+	}
+	if err := os.WriteFile(path, []byte(next), 0600); err != nil {
+		return removed, fmt.Errorf("write known_hosts %s: %w", path, err)
+	}
+	return removed, nil
+}
+
+func knownHostLineMatches(line, normalizedAddress string) bool {
+	fields := strings.Fields(line)
+	if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+		return false
+	}
+	hostFieldIndex := 0
+	if strings.HasPrefix(fields[0], "@") {
+		hostFieldIndex = 1
+	}
+	if len(fields) <= hostFieldIndex {
+		return false
+	}
+	for _, pattern := range strings.Split(fields[hostFieldIndex], ",") {
+		if pattern == normalizedAddress {
+			return true
+		}
+	}
+	return false
 }
 
 func scanRemoteSSHHostKey(host Host) (ssh.PublicKey, net.Addr, error) {

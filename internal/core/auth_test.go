@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"net"
 	"os"
@@ -282,6 +283,37 @@ func TestTrustHostKeyRejectsChangedKey(t *testing.T) {
 	_, err := TrustHostKey(Host{Name: "devhost", IP: "example.com", Port: 22, KnownHostsPath: path})
 	if err == nil || !strings.Contains(err.Error(), "has changed") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTrustHostKeyForceReplacesChangedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	oldKey := testPublicKey(t)
+	newKey := testPublicKey(t)
+	if err := appendKnownHostKey(path, "example.com:22", oldKey); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setScanSSHHostKeyForTest(func(host Host) (ssh.PublicKey, net.Addr, error) {
+		return newKey, testRemoteAddr(), nil
+	}))
+
+	result, err := TrustHostKeyWithOptions(Host{Name: "devhost", IP: "example.com", Port: 22, KnownHostsPath: path}, HostKeyTrustOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "replaced" || result.Fingerprint != ssh.FingerprintSHA256(newKey) {
+		t.Fatalf("result = %+v", result)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldEncoded := base64.StdEncoding.EncodeToString(oldKey.Marshal())
+	if strings.Contains(string(content), oldEncoded) {
+		t.Fatalf("known_hosts still contains old key: %q", string(content))
+	}
+	if strings.Count(string(content), "example.com") != 1 || !strings.Contains(string(content), newKey.Type()) {
+		t.Fatalf("known_hosts content = %q", string(content))
 	}
 }
 
