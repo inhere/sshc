@@ -695,7 +695,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(host): import hosts from ssh config
 ```
 
-### P1.5: batch-run summary log
+### P1.5: batch-run summary log（已完成）
 
 目标：
 
@@ -752,6 +752,16 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe batch-run --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- 新增 batch summary JSONL，路径为 `{logs_path}/batch/{yyyyMMdd}.jsonl`。
+- 每次普通 batch-run 会生成 `batch_id`，输出 `Batch ID: ...` 和总览 Summary。
+- summary 已记录 source、command/script、host 列表、success/failed/skipped 数量和每台 host 的 status/task_id/duration/error。
+- summary options 已记录 timeout、kill_after、cwd、sudo、script、remote_script_dir、keep_remote_script、env_file 和遮蔽后的 env。
+- `--summary table` 已作为默认模式，其他模式会明确报 not supported。
+- 已补 `AppendBatchRunLog`、`ReadBatchRunByID`、`FailedBatchRunHosts` 和 env mask 的核心测试，以及 batch-run 写 summary、失败记录和 unsupported summary 的命令测试。
+- 验证通过：`go test ./internal/core`、`go test ./internal/command`。
 
 提交：
 

@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -150,6 +151,89 @@ func TestBatchRunWritesLogsPerHost(t *testing.T) {
 		if len(lines) != 1 || !strings.Contains(lines[0], `"task_id":"`) || !strings.Contains(lines[0], `"command":"hostname"`) {
 			t.Fatalf("%s logs = %#v", target, lines)
 		}
+	}
+}
+
+func TestBatchRunWritesBatchSummary(t *testing.T) {
+	withTempConfig(t)
+	fixed := time.Date(2026, 7, 8, 12, 1, 2, 123000000, time.Local)
+	t.Cleanup(core.SetNowForTest(func() time.Time { return fixed }))
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{{
+		Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22,
+	}}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		return []byte("ok\n"), nil
+	}))
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost", "-e", "APP_ENV=prod", "-e", "API_TOKEN=secret", "--", "hostname"}); err != nil {
+		t.Fatalf("batch-run: %v", err)
+	}
+	if !strings.Contains(out.String(), "Batch ID: 20260708-120102-") {
+		t.Fatalf("output missing batch id: %q", out.String())
+	}
+
+	record := readOnlyBatchRecord(t, fixed)
+	if record.Source.Kind != "hosts" || record.Source.Value != "devhost" {
+		t.Fatalf("source = %+v", record.Source)
+	}
+	if record.Command != "hostname" || record.SuccessCount != 1 || record.FailedCount != 0 || len(record.Results) != 1 {
+		t.Fatalf("record = %+v", record)
+	}
+	if record.Results[0].TaskID == "" {
+		t.Fatalf("missing task id: %+v", record.Results[0])
+	}
+	if record.Options.Env["APP_ENV"] != "prod" || record.Options.Env["API_TOKEN"] != core.MaskedSecret {
+		t.Fatalf("env = %#v", record.Options.Env)
+	}
+}
+
+func TestBatchRunSummaryIncludesFailure(t *testing.T) {
+	withTempConfig(t)
+	fixed := time.Date(2026, 7, 8, 12, 1, 2, 123000000, time.Local)
+	t.Cleanup(core.SetNowForTest(func() time.Time { return fixed }))
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{
+		{Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22},
+		{Name: "web-2", IP: "10.0.0.9", User: "root", Password: "secret", Port: 22},
+	}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, command string, opts core.RunOptions) ([]byte, error) {
+		if host.Name == "web-2" {
+			return []byte("bad\n"), errors.New("exit status 1")
+		}
+		return []byte("ok\n"), nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost,web-2", "--parallel", "1", "--", "hostname"}); err == nil {
+		t.Fatal("expected error")
+	}
+	record := readOnlyBatchRecord(t, fixed)
+	if record.SuccessCount != 1 || record.FailedCount != 1 {
+		t.Fatalf("record = %+v", record)
+	}
+	if failed := core.FailedBatchRunHosts(record); len(failed) != 1 || failed[0] != "web-2" {
+		t.Fatalf("failed = %#v", failed)
+	}
+}
+
+func TestBatchRunSummaryRejectsUnsupportedMode(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveStore(&core.Store{Hosts: []core.Host{{
+		Name: "devhost", IP: "10.0.0.8", User: "root", Password: "secret", Port: 22,
+	}}}); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"batch-run", "--hosts", "devhost", "--summary", "json", "--", "hostname"})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -306,4 +390,25 @@ func TestBatchRunPasswordPromptReadsOnce(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("password prompt calls = %d, want 1", calls)
 	}
+}
+
+func readOnlyBatchRecord(t *testing.T, when time.Time) core.BatchRunRecord {
+	t.Helper()
+	path, err := core.BatchLogPath(when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("batch lines = %#v", lines)
+	}
+	var record core.BatchRunRecord
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatal(err)
+	}
+	return record
 }

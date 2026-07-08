@@ -418,6 +418,7 @@ sshc brun --hosts devhost,web-2 -- hostname
 sshc batch-run --group testing --parallel 5 --script ./deploy.sh
 sshc batch-run --hosts-file hosts.txt -- hostname
 sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+sshc batch-run --hosts devhost,web-2 --summary table -- uptime
 ```
 
 `--hosts` 接收逗号分隔的主机列表。`--hosts-file` 每行读取一个目标，忽略空行和
@@ -426,6 +427,11 @@ sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
 
 使用 `--parallel` 控制并发数。设置 `--fail-fast` 后，遇到首个失败会停止启动新的
 host，并等待已经运行中的 host 结束。
+
+每次 batch-run 都会输出 `Batch ID`，并写入 `{logs_path}/batch/{yyyyMMdd}.jsonl`
+批量汇总日志。记录包含来源、命令或脚本、已遮蔽敏感值的运行环境变量、host 列表、
+每台主机的状态、对应 `task_id` 以及成功/失败/跳过数量。`--summary table` 是默认
+输出模式。
 
 ### sudo
 

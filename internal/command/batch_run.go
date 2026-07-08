@@ -15,6 +15,8 @@ type batchRunFlagOptions struct {
 	Hosts          string
 	HostsFile      string
 	Group          string
+	RerunFailed    string
+	Summary        string
 	AuthRef        string
 	User           string
 	PasswordPrompt bool
@@ -41,6 +43,7 @@ Examples:
   sshc batch-run --hosts devhost,lxc-app -- uptime
   sshc batch-run --group testing --parallel 5 --fail-fast -- uptime
   sshc batch-run --hosts-file ips.txt --auth dev-root -u root --port 22 --script ./init.sh
+  sshc batch-run --rerun-failed 20260708-120102-a1b2
 
 Host sources:
   - Exactly one of --hosts, --hosts-file, or --group is required.
@@ -52,11 +55,14 @@ Notes:
   - Use --script for multiline shell, here-doc, source/venv activation, or heavy quoting.
   - Saved command_proxy hosts can be mixed with normal SSH hosts for command mode.
   - Every target writes a JSON log line with task_id under the configured logs_path.
+  - Every batch writes a summary JSONL record under logs_path/batch.
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.Hosts, "hosts", "", "", "comma-separated host names or IPs")
 			c.StrOpt(&opts.HostsFile, "hosts-file", "", "", "file with one host target per line")
 			c.StrOpt(&opts.Group, "group", "", "", "host group name")
+			c.StrOpt(&opts.RerunFailed, "rerun-failed", "", "", "rerun failed hosts from a previous batch_id")
+			c.StrOpt(&opts.Summary, "summary", "", "table", "summary output mode: table")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for raw host targets")
 			c.StrOpt(&opts.User, "user", "u", "", "ssh username for raw host targets")
 			c.BoolOpt(&opts.PasswordPrompt, "password", "p", false, "prompt for shared hidden password")
@@ -79,11 +85,14 @@ Notes:
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			command := strings.TrimSpace(strings.Join(remoteCommandArgs(c.Arg("command").Strings()), " "))
-			if command == "" && strings.TrimSpace(opts.Run.Script) == "" {
-				return errors.New("remote command or --script is required")
+			if err := validateBatchSummaryMode(opts.Summary); err != nil {
+				return err
 			}
-			if command != "" && strings.TrimSpace(opts.Run.Script) != "" {
-				return errors.New("remote command and --script cannot be used together")
+			if strings.TrimSpace(opts.RerunFailed) != "" {
+				return rerunFailedBatch(c, *opts, command)
+			}
+			if err := validateNormalBatchRun(*opts, command); err != nil {
+				return err
 			}
 
 			runOptions, err := buildRunOptions(opts.Run)
@@ -101,10 +110,37 @@ Notes:
 			if opts.Parallel < 1 {
 				return errors.New("--parallel must be greater than 0")
 			}
-			return runBatch(c, hosts, command, runOptions, opts.Parallel, opts.FailFast)
+			return runBatch(c, batchRunRequest{
+				Hosts:      hosts,
+				Command:    command,
+				RunOptions: runOptions,
+				RunFlags:   opts.Run,
+				Source:     buildBatchLogSource(*opts),
+				Parallel:   opts.Parallel,
+				FailFast:   opts.FailFast,
+				Summary:    opts.Summary,
+			})
 		},
 	}
 	return cmd
+}
+
+func validateBatchSummaryMode(mode string) error {
+	mode = strings.TrimSpace(mode)
+	if mode == "" || mode == "table" {
+		return nil
+	}
+	return fmt.Errorf("--summary %s is not supported", mode)
+}
+
+func validateNormalBatchRun(opts batchRunFlagOptions, command string) error {
+	if command == "" && strings.TrimSpace(opts.Run.Script) == "" {
+		return errors.New("remote command or --script is required")
+	}
+	if command != "" && strings.TrimSpace(opts.Run.Script) != "" {
+		return errors.New("remote command and --script cannot be used together")
+	}
+	return nil
 }
 
 func buildBatchHostSource(opts batchRunFlagOptions) core.BatchHostSource {
@@ -138,11 +174,26 @@ func batchAllowsRaw(opts batchRunFlagOptions) bool {
 		opts.PasswordPrompt
 }
 
-func runBatch(c *gcli.Command, hosts []core.Host, command string, baseOptions core.RunOptions, parallel int, failFast bool) error {
-	startedBatch := time.Now()
-	results := make([]batchRunResult, 0, len(hosts))
-	if parallel > len(hosts) {
-		parallel = len(hosts)
+type batchRunRequest struct {
+	Hosts      []core.Host
+	Command    string
+	RunOptions core.RunOptions
+	RunFlags   runFlagOptions
+	Source     core.BatchRunSourceLog
+	Parallel   int
+	FailFast   bool
+	Summary    string
+	RerunOf    string
+}
+
+func runBatch(c *gcli.Command, req batchRunRequest) error {
+	startedBatch := core.Now()
+	startedWall := time.Now()
+	batchID := core.NewBatchID(startedBatch)
+	results := make([]batchRunResult, 0, len(req.Hosts))
+	parallel := req.Parallel
+	if parallel > len(req.Hosts) {
+		parallel = len(req.Hosts)
 	}
 	resultCh := make(chan batchRunResult, parallel)
 	started := 0
@@ -153,11 +204,11 @@ func runBatch(c *gcli.Command, hosts []core.Host, command string, baseOptions co
 		started++
 		running++
 		go func() {
-			resultCh <- runBatchHost(host, command, baseOptions)
+			resultCh <- runBatchHost(host, req.Command, req.RunOptions)
 		}()
 	}
-	for next < len(hosts) && running < parallel {
-		startHost(hosts[next])
+	for next < len(req.Hosts) && running < parallel {
+		startHost(req.Hosts[next])
 		next++
 	}
 	for running > 0 {
@@ -165,20 +216,30 @@ func runBatch(c *gcli.Command, hosts []core.Host, command string, baseOptions co
 		running--
 		results = append(results, result)
 		writeBatchRunBlock(c, result)
-		if result.Error != nil && failFast {
+		if result.Error != nil && req.FailFast {
 			stopped = true
 		}
-		for !stopped && next < len(hosts) && running < parallel {
-			startHost(hosts[next])
+		for !stopped && next < len(req.Hosts) && running < parallel {
+			startHost(req.Hosts[next])
 			next++
 		}
 	}
-	skipped := len(hosts) - started
-	writeBatchRunSummary(c, results, skipped, time.Since(startedBatch))
+	skipped := len(req.Hosts) - started
+	elapsed := time.Since(startedWall)
+	record := buildBatchRunRecord(batchID, req, results, skipped, startedBatch, core.Now())
+	logErr := core.AppendBatchRunLog(record)
+	writeBatchRunSummary(c, batchID, results, skipped, elapsed)
 	if failed := failedBatchHosts(results); len(failed) > 0 {
+		if logErr != nil {
+			fmt.Fprintf(cmdOutput(c), "sshc: warning: write batch summary: %v\n", logErr)
+		}
 		return fmt.Errorf("batch-run failed on: %s", strings.Join(failed, ", "))
 	}
-	return nil
+	return logErr
+}
+
+func rerunFailedBatch(c *gcli.Command, opts batchRunFlagOptions, command string) error {
+	return errors.New("--rerun-failed is not implemented yet")
 }
 
 type batchRunResult struct {
@@ -187,6 +248,7 @@ type batchRunResult struct {
 	Output     string
 	Error      error
 	Status     string
+	TaskID     string
 	DurationMS int64
 }
 
@@ -207,8 +269,10 @@ func runBatchHost(host core.Host, command string, baseOptions core.RunOptions) b
 	}
 	logBackend, logVia, proxiedCommand := commandProxyLogFields(host, command, runOptions)
 	out, err := runRemote(host, command, runOptions)
+	taskID := core.NewRunTaskID(startedAt, host, core.RunLogRecord{Command: command, Script: runOptions.ScriptPath})
 	logErr := core.AppendRunLog(host, core.RunLogRecord{
 		Target:           core.HostLogName(host),
+		TaskID:           taskID,
 		Command:          command,
 		Status:           core.RunStatus(err),
 		StartedAt:        startedAt,
@@ -232,6 +296,7 @@ func runBatchHost(host core.Host, command string, baseOptions core.RunOptions) b
 		Output:     string(out),
 		Error:      err,
 		Status:     core.RunStatus(err),
+		TaskID:     taskID,
 		DurationMS: core.SinceMS(startedAt),
 	}
 }
@@ -254,7 +319,7 @@ func writeBatchRunBlock(c *gcli.Command, result batchRunResult) {
 	fmt.Fprintln(cmdOutput(c))
 }
 
-func writeBatchRunSummary(c *gcli.Command, results []batchRunResult, skipped int, elapsed time.Duration) {
+func writeBatchRunSummary(c *gcli.Command, batchID string, results []batchRunResult, skipped int, elapsed time.Duration) {
 	success, failed := 0, 0
 	for _, result := range results {
 		if result.Error != nil {
@@ -263,10 +328,102 @@ func writeBatchRunSummary(c *gcli.Command, results []batchRunResult, skipped int
 		}
 		success++
 	}
+	fmt.Fprintf(cmdOutput(c), "Batch ID: %s\n", batchID)
 	fmt.Fprintf(cmdOutput(c), "Summary: total=%d success=%d failed=%d skipped=%d elapsed=%s\n", len(results)+skipped, success, failed, skipped, formatElapsed(elapsed))
 	if failed > 0 {
 		fmt.Fprintf(cmdOutput(c), "Failed hosts: %s\n", strings.Join(failedBatchHosts(results), ", "))
 	}
+}
+
+func buildBatchRunRecord(batchID string, req batchRunRequest, results []batchRunResult, skipped int, startedAt, endedAt time.Time) core.BatchRunRecord {
+	record := core.BatchRunRecord{
+		BatchID:      batchID,
+		RerunOf:      strings.TrimSpace(req.RerunOf),
+		StartedAt:    formatBatchLogTime(startedAt),
+		EndedAt:      formatBatchLogTime(endedAt),
+		Source:       req.Source,
+		Command:      req.Command,
+		Script:       strings.TrimSpace(req.RunOptions.ScriptPath),
+		TaskName:     "",
+		Options:      buildBatchRunLogOptions(req.RunFlags, req.RunOptions),
+		Hosts:        hostLogNames(req.Hosts),
+		SkippedCount: skipped,
+		Results:      make([]core.BatchRunResult, 0, len(results)),
+	}
+	for _, result := range results {
+		if result.Error != nil {
+			record.FailedCount++
+		} else {
+			record.SuccessCount++
+		}
+		record.Results = append(record.Results, core.BatchRunResult{
+			Host:       result.Target,
+			Status:     result.Status,
+			TaskID:     result.TaskID,
+			DurationMS: result.DurationMS,
+			Error:      core.ErrorString(result.Error),
+		})
+	}
+	return record
+}
+
+func buildBatchLogSource(opts batchRunFlagOptions) core.BatchRunSourceLog {
+	source := core.BatchRunSourceLog{
+		AuthRef:  strings.TrimSpace(opts.AuthRef),
+		User:     strings.TrimSpace(opts.User),
+		KeyPath:  strings.TrimSpace(opts.KeyPath),
+		Port:     opts.Port,
+		AllowRaw: batchAllowsRaw(opts),
+	}
+	switch {
+	case strings.TrimSpace(opts.Hosts) != "":
+		source.Kind = "hosts"
+		source.Value = strings.TrimSpace(opts.Hosts)
+	case strings.TrimSpace(opts.HostsFile) != "":
+		source.Kind = "hosts_file"
+		source.Value = strings.TrimSpace(opts.HostsFile)
+	case strings.TrimSpace(opts.Group) != "":
+		source.Kind = "group"
+		source.Value = strings.TrimSpace(opts.Group)
+	}
+	return source
+}
+
+func buildBatchRunLogOptions(flags runFlagOptions, opts core.RunOptions) core.BatchRunOptions {
+	return core.BatchRunOptions{
+		Timeout:          durationLogString(opts.Timeout),
+		KillAfter:        durationLogString(opts.KillAfter),
+		Env:              core.MaskRunEnv(opts.Env),
+		EnvFile:          strings.TrimSpace(flags.EnvFile),
+		CWD:              strings.TrimSpace(opts.CWD),
+		Sudo:             opts.Sudo,
+		SudoUser:         strings.TrimSpace(opts.SudoUser),
+		ScriptPath:       strings.TrimSpace(opts.ScriptPath),
+		RemoteScriptDir:  strings.TrimSpace(opts.RemoteScriptDir),
+		KeepRemoteScript: opts.KeepRemoteScript,
+	}
+}
+
+func durationLogString(value time.Duration) string {
+	if value <= 0 {
+		return ""
+	}
+	return value.String()
+}
+
+func formatBatchLogTime(value time.Time) string {
+	if value.IsZero() {
+		value = core.Now()
+	}
+	return value.Format("2006-01-02T15:04:05.000")
+}
+
+func hostLogNames(hosts []core.Host) []string {
+	names := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		names = append(names, core.HostLogName(host))
+	}
+	return names
 }
 
 func failedBatchHosts(results []batchRunResult) []string {

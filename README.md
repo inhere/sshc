@@ -430,6 +430,7 @@ sshc brun --hosts devhost,web-2 -- hostname
 sshc batch-run --group testing --parallel 5 --script ./deploy.sh
 sshc batch-run --hosts-file hosts.txt -- hostname
 sshc batch-run --hosts-file ips.txt --auth dev-root --script ./init.sh
+sshc batch-run --hosts devhost,web-2 --summary table -- uptime
 ```
 
 `--hosts` accepts a comma-separated list. `--hosts-file` reads one host target per
@@ -439,6 +440,11 @@ such as `--auth`, `-u`, `--key`, or `-p`.
 
 Use `--parallel` to limit concurrency. With `--fail-fast`, sshc stops starting
 new hosts after the first failure and waits for already running hosts to finish.
+
+Every batch run prints a `Batch ID` and writes a summary JSONL record to
+`{logs_path}/batch/{yyyyMMdd}.jsonl`. The record includes the source, command or
+script, masked run environment, host list, per-host status, per-host `task_id`,
+and success/failure/skipped counts. `--summary table` is the default output mode.
 
 ### Sudo
 
