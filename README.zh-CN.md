@@ -12,6 +12,15 @@
 
 它适合轻量部署、问题排查和日常远程运维。对于这些场景，引入完整自动化平台通常过重，`sshc` 提供的是更直接的命令行工作流。
 
+## 定位
+
+`sshc` 面向开发者和 AI Agent，定位是一个轻量 SSH 运维 CLI。它把常见远程操作收敛到
+一个本地工具里：主机和凭证配置、带审计日志的远程命令、批量脚本执行、文件传输、
+known_hosts 信任辅助，以及可选的本地 Web 管理台。
+
+它不是要替代 OpenSSH、Ansible 或完整的基础设施编排平台。它关注的是临时
+`ssh`/`scp` 命令和重型自动化系统之间的日常运维空白。
+
 ## 功能特性
 
 - 在 `~/.config/sshc/sshc.config.json` 中管理 SSH 主机
@@ -664,6 +673,24 @@ sshc cfg doctor
 
 - [部署常用示例](docs/deploy-examples.md)
 - [密码加密设计](docs/password-encryption-design.md)
+
+## 相关项目
+
+- [OpenSSH](https://www.openssh.com/) 仍然是基础。`sshc` 是围绕 SSH 构建工作流，
+  不是替代 SSH 协议或客户端生态。
+- [assh](https://github.com/moul/assh) 主要增强 SSH 配置能力，例如 alias、gateway、
+  template、inheritance 和 ProxyCommand 集成。`sshc` 更偏远程操作命令、执行日志、
+  文件传输，以及 host/auth 管理。
+- [lazyssh](https://github.com/Adembc/lazyssh)、
+  [dssh](https://github.com/madLinux7/dssh) 和
+  [susshi](https://github.com/yatoub/susshi) 更偏 TUI 连接管理体验。`sshc` 保持
+  CLI-first，方便脚本化调用，并额外覆盖执行日志、批量执行、文件传输和本地 Web 管理台。
+- [pssh](https://github.com/lilydjwg/pssh) 聚焦并行 SSH 执行。`sshc batch-run`
+  覆盖轻量批量执行，同时复用已保存主机、auth profile、jump host、command_proxy
+  主机和按主机保存的日志。
+- [hop](https://github.com/danmartuszewski/hop) 和
+  [purple](https://github.com/erickochen/purple) 是更现代的 SSH 管理工具，目标包含
+  更完整的 TUI、MCP 或云同步等能力。`sshc` 刻意保持更小，并以本地配置驱动为主。
 
 ## 开发
 

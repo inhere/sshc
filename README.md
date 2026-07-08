@@ -14,6 +14,17 @@ transferring files, executing local scripts on remote hosts, and keeping per-hos
 It is intended for lightweight deployment, troubleshooting, and day-to-day
 remote operations where a full automation platform would be too heavy.
 
+## Positioning
+
+`sshc` is designed as a small SSH operations CLI for developers and AI agents.
+It keeps the common remote workflow in one local tool: host and credential
+profiles, audited remote commands, batch script execution, file transfer,
+known-host trust helpers, and an optional local Web console.
+
+It does not try to replace OpenSSH, Ansible, or a full infrastructure
+orchestration platform. It focuses on the operational gap between ad hoc
+`ssh`/`scp` commands and heavier automation systems.
+
 ## Features
 
 - Manage SSH hosts in `~/.config/sshc/sshc.config.json`
@@ -687,6 +698,27 @@ prints the config file as stored on disk and is intended for local debugging.
 
 - [Deployment examples](docs/deploy-examples.md)
 - [Password encryption design](docs/password-encryption-design.md)
+
+## Related Projects
+
+- [OpenSSH](https://www.openssh.com/) remains the foundation. `sshc` builds a
+  workflow around SSH instead of replacing the SSH protocol or client ecosystem.
+- [assh](https://github.com/moul/assh) focuses on making SSH configuration
+  smarter with aliases, gateways, templates, inheritance, and ProxyCommand
+  integration. `sshc` focuses more on operational commands, logs, transfer, and
+  host/auth management.
+- [lazyssh](https://github.com/Adembc/lazyssh),
+  [dssh](https://github.com/madLinux7/dssh), and
+  [susshi](https://github.com/yatoub/susshi) are SSH connection managers with a
+  stronger TUI-oriented experience. `sshc` keeps a scriptable CLI-first surface
+  and adds run logs, batch execution, transfer, and a local Web console.
+- [pssh](https://github.com/lilydjwg/pssh) focuses on parallel SSH execution.
+  `sshc batch-run` covers lightweight batch runs while also reusing saved hosts,
+  auth profiles, jump hosts, command-proxy hosts, and per-host logs.
+- [hop](https://github.com/danmartuszewski/hop) and
+  [purple](https://github.com/erickochen/purple) are modern SSH managers with
+  broader TUI, MCP, or cloud-sync goals. `sshc` intentionally stays smaller and
+  local-config driven.
 
 ## Development
 
