@@ -278,7 +278,7 @@ async function renderTerminal() {
           <span id="terminal-current-host">${escapeHTML(state.terminalHost || "no session")}</span>
           <strong id="terminal-state">${state.terminalSessionID ? "connected" : "idle"}</strong>
         </div>
-        <div id="terminal-container" class="terminal-container"></div>
+        <div class="terminal-container"><div id="terminal-mount" class="terminal-mount"></div></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -324,7 +324,7 @@ async function connectTerminal(host: string, cols: number, rows: number) {
     state.terminalHost = host;
     state.terminalSessionID = session.id;
     updateTerminalStatus("connected", session.host, true);
-    const container = query("#terminal-container");
+    const container = query("#terminal-mount");
     state.terminalMount = mountTerminal(
       container,
       session.id,

@@ -596,10 +596,18 @@ th {
   height: min(62vh, 680px);
   background: var(--terminal);
   padding: 8px;
+  display: grid;
   overflow: hidden;
 }
 
-.terminal-container .xterm {
+.terminal-mount {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-mount .xterm {
+  width: 100%;
   height: 100%;
 }
 
