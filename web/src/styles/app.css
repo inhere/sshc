@@ -552,7 +552,7 @@ th {
   top: 0;
   bottom: 0;
   left: 0;
-  width: min(1040px, 82vw);
+  width: clamp(840px, calc(100vw - 280px), 96vw);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   border-right: 1px solid rgba(216, 222, 230, 0.18);
@@ -759,6 +759,10 @@ th {
 
   .log-match-input {
     width: min(300px, 42vw);
+  }
+
+  .log-output-panel {
+    width: calc(100vw - 28px);
   }
 }
 
