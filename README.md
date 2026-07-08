@@ -739,6 +739,10 @@ prints the config file as stored on disk and is intended for local debugging.
 - Prefer SSH keys over passwords when possible.
 - If both password and `--key` are provided, key authentication is tried first.
 - SSH host keys are checked against `~/.ssh/known_hosts` by default.
+- When `known_hosts` already contains entries for the target host, sshc prefers
+  those host key algorithms during SSH negotiation. This keeps checks closer to
+  OpenSSH behavior and avoids negotiating an untrusted key type when a trusted
+  key type is already present.
 - If an interactive command sees an unknown host key, sshc asks whether to append
   it to `known_hosts` and then continues the same connection.
 - Use `sshc host trust devhost` or `sshc host trust 192.168.1.10 --port 2222`

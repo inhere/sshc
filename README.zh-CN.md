@@ -712,6 +712,9 @@ sshc cfg doctor
 - 尽量优先使用 SSH key，而不是密码。
 - 如果同时提供密码和 `--key`，会优先尝试 key 认证。
 - 默认会使用 `~/.ssh/known_hosts` 校验 SSH host key。
+- 当 `known_hosts` 已存在目标主机记录时，sshc 会优先协商这些已记录的 host key
+  算法，行为更接近 OpenSSH，避免在已有可信 key type 时协商到未记录的 RSA/ECDSA
+  等其他 key type。
 - 交互式命令遇到未知 host key 时，sshc 会询问是否追加到 `known_hosts`，确认后继续当前连接。
 - 可以使用 `sshc host trust devhost` 或 `sshc host trust 192.168.1.10 --port 2222`
   提前扫描并添加主机 key 到 `known_hosts`。

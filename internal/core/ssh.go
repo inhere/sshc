@@ -3,7 +3,10 @@ package core
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -92,12 +95,35 @@ func (client *remoteClient) Dial(network, addr string) (net.Conn, error) {
 }
 
 var (
-	newGophConn             = goph.NewConn
 	newSSHClientConn        = ssh.NewClientConn
+	newSSHDial              = ssh.Dial
 	remoteClientDialForTest func(*remoteClient, string, string) (net.Conn, error)
 	confirmUnknownHostKey   = promptConfirmUnknownHostKey
 	scanSSHHostKey          = scanRemoteSSHHostKey
 )
+
+var defaultHostKeyAlgorithms = []string{
+	ssh.CertAlgoRSASHA256v01,
+	ssh.CertAlgoRSASHA512v01,
+	ssh.CertAlgoRSAv01,
+	ssh.InsecureCertAlgoDSAv01,
+	ssh.CertAlgoECDSA256v01,
+	ssh.CertAlgoECDSA384v01,
+	ssh.CertAlgoECDSA521v01,
+	ssh.CertAlgoED25519v01,
+	ssh.CertAlgoSKECDSA256v01,
+	ssh.CertAlgoSKED25519v01,
+	ssh.KeyAlgoECDSA256,
+	ssh.KeyAlgoECDSA384,
+	ssh.KeyAlgoECDSA521,
+	ssh.KeyAlgoRSASHA512,
+	ssh.KeyAlgoRSASHA256,
+	ssh.KeyAlgoRSA,
+	ssh.InsecureKeyAlgoDSA,
+	ssh.KeyAlgoED25519,
+	ssh.KeyAlgoSKECDSA256,
+	ssh.KeyAlgoSKED25519,
+}
 
 type HostKeyTrustResult struct {
 	Host           Host
@@ -663,18 +689,21 @@ func newSSHClientForConnection(conn ResolvedConnection, opts sshClientOptions) (
 }
 
 func newDirectSSHClient(host Host, opts sshClientOptions) (*remoteClient, error) {
-	config, err := gophClientConfig(host, opts)
+	config, err := sshClientConfig(host, opts)
 	if err != nil {
 		return nil, err
 	}
-	client, err := newGophConn(config)
+	address := knownHostAddress(host)
+	client, err := newSSHDial("tcp", address, config)
 	if err != nil {
 		return nil, err
 	}
+	clientConfig := gophConfig(host, goph.Auth(config.Auth), config.Timeout, config.HostKeyCallback)
+	clientConfig.BannerCallback = config.BannerCallback
 	return &remoteClient{
-		Client: client,
+		Client: &goph.Client{Client: client, Config: clientConfig},
 		closeAll: func() error {
-			if client.Client == nil {
+			if client == nil || client.Conn == nil {
 				return nil
 			}
 			return client.Close()
@@ -715,13 +744,21 @@ func sshClientConfig(host Host, opts sshClientOptions) (*ssh.ClientConfig, error
 	if err != nil {
 		return nil, err
 	}
-	return &ssh.ClientConfig{
+	config := &ssh.ClientConfig{
 		User:            gophConfig.User,
 		Auth:            gophConfig.Auth,
 		Timeout:         gophConfig.Timeout,
 		HostKeyCallback: gophConfig.Callback,
 		BannerCallback:  gophConfig.BannerCallback,
-	}, nil
+	}
+	algorithms, err := preferredHostKeyAlgorithms(host)
+	if err != nil {
+		return nil, err
+	}
+	if len(algorithms) > 0 {
+		config.HostKeyAlgorithms = algorithms
+	}
+	return config, nil
 }
 
 func clientConnectTimeout(host Host) (time.Duration, error) {
@@ -767,6 +804,227 @@ func knownHostsPath(host Host) string {
 		path = DefaultKnownHostsPath
 	}
 	return expandUserPath(path)
+}
+
+func preferredHostKeyAlgorithms(host Host) ([]string, error) {
+	switch strings.TrimSpace(host.HostKeyCheck) {
+	case HostKeyCheckInsecure:
+		return nil, nil
+	case "", HostKeyCheckKnownHosts:
+		types, err := knownHostKeyTypes(knownHostsPath(host), knownhosts.Normalize(knownHostAddress(host)))
+		if err != nil {
+			return nil, err
+		}
+		return mergePreferredHostKeyAlgorithms(types), nil
+	default:
+		return nil, fmt.Errorf("invalid host_key_check %q, want known_hosts or insecure", host.HostKeyCheck)
+	}
+}
+
+func knownHostKeyTypes(path, normalizedHost string) ([]string, error) {
+	if strings.TrimSpace(normalizedHost) == "" {
+		return nil, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read known_hosts %s: %w", path, err)
+	}
+	defer file.Close()
+
+	seen := map[string]struct{}{}
+	var types []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hostPatterns, keyType, ok := knownHostLineHostAndKeyType(line)
+		if !ok || !knownHostPatternsMatch(hostPatterns, normalizedHost) {
+			continue
+		}
+		if _, ok := seen[keyType]; ok {
+			continue
+		}
+		seen[keyType] = struct{}{}
+		types = append(types, keyType)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read known_hosts %s: %w", path, err)
+	}
+	return types, nil
+}
+
+func knownHostLineHostAndKeyType(line string) (hostPatterns, keyType string, ok bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return "", "", false
+	}
+	hostFieldIndex := 0
+	if strings.HasPrefix(fields[0], "@") {
+		if fields[0] == "@revoked" {
+			return "", "", false
+		}
+		hostFieldIndex = 1
+	}
+	if len(fields) <= hostFieldIndex+1 {
+		return "", "", false
+	}
+	keyType = fields[hostFieldIndex+1]
+	if fields[0] == "@cert-authority" {
+		keyType = certHostKeyAlgorithm(keyType)
+		if keyType == "" {
+			return "", "", false
+		}
+	}
+	return fields[hostFieldIndex], keyType, true
+}
+
+func certHostKeyAlgorithm(keyType string) string {
+	switch keyType {
+	case ssh.KeyAlgoRSA:
+		return ssh.CertAlgoRSAv01
+	case ssh.InsecureKeyAlgoDSA:
+		return ssh.InsecureCertAlgoDSAv01
+	case ssh.KeyAlgoECDSA256:
+		return ssh.CertAlgoECDSA256v01
+	case ssh.KeyAlgoECDSA384:
+		return ssh.CertAlgoECDSA384v01
+	case ssh.KeyAlgoECDSA521:
+		return ssh.CertAlgoECDSA521v01
+	case ssh.KeyAlgoSKECDSA256:
+		return ssh.CertAlgoSKECDSA256v01
+	case ssh.KeyAlgoED25519:
+		return ssh.CertAlgoED25519v01
+	case ssh.KeyAlgoSKED25519:
+		return ssh.CertAlgoSKED25519v01
+	default:
+		return ""
+	}
+}
+
+func knownHostPatternsMatch(patterns, normalizedHost string) bool {
+	for _, pattern := range strings.Split(patterns, ",") {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if pattern == normalizedHost || hashedKnownHostMatches(pattern, normalizedHost) {
+			return true
+		}
+	}
+	return false
+}
+
+func hashedKnownHostMatches(pattern, normalizedHost string) bool {
+	parts := strings.Split(pattern, "|")
+	if len(parts) != 4 || parts[0] != "" || parts[1] != "1" {
+		return false
+	}
+	salt, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	want, err := base64.StdEncoding.DecodeString(parts[3])
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha1.New, salt)
+	_, _ = mac.Write([]byte(normalizedHost))
+	return hmac.Equal(mac.Sum(nil), want)
+}
+
+func mergePreferredHostKeyAlgorithms(knownTypes []string) []string {
+	if len(knownTypes) == 0 {
+		return nil
+	}
+	known := map[string]struct{}{}
+	for _, keyType := range knownTypes {
+		keyType = strings.TrimSpace(keyType)
+		if keyType != "" {
+			known[keyType] = struct{}{}
+		}
+	}
+	if len(known) == 0 {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	algorithms := make([]string, 0, len(defaultHostKeyAlgorithms))
+	add := func(algo string) {
+		if _, ok := seen[algo]; ok {
+			return
+		}
+		seen[algo] = struct{}{}
+		algorithms = append(algorithms, algo)
+	}
+	for _, algo := range knownHostKeyAlgorithms(known) {
+		add(algo)
+	}
+	for _, algo := range defaultHostKeyAlgorithms {
+		add(algo)
+	}
+	return algorithms
+}
+
+func knownHostKeyAlgorithms(known map[string]struct{}) []string {
+	var algorithms []string
+	addKnown := func(keyType string, values ...string) {
+		if _, ok := known[keyType]; ok {
+			algorithms = append(algorithms, values...)
+		}
+	}
+
+	addKnown(ssh.CertAlgoED25519v01, ssh.CertAlgoED25519v01)
+	addKnown(ssh.CertAlgoSKED25519v01, ssh.CertAlgoSKED25519v01)
+	addKnown(ssh.CertAlgoECDSA256v01, ssh.CertAlgoECDSA256v01)
+	addKnown(ssh.CertAlgoECDSA384v01, ssh.CertAlgoECDSA384v01)
+	addKnown(ssh.CertAlgoECDSA521v01, ssh.CertAlgoECDSA521v01)
+	addKnown(ssh.CertAlgoSKECDSA256v01, ssh.CertAlgoSKECDSA256v01)
+	addKnown(ssh.CertAlgoRSAv01, ssh.CertAlgoRSASHA256v01, ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSAv01)
+	addKnown(ssh.InsecureCertAlgoDSAv01, ssh.InsecureCertAlgoDSAv01)
+	addKnown(ssh.KeyAlgoED25519, ssh.KeyAlgoED25519)
+	addKnown(ssh.KeyAlgoSKED25519, ssh.KeyAlgoSKED25519)
+	addKnown(ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA256)
+	addKnown(ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA384)
+	addKnown(ssh.KeyAlgoECDSA521, ssh.KeyAlgoECDSA521)
+	addKnown(ssh.KeyAlgoSKECDSA256, ssh.KeyAlgoSKECDSA256)
+	addKnown(ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA)
+	addKnown(ssh.InsecureKeyAlgoDSA, ssh.InsecureKeyAlgoDSA)
+
+	for keyType := range known {
+		if !knownHostKeyTypeIsHandled(keyType) {
+			algorithms = append(algorithms, keyType)
+		}
+	}
+	return algorithms
+}
+
+func knownHostKeyTypeIsHandled(keyType string) bool {
+	switch keyType {
+	case ssh.CertAlgoRSAv01,
+		ssh.InsecureCertAlgoDSAv01,
+		ssh.CertAlgoECDSA256v01,
+		ssh.CertAlgoECDSA384v01,
+		ssh.CertAlgoECDSA521v01,
+		ssh.CertAlgoED25519v01,
+		ssh.CertAlgoSKECDSA256v01,
+		ssh.CertAlgoSKED25519v01,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+		ssh.KeyAlgoRSA,
+		ssh.InsecureKeyAlgoDSA,
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoSKECDSA256,
+		ssh.KeyAlgoSKED25519:
+		return true
+	default:
+		return false
+	}
 }
 
 func ensureKnownHostsFile(path string) error {
