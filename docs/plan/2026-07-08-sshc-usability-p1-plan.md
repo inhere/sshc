@@ -530,7 +530,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(config): add group defaults
 ```
 
-### P1.3: check 主机健康检查
+### P1.3: check 主机健康检查（已完成）
 
 目标：
 
@@ -605,6 +605,16 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe check --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- 新增 `core.CheckHost`，覆盖本地配置、key 文件、known_hosts 路径、TCP、SSH handshake/auth 状态。
+- 新增 `sshc check`，支持 target、`--hosts`、`--group`、`--tag`、`--all`、`--parallel`、`--json`、`--timeout`。
+- 初版保持 source 互斥；`--group` 与 `--tag` 不组合，避免语义复杂化。
+- `command_proxy` 主机初版只检查本地配置完整性，via 主机需要单独 check。
+- `known_hosts` 检查不弹交互信任提示；unknown/mismatch 会失败并提示通过 `host trust` 处理。
+- 已更新 README/README.zh-CN 的 check 示例。
+- 验证通过：`go test ./...`、`go build -o tmp\sshc-p1.exe ./cmd/sshc`、`.\tmp\sshc-p1.exe check --help`。
 
 提交：
 

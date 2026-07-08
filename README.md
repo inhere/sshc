@@ -78,6 +78,7 @@ sshc host add --name lxc-app --backend command_proxy --via pve-host --run-templa
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
 sshc run lxc-app -- hostname
+sshc check --tag app
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -94,6 +95,7 @@ sshc cfg|config         Manage config
 sshc auth|cred          Manage credential profiles
 sshc host|hosts         Manage hosts
 sshc group|groups       Manage group defaults
+sshc check              Check host connectivity
 sshc run|exec           Run a remote command
 sshc batch-run|brun     Run a command or script on multiple hosts
 sshc login              Open an interactive SSH shell
@@ -260,6 +262,22 @@ specified tags.
 
 Hosts from `~/.ssh/config` are also listed when they have `HostName`, `User`, and
 `IdentityFile`.
+
+### Check Hosts
+
+```bash
+sshc check devhost
+sshc check --hosts devhost,dbhost
+sshc check --group testing
+sshc check --tag app
+sshc check --all --parallel 10
+sshc check --json --tag app
+```
+
+`check` verifies host resolution, local key files, `known_hosts` path, TCP
+connectivity, SSH handshake, and authentication. For `command_proxy` hosts it
+checks local proxy configuration; check the `via` host separately for SSH
+reachability.
 
 ### Run Commands
 

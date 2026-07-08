@@ -74,6 +74,7 @@ sshc host add --name lxc-app --backend command_proxy --via pve-host --run-templa
 sshc run devhost --script ./deploy.sh
 sshc run inner-db --jump bastion -- hostname
 sshc run lxc-app -- hostname
+sshc check --tag app
 sshc batch-run --hosts devhost,web-2 -- uptime
 sshc scp -l ./dist -r /opt/app/dist devhost
 sshc download -r /var/log/my-app/app.log -l tmp/logs/ devhost --sha256
@@ -90,6 +91,7 @@ sshc cfg|config      管理本地配置
 sshc auth|cred       管理可复用凭证
 sshc host|hosts      管理主机
 sshc group|groups    管理分组默认配置
+sshc check           检查主机连接状态
 sshc run|exec        执行远程命令
 sshc batch-run|brun  在多台主机上执行命令或脚本
 sshc login           打开交互式 SSH shell
@@ -253,6 +255,21 @@ sshc list --tag testing
 
 如果 `~/.ssh/config` 中的主机同时配置了 `HostName`、`User` 和 `IdentityFile`，
 也会被读取展示。
+
+### 检查主机
+
+```bash
+sshc check devhost
+sshc check --hosts devhost,dbhost
+sshc check --group testing
+sshc check --tag app
+sshc check --all --parallel 10
+sshc check --json --tag app
+```
+
+`check` 会检查主机解析、本地 key 文件、`known_hosts` 路径、TCP 连通性、
+SSH handshake 和认证。`command_proxy` 主机只检查本地代理配置；它的 `via`
+主机连通性请单独检查。
 
 ### 执行远程命令
 
