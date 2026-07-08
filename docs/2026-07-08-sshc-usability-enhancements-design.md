@@ -5,6 +5,7 @@
 | 版本 | 日期 | 修改人 | 调整说明 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-08 | Codex | 初版，整理与同类 SSH 工具对比后的可优化功能点和优先级 |
+| v0.2 | 2026-07-08 | Codex | 补充 `task run`、`run --task`、`batch-run --task` 的命令关系、互斥规则、覆盖优先级和日志字段 |
 
 ## 背景
 
@@ -133,6 +134,11 @@ sshc check --group testing --json
 
 建议命令名使用 `task`，`snippet` 可作为后续 alias 或文档概念，不建议两个资源并存。
 
+任务应同时支持两个入口：
+
+- `sshc task run <task-name> <host>`：任务优先，适合先确定要做什么，再选择目标。
+- `sshc run <host> --task <task-name>`：主机优先，适合沿用现有 `run` 心智，在目标主机上执行已保存任务。
+
 ```bash
 sshc task add restart-nginx -- sudo systemctl restart nginx
 sshc task add app-status --cwd /opt/app -- ./status.sh
@@ -141,7 +147,17 @@ sshc task show restart-nginx
 sshc task rm restart-nginx --yes
 sshc task run restart-nginx devhost
 sshc task run restart-nginx --group testing --parallel 5
+sshc run devhost --task restart-nginx
 ```
+
+后续可增强批量入口：
+
+```bash
+sshc batch-run --group testing --task restart-nginx
+sshc batch-run --hosts devhost,web-2 --task deploy --var version=v1.2.3
+```
+
+不建议初版支持 `sshc run --group testing --task restart-nginx`。`run` 保持单主机语义，批量场景走 `task run ... --group` 或 `batch-run --task`。
 
 ### 配置模型
 
@@ -167,6 +183,8 @@ sshc task run restart-nginx --group testing --parallel 5
 
 ```bash
 sshc task run deploy devhost --var version=v1.2.3
+sshc run devhost --task deploy --var version=v1.2.3
+sshc batch-run --group testing --task deploy --var version=v1.2.3
 ```
 
 模板：
@@ -177,11 +195,103 @@ cd /opt/app && ./deploy.sh {{version}}
 
 变量必须走显式 `--var`，避免直接拼接自由 shell 造成不可控注入。
 
+缺少变量时必须报错，不做空字符串替换：
+
+```text
+task "deploy" requires variable "version"
+```
+
+### 参数覆盖规则
+
+task 可以保存 run 相关默认参数：
+
+```json
+{
+  "name": "restart-nginx",
+  "command": "systemctl restart nginx",
+  "sudo": true,
+  "cwd": "",
+  "env": {
+    "APP_ENV": "prod"
+  },
+  "timeout": "30s"
+}
+```
+
+执行时允许命令行覆盖 run 参数：
+
+```bash
+sshc run devhost --task restart-nginx --timeout 10s
+sshc run devhost --task app-status --cwd /opt/app-v2
+sshc run devhost --task deploy -e VERSION=v1.2.3
+sshc task run deploy devhost --timeout 60s -e VERSION=v1.2.3
+```
+
+推荐优先级：
+
+```text
+命令行显式参数 > task 默认参数 > host/group/auth/defaults > 内置默认值
+```
+
+说明：
+
+- task 只影响 run 相关参数，例如 command、cwd、env、timeout、sudo。
+- task 不影响 host 认证解析，不覆盖 host/auth/group 的用户、密码、key、jump。
+- 命令行 `-e/--env` 与 task `env` 合并时，命令行同名 key 覆盖 task。
+
+### 互斥规则
+
+`run --task` 与 inline remote command 互斥：
+
+```bash
+sshc run devhost --task restart-nginx -- uptime
+```
+
+应报错：
+
+```text
+--task cannot be used together with inline remote command
+```
+
+`run --task` 与 `--script` 也互斥：
+
+```bash
+sshc run devhost --task restart-nginx --script ./deploy.sh
+```
+
+应报错：
+
+```text
+--task cannot be used together with --script
+```
+
+同样，`batch-run --task` 与 inline remote command、`--script` 互斥。
+
 ### 与 run/batch-run 的关系
 
 - `task run NAME HOST` 内部复用 `run`。
 - `task run NAME --group GROUP` 内部复用 `batch-run`。
+- `run HOST --task NAME` 解析 task 后复用现有 `run` 执行链路。
+- `batch-run --task NAME` 解析 task 后复用现有 `batch-run` 执行链路。
+- 底层应统一解析为一个 effective run request，避免 `task run` 和 `run --task` 两套逻辑漂移。
 - 每次执行仍写入 per-host run log，并记录 `task_name`。
+
+### 日志字段
+
+run log 建议增加：
+
+```json
+{
+  "task_name": "restart-nginx",
+  "task_command": "systemctl restart nginx"
+}
+```
+
+其中：
+
+- `task_name` 必须记录，方便后续按 task 查询日志。
+- `task_command` 可以记录最终渲染后的命令；如果担心 JSONL 太长，可以只在 verbose 或外置 output 文件中保存。
+- 后续可支持 `sshc log --task restart-nginx`，但不要求 task 初版实现。
 
 ## P1: group defaults / host template
 
