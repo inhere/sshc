@@ -16,7 +16,7 @@ import (
 	"github.com/gookit/gcli/v3"
 )
 
-const managementCategory = "Management"
+const managementCategory = "Management Commands"
 
 var runEditor = runConfigEditor
 

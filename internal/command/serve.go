@@ -27,6 +27,7 @@ func NewServeCmd() *gcli.Command {
 		Name: "serve",
 		Desc: "start local web console",
 		Aliases: []string{"web"},
+		Category: managementCategory,
 		Help: strings.TrimSpace(`
 Examples:
   sshc serve --addr 127.0.0.1:8822
