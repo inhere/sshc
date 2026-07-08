@@ -5,6 +5,7 @@ MAIN_DIR := ./cmd/sshc
 GOEXE = $(shell go env GOEXE)
 GOPATH = $(shell go env GOPATH)
 BINARY  := $(APP)$(GOEXE)
+GO_TAGS ?= embed_web
 
 # Build metadata
 BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S)
@@ -16,9 +17,10 @@ LDFLAGS := -s -w \
 	-X main.GitCommit=$(GIT_HASH) \
 	-X 'main.BuildDate=$(BUILD_TIME)'
 
-.PHONY: all build backend clean help latest
+.PHONY: all build web-dist install run clean clean-dist help latest build-all dump-info latest-yaml build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows
 
 DIST_DIR := dist
+WEB_DIR := web
 # 注：值会经 `echo "description: $(DESCRIPTION)"` 写入 latest.yaml，避免 `;`/`:`/引号等
 # shell/YAML 元字符（否则 recipe 展开后会被截断成多条命令）。
 DESCRIPTION := small SSH helper CLI for managing hosts, running remote commands.
@@ -27,13 +29,17 @@ DESCRIPTION := small SSH helper CLI for managing hosts, running remote commands.
 all: build
 
 ## build: build Go binary (current platform)
-build:
+build: web-dist
 	@mkdir -p $(DIST_DIR)
-	@echo "🐹 Building Go binary ($(VERSION) @ $(GIT_HASH))..."
-	go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY) $(MAIN_DIR)
+	@echo "🐹 Building Go binary with embedded web assets ($(VERSION) @ $(GIT_HASH))..."
+	go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY) $(MAIN_DIR)
 	@echo "📦 Compressing binary..."
 	@upx -6 --no-progress $(DIST_DIR)/$(BINARY)
 	@echo "✅ Binary: $(DIST_DIR)/$(BINARY) ($$(du -sh $(DIST_DIR)/$(BINARY) | cut -f1))"
+
+## web-dist: build Web UI assets for embedding
+web-dist:
+	npm --prefix $(WEB_DIR) run build
 
 ## install: install Go binary to $GOPATH/bin
 install: build
@@ -47,7 +53,7 @@ run: build
 # ─── Cross Compilation ────────────────────────────────────────────────────────
 
 ## build-all: cross-compile for all platforms
-build-all: clean-dist dump-info build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows latest-yaml
+build-all: clean-dist dump-info web-dist build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows latest-yaml
 	ls -lh $(DIST_DIR)
 
 ## dump-info: dump build info
@@ -69,43 +75,43 @@ latest-yaml:
 	@echo "   → $(DIST_DIR)/latest.yaml"
 
 ## build-linux: compile for Linux amd64
-build-linux:
+build-linux: web-dist
 	@echo "🐧 linux/amd64..."
 	@mkdir -p $(DIST_DIR)
-	@GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-linux-amd64 $(MAIN_DIR)
+	@GOOS=linux GOARCH=amd64 go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-linux-amd64 $(MAIN_DIR)
 	upx -6 --no-progress $(DIST_DIR)/$(APP)-linux-amd64
 	chmod +x $(DIST_DIR)/$(APP)-linux-amd64
 	@echo "   → $(DIST_DIR)/$(APP)-linux-amd64"
 
 ## build-linux-arm64: compile for Linux arm64
-build-linux-arm64:
+build-linux-arm64: web-dist
 	@echo "🐧 linux/arm64..."
 	@mkdir -p $(DIST_DIR)
-	@GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-linux-arm64 $(MAIN_DIR)
+	@GOOS=linux GOARCH=arm64 go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-linux-arm64 $(MAIN_DIR)
 	upx -6 --no-progress $(DIST_DIR)/$(APP)-linux-arm64
 	chmod +x $(DIST_DIR)/$(APP)-linux-arm64
 	@echo "   → $(DIST_DIR)/$(APP)-linux-arm64"
 
 ## build-darwin: compile for macOS amd64
-build-darwin:
+build-darwin: web-dist
 	@echo "🍎 darwin/amd64..."
 	@mkdir -p $(DIST_DIR)
-	@GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-darwin-amd64 $(MAIN_DIR)
+	@GOOS=darwin GOARCH=amd64 go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-darwin-amd64 $(MAIN_DIR)
 	@echo "   → $(DIST_DIR)/$(APP)-darwin-amd64"
 
 ## build-darwin-arm64: compile for macOS Apple Silicon
-build-darwin-arm64:
+build-darwin-arm64: web-dist
 	@echo "🍎 darwin/arm64..."
 	@mkdir -p $(DIST_DIR)
-	@GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-darwin-arm64 $(MAIN_DIR)
+	@GOOS=darwin GOARCH=arm64 go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-darwin-arm64 $(MAIN_DIR)
 	# upx -6 --no-progress $(DIST_DIR)/$(APP)-darwin-arm64 # 压缩有问题在 macos 12+
 	@echo "   → $(DIST_DIR)/$(APP)-darwin-arm64"
 
 ## build-windows: compile for Windows amd64
-build-windows:
+build-windows: web-dist
 	@echo "🪟 windows/amd64..."
 	@mkdir -p $(DIST_DIR)
-	@GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-windows-amd64.exe $(MAIN_DIR)
+	@GOOS=windows GOARCH=amd64 go build -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP)-windows-amd64.exe $(MAIN_DIR)
 	upx -6 --no-progress $(DIST_DIR)/$(APP)-windows-amd64.exe
 	@echo "   → $(DIST_DIR)/$(APP)-windows-amd64.exe"
 
