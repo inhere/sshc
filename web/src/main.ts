@@ -530,7 +530,7 @@ async function renderLogs() {
       <option value="">All hosts</option>
       ${hosts.map((host) => `<option value="${escapeAttr(host.name)}">${escapeHTML(hostOptionLabel(host))}</option>`).join("")}
     </select>
-    <input id="log-match" class="compact-input" placeholder="match">
+    <input id="log-match" class="compact-input log-match-input" placeholder="match">
     <button id="reload-logs" type="button">Search</button>
   `);
   const load = async () => {
@@ -547,11 +547,24 @@ async function renderLogs() {
           <tbody>${records.map(logRow).join("") || `<tr><td colspan="6" class="empty">No logs</td></tr>`}</tbody>
         </table>
       </div>
-      <pre id="log-output" class="output" hidden></pre>
+      <div id="log-output-backdrop" class="log-output-backdrop" hidden></div>
+      <aside id="log-output-panel" class="log-output-panel" hidden aria-label="Log output">
+        <header class="log-output-header">
+          <div>
+            <span class="view-route">run output</span>
+            <strong id="log-output-title">Output</strong>
+            <small id="log-output-meta"></small>
+          </div>
+          <button id="log-output-close" type="button">Close</button>
+        </header>
+        <pre id="log-output" class="output"></pre>
+      </aside>
     `);
     for (const button of queryAll<HTMLButtonElement>("[data-log-output]")) {
       button.addEventListener("click", () => void showLogOutput(button.dataset.logOutput || ""));
     }
+    query("#log-output-close").addEventListener("click", closeLogOutput);
+    query("#log-output-backdrop").addEventListener("click", closeLogOutput);
   };
   query("#reload-logs").addEventListener("click", () => void load());
   await load();
@@ -559,23 +572,72 @@ async function renderLogs() {
 
 function logRow(record: LogRecord) {
   const id = String(record.task_id || "");
+  const hasOutput = logRecordHasOutput(record);
   return `
     <tr>
       <td>${escapeHTML(String(record.time || record.started_at || ""))}</td>
       <td>${escapeHTML(String(record.host || record.target || ""))}</td>
       <td><span class="status ${record.status === "success" ? "ok" : "bad"}">${escapeHTML(String(record.status || ""))}</span></td>
       <td class="mono">${escapeHTML(String(record.command || ""))}</td>
-      <td>${escapeHTML(String(record.duration_ms ?? ""))}</td>
-      <td class="row-actions">${id ? `<button data-log-output="${escapeAttr(id)}" type="button">Output</button>` : ""}</td>
+      <td>${escapeHTML(formatDuration(record.duration_ms))}</td>
+      <td class="row-actions">${id && hasOutput ? `<button data-log-output="${escapeAttr(id)}" type="button">Output</button>` : ""}</td>
     </tr>
   `;
 }
 
 async function showLogOutput(taskID: string) {
+  const panel = query<HTMLElement>("#log-output-panel");
+  const backdrop = query<HTMLElement>("#log-output-backdrop");
   const output = query<HTMLPreElement>("#log-output");
-  const data = await apiGet<{ output: string }>(`/api/logs/${encodeURIComponent(taskID)}/output?tail=200`);
-  output.hidden = false;
-  output.textContent = data.output || "";
+  const title = query<HTMLElement>("#log-output-title");
+  const meta = query<HTMLElement>("#log-output-meta");
+  panel.hidden = false;
+  backdrop.hidden = false;
+  output.textContent = "Loading...";
+  title.textContent = taskID;
+  meta.textContent = "tail 200 lines";
+  try {
+    const data = await apiGet<{ output: string }>(`/api/logs/${encodeURIComponent(taskID)}/output?tail=200`);
+    output.textContent = data.output || "";
+  } catch (err) {
+    output.textContent = err instanceof Error ? err.message : String(err);
+  }
+}
+
+function closeLogOutput() {
+  const panel = app.querySelector<HTMLElement>("#log-output-panel");
+  const backdrop = app.querySelector<HTMLElement>("#log-output-backdrop");
+  if (panel) panel.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+}
+
+function logRecordHasOutput(record: LogRecord) {
+  return record.output_inline === true || String(record.output_file || "").trim() !== "";
+}
+
+function formatDuration(value: unknown) {
+  const ms = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  if (ms < 1000) {
+    return `${Math.round(ms)} ms`;
+  }
+  if (ms < 60_000) {
+    return `${trimDurationNumber(ms / 1000)} s`;
+  }
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return remainMinutes > 0 ? `${hours}h ${remainMinutes}m` : `${hours}h`;
+}
+
+function trimDurationNumber(value: number) {
+  return value.toFixed(value < 10 ? 2 : 1).replace(/\.0+$/, "").replace(/(\.\d)0$/, "$1");
 }
 
 async function renderConfig() {

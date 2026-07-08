@@ -348,6 +348,10 @@ select {
   width: 150px;
 }
 
+.log-match-input {
+  width: min(360px, 34vw);
+}
+
 .host-select {
   width: min(320px, 42vw);
 }
@@ -535,6 +539,89 @@ th {
   color: var(--terminal-ink);
 }
 
+.log-output-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(16, 24, 32, 0.26);
+}
+
+.log-output-panel {
+  position: fixed;
+  z-index: 31;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(760px, 72vw);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid rgba(216, 222, 230, 0.18);
+  background: var(--terminal);
+  color: var(--terminal-ink);
+  box-shadow: 24px 0 54px rgba(16, 24, 32, 0.32);
+}
+
+.log-output-panel[hidden],
+.log-output-backdrop[hidden] {
+  display: none;
+}
+
+.log-output-header {
+  min-height: 62px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(216, 222, 230, 0.14);
+}
+
+.log-output-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.log-output-header strong,
+.log-output-header small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-output-header strong {
+  color: #dbeafe;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 14px;
+}
+
+.log-output-header small {
+  color: #9fb2c3;
+  font-size: 12px;
+}
+
+.log-output-header .view-route {
+  color: #9fe0bf;
+}
+
+.log-output-header button {
+  flex: 0 0 auto;
+  border-color: rgba(216, 222, 230, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #dbeafe;
+}
+
+.log-output-panel .output {
+  margin: 0;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  padding: 14px;
+  background: transparent;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -669,6 +756,10 @@ th {
   .terminal-toolbar {
     grid-template-columns: 1fr 1fr;
   }
+
+  .log-match-input {
+    width: min(300px, 42vw);
+  }
 }
 
 @media (max-width: 560px) {
@@ -681,5 +772,14 @@ th {
   .actions,
   .row-actions {
     justify-content: flex-start;
+  }
+
+  .log-match-input,
+  .host-select {
+    width: 100%;
+  }
+
+  .log-output-panel {
+    width: 100vw;
   }
 }
