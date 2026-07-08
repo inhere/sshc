@@ -23,6 +23,13 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Setup ENV
         # https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#setting-an-environment-variable
         run: |
@@ -32,6 +39,10 @@ jobs:
       - name: Mod tidy
         run: |
           go mod tidy
+
+      - name: Install web dependencies
+        run: |
+          npm ci --prefix web --include=dev
 
       - name: Build bin package
         run: |
