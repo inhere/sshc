@@ -592,14 +592,12 @@ SSHC_CONFIG file path > SSHC_CONFIG_DIR directory > ~/.config/sshc
 ```
 
 `SSHC_CONFIG_DIR` changes the default config root used for
-`sshc.config.json`, legacy `hosts.json`, the local password encryption key, and
-relative `logs_path` values. It is useful for tests, temporary sandboxes, and
-running multiple isolated sshc configurations.
+`sshc.config.json`, the local password encryption key, and relative
+`logs_path` values. It is useful for tests, temporary sandboxes, and running
+multiple isolated sshc configurations.
 
 Saved hosts override entries loaded from `~/.ssh/config` when the name or IP is
 the same.
-For compatibility, `~/.config/sshc/hosts.json` is still read when the new default
-config file does not exist.
 
 ### Export And Import Config
 

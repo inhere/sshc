@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-04 | Codex | 初版，聚焦配置结构、凭证复用、敏感字段、安全边界和实施顺序 |
 | v0.2 | 2026-07-05 | Codex | 对齐当前实现，cfg get/set/unset 已支持 defaults.* 白名单字段，export/import 转入下一阶段计划 |
 | v0.3 | 2026-07-05 | Codex | 标记 cfg export/import 已由独立计划完成，更新后续结论 |
+| v0.4 | 2026-07-08 | Codex | 移除 legacy hosts.json 文件名兼容，当前仅使用 sshc.config.json |
 
 ## 背景
 
@@ -512,7 +513,9 @@ sshc auth rm dev-root
 - 缺少 `defaults` 时使用内置默认值。
 - 缺少 `auth_profiles` 时视为空列表。
 - host 内联 `user/password_enc/key_path` 继续可用。
-- legacy `hosts.json` 读取兼容继续保留。
+
+文件名不再兼容 legacy `hosts.json`。当前默认配置文件固定为
+`~/.config/sshc/sshc.config.json`，`SSHC_CONFIG_DIR` 也只改变该文件所在目录。
 
 ### 写入新结构
 
@@ -567,7 +570,7 @@ internal/core/password_crypto.go 密码加解密，扩展 auth profile 支持
 - 新结构配置读取成功。
 - 空配置返回默认结构。
 - `SSHC_CONFIG` 覆盖路径仍有效。
-- legacy `hosts.json` 兼容读取仍有效。
+- `hosts.json` 不再被兼容读取。
 - `SaveConfig` 写入 `version: 1`。
 - host 内联 password 保存为 `password_enc`。
 - auth profile password 保存为 `password_enc`。

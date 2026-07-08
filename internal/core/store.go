@@ -14,13 +14,12 @@ import (
 )
 
 const (
-	DefaultSSHPort       = 22
-	DefaultGroup         = "default"
-	ConfigVersion        = 1
-	ConfigEnvKey         = "SSHC_CONFIG"
-	ConfigDirEnvKey      = "SSHC_CONFIG_DIR"
-	ConfigFileName       = "sshc.config.json"
-	LegacyConfigFileName = "hosts.json"
+	DefaultSSHPort  = 22
+	DefaultGroup    = "default"
+	ConfigVersion   = 1
+	ConfigEnvKey    = "SSHC_CONFIG"
+	ConfigDirEnvKey = "SSHC_CONFIG_DIR"
+	ConfigFileName  = "sshc.config.json"
 
 	HostBackendSSH          = "ssh"
 	HostBackendCommandProxy = "command_proxy"
@@ -554,14 +553,6 @@ func ConfigPathSource() string {
 	return "default"
 }
 
-func LegacyStorePath() (string, error) {
-	dir, err := configRoot()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, LegacyConfigFileName), nil
-}
-
 func readConfigFile() (string, []byte, error) {
 	path, err := StorePath()
 	if err != nil {
@@ -574,22 +565,7 @@ func readConfigFile() (string, []byte, error) {
 	if !os.IsNotExist(err) {
 		return path, nil, err
 	}
-	if strings.TrimSpace(os.Getenv(ConfigEnvKey)) != "" {
-		return path, nil, nil
-	}
-
-	legacyPath, legacyErr := LegacyStorePath()
-	if legacyErr != nil {
-		return "", nil, legacyErr
-	}
-	data, legacyErr = os.ReadFile(legacyPath)
-	if legacyErr == nil {
-		return legacyPath, data, nil
-	}
-	if os.IsNotExist(legacyErr) {
-		return path, nil, nil
-	}
-	return legacyPath, nil, legacyErr
+	return path, nil, nil
 }
 
 func ReadConfigFile() (string, []byte, error) {

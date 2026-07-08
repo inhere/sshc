@@ -93,11 +93,11 @@ docs: add sshc deploy examples
 | --- | --- | --- |
 | run host 非完整匹配 | 纳入 P1 前置小阶段 | 对所有命令都有帮助，改动小，能改善日常使用 |
 | add interactive | 纳入 P6 | 属于主机配置录入体验，依赖 cliui，引入新交互模式 |
-| add pwd 加密 | 纳入 P6，但需要单独设计 | 涉及 hosts.json 兼容、迁移、密钥来源和安全边界 |
+| add pwd 加密 | 纳入 P6，但需要单独设计 | 涉及配置重写、密钥来源和安全边界 |
 | add 从 clipboard 读取 ip/user/pwd | 纳入 P6 | 与 interactive/add 批量录入同类，需定义输入格式 |
 | 支持 keypath file | 纳入 P6，优先级较高 | key 登录是 SSH 常规能力，会影响 Host/Auth 模型 |
 | 新增 remark/group | 纳入 P6 | 配置模型扩展，可与 list/log/filter 后续联动 |
-| 支持读取 `~/.ssh/config` | 纳入 P6 或独立 P6.5 | 需要解析 SSH config，和显式 hosts.json 的优先级要明确 |
+| 支持读取 `~/.ssh/config` | 纳入 P6 或独立 P6.5 | 需要解析 SSH config，和显式 `sshc.config.json` 的优先级要明确 |
 | scp local-path 支持 glob/多个文件 | 纳入 P4 后半段 | 与传输增强相关，但路径规则和错误模型要独立设计 |
 | scp `--remove-dir` | 纳入 P4 | 部署目录覆盖常用，但默认不能破坏远端目录 |
 | login/connect PTY | 纳入 P7 | 需要 PTY、终端模式和日志策略，和非交互 run 差异较大 |
@@ -377,7 +377,7 @@ sshc download -r /var/log/ylpy/cv-http.log -l tmp/cv-http.log devhost
 目标：
 
 - 改善 host 配置录入、认证方式和组织能力。
-- 兼容现有 `~/.config/sshc/hosts.json`。
+- 使用固定配置文件 `~/.config/sshc/sshc.config.json`。
 - 为后续分组过滤、备注搜索、读取已有 SSH 配置打基础。
 
 命令面草案：
@@ -411,11 +411,11 @@ sshc list --group testing
 - P6.2: `add -I` 交互录入，引入 `github.com/gookit/cliui`。
 - P6.3: clipboard 导入，先定义固定格式再实现。
 - P6.4: password 加密，单独设计密钥来源、迁移和降级策略。
-- P6.5: 读取 `~/.ssh/config`，明确 hosts.json 与 ssh config 的优先级。
+- P6.5: 读取 `~/.ssh/config`，明确 `sshc.config.json` 与 ssh config 的优先级。
 
 验收：
 
-- 旧 hosts.json 能正常读取。
+- `sshc.config.json` 旧结构 JSON shape 能正常读取。
 - 新字段保存后 list/log/run/scp/download 不受影响。
 - key path 认证可执行 run。
 - 未配置 password 但配置 key path 时不再报 password required。
@@ -511,7 +511,7 @@ sshc run devhost --json -- systemctl is-active app
 原因：
 
 - 需要决定密钥来源，例如 OS keyring、机器本地密钥、用户口令派生、还是仅做弱混淆。
-- 会影响 hosts.json 迁移、备份恢复、跨机器复制配置等行为。
+- 会影响配置迁移、备份恢复、跨机器复制配置等行为。
 - 做不好容易形成“看似安全但实际不可控”的状态。
 
 建议先完成 key path 支持和交互录入，再单独设计。

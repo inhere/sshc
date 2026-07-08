@@ -154,28 +154,6 @@ func TestLoadConfigVersionedShape(t *testing.T) {
 	}
 }
 
-func TestLoadConfigFromLegacyHostsFile(t *testing.T) {
-	t.Setenv(ConfigEnvKey, "")
-	home := filepath.Join(t.TempDir(), "home")
-	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
-
-	legacyPath := filepath.Join(home, ".config", "sshc", LegacyConfigFileName)
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacyPath, []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}`+"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	config, err := LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.Version != ConfigVersion || len(config.Hosts) != 1 || config.Hosts[0].Name != "devhost" {
-		t.Fatalf("config = %+v", config)
-	}
-}
-
 func TestLoadConfigWithEnvPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom-config.json")
 	t.Setenv(ConfigEnvKey, path)
@@ -435,13 +413,6 @@ func TestStorePathUsesConfigDirEnv(t *testing.T) {
 	if want := filepath.Join(dir, ConfigFileName); path != want {
 		t.Fatalf("store path = %q, want %q", path, want)
 	}
-	legacyPath, err := LegacyStorePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(dir, LegacyConfigFileName); legacyPath != want {
-		t.Fatalf("legacy path = %q, want %q", legacyPath, want)
-	}
 	keyPath, err := PasswordKeyPath()
 	if err != nil {
 		t.Fatal(err)
@@ -472,16 +443,16 @@ func TestConfigEnvOverridesConfigDirEnv(t *testing.T) {
 	}
 }
 
-func TestLoadConfigFromLegacyHostsFileInConfigDir(t *testing.T) {
+func TestLoadConfigIgnoresHostsJSONInConfigDir(t *testing.T) {
 	t.Setenv(ConfigEnvKey, "")
 	dir := filepath.Join(t.TempDir(), "sshc-config")
 	t.Setenv(ConfigDirEnvKey, dir)
 
-	legacyPath := filepath.Join(dir, LegacyConfigFileName)
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+	hostsPath := filepath.Join(dir, "hosts.json")
+	if err := os.MkdirAll(filepath.Dir(hostsPath), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(legacyPath, []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}`+"\n"), 0600); err != nil {
+	if err := os.WriteFile(hostsPath, []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}`+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -489,23 +460,23 @@ func TestLoadConfigFromLegacyHostsFileInConfigDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Hosts) != 1 || config.Hosts[0].Name != "devhost" {
+	if config.Version != ConfigVersion || len(config.Hosts) != 0 {
 		t.Fatalf("config = %+v", config)
 	}
 }
 
-func TestLoadStoreSupportsLegacyHostsJSON(t *testing.T) {
+func TestLoadStoreIgnoresHostsJSON(t *testing.T) {
 	t.Setenv(ConfigEnvKey, "")
 	t.Setenv(ConfigDirEnvKey, "")
 	home := filepath.Join(t.TempDir(), "home")
 	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 
-	legacyPath := filepath.Join(home, ".config", "sshc", LegacyConfigFileName)
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+	hostsPath := filepath.Join(home, ".config", "sshc", "hosts.json")
+	if err := os.MkdirAll(filepath.Dir(hostsPath), 0700); err != nil {
 		t.Fatal(err)
 	}
 	data := []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}` + "\n")
-	if err := os.WriteFile(legacyPath, data, 0600); err != nil {
+	if err := os.WriteFile(hostsPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -513,7 +484,7 @@ func TestLoadStoreSupportsLegacyHostsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(store.Hosts) != 1 || store.Hosts[0].Name != "devhost" {
+	if len(store.Hosts) != 0 {
 		t.Fatalf("loaded store = %+v", store)
 	}
 }

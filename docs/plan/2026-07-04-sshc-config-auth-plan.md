@@ -52,7 +52,7 @@
 
 | 文件 | 当前职责 | 本计划影响 |
 | --- | --- | --- |
-| `internal/core/store.go` | `Host`、`Store`、配置路径、load/save、legacy `hosts.json` 读取、`~/.ssh/config` 解析 | 拆出 config 模型和 store 逻辑，保留兼容入口 |
+| `internal/core/store.go` | `Host`、`Store`、配置路径、load/save、`~/.ssh/config` 解析 | 拆出 config 模型和 store 逻辑，保留旧结构 JSON shape 兼容 |
 | `internal/core/password_crypto.go` | host password 加密、解密和 key file 管理 | 扩展到 auth profile |
 | `internal/core/ssh.go` | SSH client、run/login/upload/download | 接入 effective host 或兼容转换 |
 | `internal/core/run_logs.go` | run log 路径读取 `logs_path` | 改为读取新 config settings |
@@ -231,9 +231,7 @@ internal/core/config_validate.go
 
 - `ConfigEnvKey`
 - `ConfigFileName`
-- `LegacyConfigFileName`
 - `StorePath()`
-- `LegacyStorePath()`
 - `configRoot()`
 
 核心结构：
@@ -260,7 +258,7 @@ Host
 3. 新增 `LoadConfig()`：
    - 优先读取 `SSHC_CONFIG`。
    - 默认读取 `~/.config/sshc/sshc.config.json`。
-   - 默认文件不存在且未设置 `SSHC_CONFIG` 时继续读取 legacy `hosts.json`。
+   - 默认文件不存在时返回空 config，不再读取 legacy `hosts.json`。
    - 空文件返回空 config。
 4. 新增 `SaveConfig(*Config)`：
    - 创建配置目录。
@@ -278,7 +276,7 @@ Host
 
 - 旧结构 JSON 可读取。
 - 新结构 JSON 可读取。
-- legacy `hosts.json` 可读取。
+- legacy `hosts.json` 不再被读取。
 - `SSHC_CONFIG` 覆盖路径仍有效。
 - 保存后 JSON 包含 `version: 1`。
 - 既有 host `password_enc` 配置仍能读取并解密到内存态。
@@ -289,7 +287,7 @@ Host
 ```text
 TestLoadConfigLegacyStoreShape
 TestLoadConfigVersionedShape
-TestLoadConfigFromLegacyHostsFile
+TestLoadConfigIgnoresHostsJSON
 TestLoadConfigWithEnvPath
 TestSaveConfigWritesVersionOne
 TestLoadStoreStillDecryptsHostPasswordEnc
