@@ -7,6 +7,7 @@
 | v0.1 | 2026-07-08 | Codex | 初版，整理与同类 SSH 工具对比后的可优化功能点和优先级 |
 | v0.2 | 2026-07-08 | Codex | 补充 `task run`、`run --task`、`batch-run --task` 的命令关系、互斥规则、覆盖优先级和日志字段 |
 | v0.3 | 2026-07-08 | Codex | 将 `group set` 和后续 `host set` 统一为 `key=value...` 多字段设置语法 |
+| v0.4 | 2026-07-08 | Codex | 标记 P1 易用性计划中已完成的 check、tags、group defaults、ssh config import、batch summary 和 rerun failed |
 
 ## 背景
 
@@ -79,6 +80,27 @@
 | P3 | MCP server | 适配 AI Agent，但需安全设计 | 后续 |
 | P3 | PVE/Docker discover | 与 command_proxy 联动，但易膨胀 | 后续 |
 | P3 | 安全体检增强 | 提升开源可信度 | 后续 |
+
+## 当前实施状态
+
+已通过 `docs/plan/2026-07-08-sshc-usability-p1-plan.md` 完成并验证：
+
+- `sshc check` 主机健康检查。
+- host tags，以及 `host set <host> key=value...` / `host unset <host> field...`。
+- group defaults，以及 `group set <group> key=value...` / `group unset <group> field...`。
+- `host import --from-ssh-config`。
+- batch summary JSONL 和 `batch-run --rerun-failed`。
+
+仍待单独计划或实现：
+
+- `task`/`run --task`/`batch-run --task`。
+- selector 扩展。
+- completion host/tag/group 补全。
+- recent/pinned hosts。
+- SSH key push。
+- tunnel local forward。
+- WebUI check/batch/log 页面增强。
+- MCP server 安全设计。
 
 ## P1: 主机健康检查
 
@@ -560,7 +582,7 @@ sshc host show <TAB>
 - host 补全只输出 name，不输出 IP 或 remark。
 - 如果读取配置失败，静默返回空候选，避免 shell 卡住。
 
-## P2: batch-run 汇总和失败重跑
+## P2: batch-run 汇总和失败重跑（已在 P1 计划中提前完成）
 
 ### 增强命令
 

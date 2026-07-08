@@ -59,7 +59,12 @@
 
 ## 优化增强
 
-- [ ] sshc host set 命令不使用options进行设置，改为 `host set hostname k=v k1=v1 ...` 这种格式 
+- [x] sshc host set 命令不使用options进行设置，改为 `host set hostname k=v k1=v1 ...` 这种格式
+- [x] 新增 host tags，支持 add/import/list/match 和 `--tag` 过滤
+- [x] 新增 group defaults，支持 `group set testing auth=dev-root jump=bastion port=22`
+- [x] 新增 `sshc check` 主机健康检查
+- [x] `host import` 支持 `--from-ssh-config`
+- [x] `batch-run` 新增 batch summary JSONL 和 `--rerun-failed`
 - [x] 使用 log/slog 记录 sshc 自己的运行日志到文件
 - [x] 新增环境变量 SSHC_CONFIG_DIR 设置默认的 config-dir 方便自定义和测试
 - [x] host 日志优化： 现在 host 日志 jsonl 完整记录了输入输出内容，但是果输出内容很大时音响json日志文件的查看/审计

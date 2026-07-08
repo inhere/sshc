@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | v0.1 | 2026-07-08 | Codex | 初版，规划 check、host tags、group defaults、ssh config import、batch summary 和 rerun failed |
 | v0.2 | 2026-07-08 | Codex | 调整 `host set` 和 `group set` 为 `key=value...` 多字段设置语法，放入 P1.1/P1.2 实施 |
+| v0.3 | 2026-07-08 | Codex | 完成 P1.1-P1.6 实施，进入最终文档状态回收和验收 |
 
 ## 关联文档
 
@@ -850,7 +851,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(batch): rerun failed batch hosts
 ```
 
-### P1.7: 文档、计划状态与最终验收
+### P1.7: 文档、计划状态与最终验收（已完成）
 
 目标：
 
@@ -892,6 +893,23 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe batch-run --help | Out-String
 git diff --check -- .
 ```
+
+实施结果：
+
+- README/README.zh-CN 已覆盖 host tags、group defaults、check、`host import --from-ssh-config`、batch summary 和 `--rerun-failed` 示例。
+- usability design 已新增当前实施状态，避免仍把已完成能力标记为待做。
+- `docs/TODO.md` 已回收本轮完成项状态。
+- `web/dist` 构建产物保持 ignored，未纳入仓库。
+- 最终验证通过：
+  - `go test ./...`
+  - `go build -o tmp\sshc-p1.exe ./cmd/sshc`
+  - `npm --prefix web run build`
+  - `go build -tags embed_web -o tmp\sshc-p1-embed.exe ./cmd/sshc`
+  - `.\tmp\sshc-p1.exe --help`
+  - `.\tmp\sshc-p1.exe check --help`
+  - `.\tmp\sshc-p1.exe host import --help`
+  - `.\tmp\sshc-p1.exe batch-run --help`
+  - `git diff --check -- .`
 
 提交：
 
