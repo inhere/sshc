@@ -408,6 +408,7 @@ func doctorMessagesContain(issues []DoctorIssue, want string) bool {
 
 func TestStorePathDefaultsToDotConfig(t *testing.T) {
 	t.Setenv(ConfigEnvKey, "")
+	t.Setenv(ConfigDirEnvKey, "")
 
 	home := filepath.Join(t.TempDir(), "home")
 	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
@@ -422,8 +423,80 @@ func TestStorePathDefaultsToDotConfig(t *testing.T) {
 	}
 }
 
+func TestStorePathUsesConfigDirEnv(t *testing.T) {
+	t.Setenv(ConfigEnvKey, "")
+	dir := filepath.Join(t.TempDir(), "sshc-config")
+	t.Setenv(ConfigDirEnvKey, dir)
+
+	path, err := StorePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, ConfigFileName); path != want {
+		t.Fatalf("store path = %q, want %q", path, want)
+	}
+	legacyPath, err := LegacyStorePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, LegacyConfigFileName); legacyPath != want {
+		t.Fatalf("legacy path = %q, want %q", legacyPath, want)
+	}
+	keyPath, err := PasswordKeyPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, passwordKeyFile); keyPath != want {
+		t.Fatalf("key path = %q, want %q", keyPath, want)
+	}
+	if source := ConfigPathSource(); source != ConfigDirEnvKey {
+		t.Fatalf("source = %q, want %s", source, ConfigDirEnvKey)
+	}
+}
+
+func TestConfigEnvOverridesConfigDirEnv(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sshc-config")
+	path := filepath.Join(t.TempDir(), "custom.json")
+	t.Setenv(ConfigDirEnvKey, dir)
+	t.Setenv(ConfigEnvKey, path)
+
+	got, err := StorePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != path {
+		t.Fatalf("store path = %q, want %q", got, path)
+	}
+	if source := ConfigPathSource(); source != ConfigEnvKey {
+		t.Fatalf("source = %q, want %s", source, ConfigEnvKey)
+	}
+}
+
+func TestLoadConfigFromLegacyHostsFileInConfigDir(t *testing.T) {
+	t.Setenv(ConfigEnvKey, "")
+	dir := filepath.Join(t.TempDir(), "sshc-config")
+	t.Setenv(ConfigDirEnvKey, dir)
+
+	legacyPath := filepath.Join(dir, LegacyConfigFileName)
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].Name != "devhost" {
+		t.Fatalf("config = %+v", config)
+	}
+}
+
 func TestLoadStoreSupportsLegacyHostsJSON(t *testing.T) {
 	t.Setenv(ConfigEnvKey, "")
+	t.Setenv(ConfigDirEnvKey, "")
 	home := filepath.Join(t.TempDir(), "home")
 	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 

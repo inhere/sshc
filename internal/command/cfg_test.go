@@ -25,6 +25,23 @@ func TestCfgPathCommand(t *testing.T) {
 	}
 }
 
+func TestCfgPathCommandWithConfigDirEnv(t *testing.T) {
+	t.Setenv(core.ConfigEnvKey, "")
+	dir := filepath.Join(t.TempDir(), "sshc-config")
+	t.Setenv(core.ConfigDirEnvKey, dir)
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := app.RunWithArgs([]string{"cfg", "path"}); err != nil {
+		t.Fatalf("cfg path: %v", err)
+	}
+	wantPath := filepath.Join(dir, core.ConfigFileName)
+	if !strings.Contains(out.String(), wantPath) || !strings.Contains(out.String(), "source=SSHC_CONFIG_DIR") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
 func TestCfgShowMasksSecrets(t *testing.T) {
 	withTempConfig(t)
 	config := &core.Config{

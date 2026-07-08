@@ -69,11 +69,7 @@ func newCfgPathCmd() *gcli.Command {
 				return err
 			}
 			fmt.Fprintln(cmdOutput(c), path)
-			if strings.TrimSpace(os.Getenv(core.ConfigEnvKey)) != "" {
-				fmt.Fprintf(cmdOutput(c), "source=%s\n", core.ConfigEnvKey)
-			} else {
-				fmt.Fprintln(cmdOutput(c), "source=default")
-			}
+			fmt.Fprintf(cmdOutput(c), "source=%s\n", core.ConfigPathSource())
 			return nil
 		},
 	}

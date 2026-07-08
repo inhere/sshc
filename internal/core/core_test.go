@@ -91,6 +91,7 @@ func withTempConfig(t *testing.T) string {
 	t.Cleanup(SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 
 	path := filepath.Join(home, ConfigFileName)
+	t.Setenv(ConfigDirEnvKey, "")
 	t.Setenv(ConfigEnvKey, path)
 	return path
 }

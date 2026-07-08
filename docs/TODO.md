@@ -60,7 +60,7 @@
 ## 优化增强
 
 - [ ] 使用 log/slog 记录 sshc 自己的运行日志到文件
-- [ ] 新增环境变量 SSHC_CONFIG_DIR 设置默认的 config-dir 方便自定义和测试
+- [x] 新增环境变量 SSHC_CONFIG_DIR 设置默认的 config-dir 方便自定义和测试
 - [x] host 日志优化： 现在 host 日志 jsonl 完整记录了输入输出内容，但是果输出内容很大时音响json日志文件的查看/审计
   - [x] 为每个执行任务都生成 task_id(format=yyyymmdd-hhmmss-shorthash，jsonl 里要记录下来
   - [x] 输出大时，使用独立的文件来保存，文件名(`{task_id}.out.log`) , jsonl 里不再记录完整输出

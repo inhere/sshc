@@ -564,6 +564,23 @@ sshc run "testing gpu" -- uptime
 SSHC_CONFIG=/path/to/sshc.config.json sshc list
 ```
 
+使用其他配置目录，但保持默认文件名：
+
+```bash
+SSHC_CONFIG_DIR=/tmp/sshc-test sshc cfg path
+SSHC_CONFIG_DIR=/tmp/sshc-test sshc list
+```
+
+路径优先级：
+
+```text
+SSHC_CONFIG 文件路径 > SSHC_CONFIG_DIR 目录 > ~/.config/sshc
+```
+
+`SSHC_CONFIG_DIR` 会改变默认配置根目录，影响 `sshc.config.json`、兼容读取的
+`hosts.json`、本地密码加密 key，以及相对 `logs_path`。它适合测试、临时沙箱、
+或在同一台机器上运行多套隔离的 sshc 配置。
+
 当保存的主机和 `~/.ssh/config` 读取到的主机同名或同 IP 时，保存的主机优先。
 兼容旧版本：如果新的默认配置文件不存在，仍会读取 `~/.config/sshc/hosts.json`。
 

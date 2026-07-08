@@ -578,6 +578,24 @@ Use another config file:
 SSHC_CONFIG=/path/to/sshc.config.json sshc list
 ```
 
+Use another config directory while keeping the default file names:
+
+```bash
+SSHC_CONFIG_DIR=/tmp/sshc-test sshc cfg path
+SSHC_CONFIG_DIR=/tmp/sshc-test sshc list
+```
+
+Path priority:
+
+```text
+SSHC_CONFIG file path > SSHC_CONFIG_DIR directory > ~/.config/sshc
+```
+
+`SSHC_CONFIG_DIR` changes the default config root used for
+`sshc.config.json`, legacy `hosts.json`, the local password encryption key, and
+relative `logs_path` values. It is useful for tests, temporary sandboxes, and
+running multiple isolated sshc configurations.
+
 Saved hosts override entries loaded from `~/.ssh/config` when the name or IP is
 the same.
 For compatibility, `~/.config/sshc/hosts.json` is still read when the new default

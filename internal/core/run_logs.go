@@ -499,6 +499,9 @@ func LogsDir() (string, error) {
 }
 
 func configRoot() (string, error) {
+	if dir := strings.TrimSpace(os.Getenv(ConfigDirEnvKey)); dir != "" {
+		return expandUserPath(dir), nil
+	}
 	dir, err := userHomeDir()
 	if err != nil {
 		return "", err

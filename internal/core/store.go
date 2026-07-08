@@ -18,6 +18,7 @@ const (
 	DefaultGroup         = "default"
 	ConfigVersion        = 1
 	ConfigEnvKey         = "SSHC_CONFIG"
+	ConfigDirEnvKey      = "SSHC_CONFIG_DIR"
 	ConfigFileName       = "sshc.config.json"
 	LegacyConfigFileName = "hosts.json"
 
@@ -541,6 +542,16 @@ func StorePath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, ConfigFileName), nil
+}
+
+func ConfigPathSource() string {
+	if strings.TrimSpace(os.Getenv(ConfigEnvKey)) != "" {
+		return ConfigEnvKey
+	}
+	if strings.TrimSpace(os.Getenv(ConfigDirEnvKey)) != "" {
+		return ConfigDirEnvKey
+	}
+	return "default"
 }
 
 func LegacyStorePath() (string, error) {
