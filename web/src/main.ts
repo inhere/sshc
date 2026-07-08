@@ -3,6 +3,7 @@ import { APIError, apiDelete, apiGet, apiPost, apiPut, login, type AuthProfile, 
 import { mountTerminal, type TerminalMount } from "./terminal";
 
 type ViewName = "hosts" | "auth" | "logs" | "config" | "terminal";
+type HostAuthType = "profile" | "pwd" | "keyfile";
 
 const state = {
   view: "hosts" as ViewName,
@@ -161,8 +162,10 @@ async function renderHosts() {
   });
   query("#reload-hosts").addEventListener("click", () => void renderHosts());
   const hosts = await apiGet<Host[]>(`/api/hosts${state.showIP ? "?show_ip=1" : ""}`);
-  const groupCount = new Set(hosts.map((host) => host.group || "default")).size;
-  const jumpCount = hosts.filter((host) => host.jump).length;
+  const [rawHosts, profiles] = await Promise.all([apiGet<Host[]>("/api/hosts?show_ip=1"), apiGet<AuthProfile[]>("/api/auth-profiles")]);
+  const groups = uniqueSorted(rawHosts.map((host) => host.group || "default"));
+  const groupCount = groups.length;
+  const jumpCount = rawHosts.filter((host) => host.jump).length;
   setContent(`
     <div class="ops-strip">
       ${metric("Targets", String(hosts.length))}
@@ -175,11 +178,19 @@ async function renderHosts() {
         <h2>Host record</h2>
         ${input("name", "Name", true)}
         ${input("ip", "Address", true)}
-        ${input("user", "User")}
-        ${input("auth_ref", "Auth")}
-        ${input("password", "Password", false, "password")}
-        ${input("key_path", "Key path")}
-        ${input("group", "Group")}
+        ${groupInput(groups)}
+        ${authTypeField()}
+        <div class="auth-pane" data-auth-pane="profile">
+          ${selectField("auth_ref", "Auth profile", profiles.map((profile) => profile.name), false, "Select profile")}
+        </div>
+        <div class="auth-pane" data-auth-pane="pwd">
+          ${input("user", "User")}
+          ${input("password", "Password", false, "password")}
+        </div>
+        <div class="auth-pane" data-auth-pane="keyfile">
+          ${input("key_user", "User")}
+          ${input("key_path", "Key path")}
+        </div>
         ${input("port", "Port", false, "number")}
         ${input("jump", "Jump")}
         ${input("remark", "Remark")}
@@ -200,7 +211,7 @@ async function renderHosts() {
   `);
   bindHostForm();
   for (const button of queryAll<HTMLButtonElement>("[data-host-edit]")) {
-    button.addEventListener("click", () => fillHostForm(hosts.find((host) => host.name === button.dataset.hostEdit)));
+    button.addEventListener("click", () => fillHostForm(rawHosts.find((host) => host.name === button.dataset.hostEdit)));
   }
   for (const button of queryAll<HTMLButtonElement>("[data-host-delete]")) {
     button.addEventListener("click", () => void deleteHost(button.dataset.hostDelete || ""));
@@ -252,20 +263,20 @@ async function renderTerminal() {
   setTitle("Terminal", "Open a browser PTY using saved SSH routes.");
   setActions(`<button id="reload-terminal" type="button">Refresh</button>`);
   query("#reload-terminal").addEventListener("click", () => void renderTerminal());
-  const sessions = await apiGet<TerminalSession[]>("/api/terminal/sessions");
+  const [sessions, hosts] = await Promise.all([apiGet<TerminalSession[]>("/api/terminal/sessions"), apiGet<Host[]>("/api/hosts?show_ip=1")]);
   setContent(`
     <div class="terminal-layout">
       <form id="terminal-form" class="terminal-toolbar">
-        <label><span>Host</span><input name="host" value="${escapeAttr(state.terminalHost)}" required></label>
+        ${selectField("host", "Host", hosts.map((host) => host.name), true, "Select host", state.terminalHost)}
         <label><span>Cols</span><input name="cols" type="number" value="120" min="1"></label>
         <label><span>Rows</span><input name="rows" type="number" value="36" min="1"></label>
-        <button type="submit">Connect</button>
+        <button id="terminal-connect" type="submit">${state.terminalSessionID ? "Reconnect" : "Connect"}</button>
         <button id="terminal-close" type="button" ${state.terminalSessionID ? "" : "disabled"}>Disconnect</button>
       </form>
       <div class="terminal-frame">
         <div class="terminal-bar">
-          <span>${escapeHTML(state.terminalHost || "no session")}</span>
-          <strong>${state.terminalSessionID ? "connected" : "idle"}</strong>
+          <span id="terminal-current-host">${escapeHTML(state.terminalHost || "no session")}</span>
+          <strong id="terminal-state">${state.terminalSessionID ? "connected" : "idle"}</strong>
         </div>
         <div id="terminal-container" class="terminal-container"></div>
       </div>
@@ -312,6 +323,7 @@ async function connectTerminal(host: string, cols: number, rows: number) {
     const session = await apiPost<TerminalSession>("/api/terminal/sessions", { host, cols, rows, term: "xterm-256color" });
     state.terminalHost = host;
     state.terminalSessionID = session.id;
+    updateTerminalStatus("connected", session.host, true);
     const container = query("#terminal-container");
     state.terminalMount = mountTerminal(container, session.id, (nextCols, nextRows) => {
       void apiPost(`/api/terminal/sessions/${encodeURIComponent(session.id)}/resize`, { cols: nextCols, rows: nextRows }).catch(() => {});
@@ -349,10 +361,15 @@ function disposeTerminal() {
 
 function bindHostForm() {
   const form = query<HTMLFormElement>("#host-form");
-  query("#reset-host").addEventListener("click", () => form.reset());
+  bindHostAuthType(form);
+  query("#reset-host").addEventListener("click", () => {
+    form.reset();
+    form.dataset.mode = "";
+    setHostAuthType(form, "profile");
+  });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const host = formValue<Host>(form);
+    const host = hostFormValue(form);
     if (host.port) host.port = Number(host.port);
     try {
       const existing = form.dataset.mode === "edit";
@@ -372,10 +389,13 @@ function fillHostForm(host?: Host) {
   if (!host) return;
   const form = query<HTMLFormElement>("#host-form");
   form.dataset.mode = "edit";
+  setHostAuthType(form, hostAuthType(host));
   for (const [key, value] of Object.entries(host)) {
     const input = form.elements.namedItem(key) as HTMLInputElement | null;
     if (input) input.value = value === undefined ? "" : String(value);
   }
+  const keyUserInput = form.elements.namedItem("key_user") as HTMLInputElement | null;
+  if (keyUserInput) keyUserInput.value = host.user || "";
 }
 
 async function deleteHost(name: string) {
@@ -493,8 +513,12 @@ async function deleteAuth(name: string) {
 
 async function renderLogs() {
   setTitle("Logs", "Read JSONL run history by target, text match, or task output.");
+  const hosts = await apiGet<Host[]>("/api/hosts?show_ip=1");
   setActions(`
-    <input id="log-target" class="compact-input" placeholder="target">
+    <select id="log-target" class="compact-input">
+      <option value="">All hosts</option>
+      ${hosts.map((host) => `<option value="${escapeAttr(host.name)}">${escapeHTML(host.name)}</option>`).join("")}
+    </select>
     <input id="log-match" class="compact-input" placeholder="match">
     <button id="reload-logs" type="button">Search</button>
   `);
@@ -580,6 +604,104 @@ function badge(value: string) {
 
 function input(name: string, label: string, required = false, type = "text") {
   return `<label><span>${label}</span><input name="${name}" type="${type}" ${required ? "required" : ""}></label>`;
+}
+
+function groupInput(groups: string[]) {
+  return `
+    <label><span>Group</span><input name="group" list="host-groups" placeholder="default"></label>
+    <datalist id="host-groups">
+      ${groups.map((group) => `<option value="${escapeAttr(group)}"></option>`).join("")}
+    </datalist>
+  `;
+}
+
+function selectField(name: string, label: string, values: string[], required = false, placeholder = "Select", selected = "") {
+  return `
+    <label><span>${label}</span>
+      <select name="${name}" ${required ? "required" : ""}>
+        <option value="">${escapeHTML(placeholder)}</option>
+        ${values.map((value) => `<option value="${escapeAttr(value)}" ${value === selected ? "selected" : ""}>${escapeHTML(value)}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function authTypeField() {
+  return `
+    <fieldset class="segmented auth-type">
+      <legend>Auth type</legend>
+      <label><input type="radio" name="auth_type" value="profile" checked><span>Profile</span></label>
+      <label><input type="radio" name="auth_type" value="pwd"><span>Password</span></label>
+      <label><input type="radio" name="auth_type" value="keyfile"><span>Key file</span></label>
+    </fieldset>
+  `;
+}
+
+function bindHostAuthType(form: HTMLFormElement) {
+  for (const radio of form.querySelectorAll<HTMLInputElement>('input[name="auth_type"]')) {
+    radio.addEventListener("change", () => updateHostAuthPanes(form));
+  }
+  updateHostAuthPanes(form);
+}
+
+function setHostAuthType(form: HTMLFormElement, type: HostAuthType) {
+  const input = form.querySelector<HTMLInputElement>(`input[name="auth_type"][value="${type}"]`);
+  if (input) input.checked = true;
+  updateHostAuthPanes(form);
+}
+
+function updateHostAuthPanes(form: HTMLFormElement) {
+  const type = selectedHostAuthType(form);
+  for (const pane of form.querySelectorAll<HTMLElement>("[data-auth-pane]")) {
+    pane.hidden = pane.dataset.authPane !== type;
+  }
+}
+
+function selectedHostAuthType(form: HTMLFormElement): HostAuthType {
+  const data = new FormData(form);
+  const value = String(data.get("auth_type") || "profile");
+  return value === "pwd" || value === "keyfile" ? value : "profile";
+}
+
+function hostAuthType(host: Host): HostAuthType {
+  if (host.auth_ref) return "profile";
+  if (host.key_path) return "keyfile";
+  return "pwd";
+}
+
+function hostFormValue(form: HTMLFormElement): Host {
+  const type = selectedHostAuthType(form);
+  const host = formValue<Host>(form);
+  delete (host as Host & { auth_type?: string }).auth_type;
+  if (type === "profile") {
+    delete host.user;
+    delete host.password;
+    delete host.key_path;
+  } else if (type === "pwd") {
+    delete host.auth_ref;
+    delete host.key_path;
+  } else {
+    host.user = String(new FormData(form).get("key_user") || "").trim();
+    delete host.auth_ref;
+    delete host.password;
+  }
+  delete (host as Host & { key_user?: string }).key_user;
+  return host;
+}
+
+function updateTerminalStatus(status: "idle" | "connected", host: string, connected: boolean) {
+  const statusNode = app.querySelector<HTMLElement>("#terminal-state");
+  const hostNode = app.querySelector<HTMLElement>("#terminal-current-host");
+  const closeButton = app.querySelector<HTMLButtonElement>("#terminal-close");
+  const connectButton = app.querySelector<HTMLButtonElement>("#terminal-connect");
+  if (statusNode) statusNode.textContent = status;
+  if (hostNode) hostNode.textContent = host || "no session";
+  if (closeButton) closeButton.disabled = !connected;
+  if (connectButton) connectButton.textContent = connected ? "Reconnect" : "Connect";
+}
+
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
 function formValue<T>(form: HTMLFormElement): T {

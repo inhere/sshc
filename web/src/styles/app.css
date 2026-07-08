@@ -34,7 +34,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -59,7 +60,8 @@ button:disabled {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -322,7 +324,8 @@ label {
   color: var(--muted);
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 34px;
   border: 1px solid #c9d2dc;
@@ -330,6 +333,15 @@ input {
   padding: 6px 9px;
   color: var(--ink);
   background: #fff;
+}
+
+select {
+  appearance: none;
+  padding-right: 30px;
+  background:
+    linear-gradient(45deg, transparent 50%, #667482 50%) calc(100% - 16px) 50% / 6px 6px no-repeat,
+    linear-gradient(135deg, #667482 50%, transparent 50%) calc(100% - 11px) 50% / 6px 6px no-repeat,
+    #fff;
 }
 
 .compact-input {
@@ -354,6 +366,76 @@ input {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.segmented {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.segmented legend {
+  margin-bottom: 5px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-type {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.auth-type legend {
+  grid-column: 1 / -1;
+}
+
+.auth-type label {
+  position: relative;
+  display: block;
+}
+
+.auth-type input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.auth-type span {
+  display: grid;
+  place-items: center;
+  min-height: 34px;
+  border: 1px solid #c9d2dc;
+  border-radius: 4px;
+  background: #f9fbfd;
+  color: #3d4a56;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auth-type input:checked + span {
+  border-color: #81ad94;
+  background: #eef8f1;
+  color: var(--connected);
+}
+
+.auth-type input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.auth-pane {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed #cbd7df;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.auth-pane[hidden] {
+  display: none;
 }
 
 .row-actions {

@@ -109,7 +109,7 @@ func (s *Server) handleHostsUpdate(c *rux.Context) {
 		writeError(c, http.StatusNotFound, fmt.Errorf("host %q not found", name))
 		return
 	}
-	if host.Password == "" && host.PasswordEnc == "" {
+	if host.Password == "" && host.PasswordEnc == "" && host.AuthRef == "" && host.KeyPath == "" {
 		host.PasswordEnc = old.PasswordEnc
 	}
 	config.Hosts[idx] = host

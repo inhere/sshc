@@ -63,6 +63,23 @@ func TestHostsCRUDAndMaskSecrets(t *testing.T) {
 		t.Fatalf("updated host = %+v", config.Hosts[0])
 	}
 
+	config.AuthProfiles = []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}
+	if err := core.SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	updateBody = `{"name":"devhost","ip":"10.0.0.8","auth_ref":"dev-root","port":22,"group":"prod","remark":"updated"}`
+	rec = requestJSON(t, srv, http.MethodPut, "/api/hosts/devhost", updateBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update auth ref status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	config, err = core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Hosts[0].Password != "" || config.Hosts[0].PasswordEnc != "" || config.Hosts[0].AuthRef != "dev-root" {
+		t.Fatalf("updated profile host = %+v", config.Hosts[0])
+	}
+
 	rec = requestJSON(t, srv, http.MethodGet, "/api/hosts/devhost", "")
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "secret") {
 		t.Fatalf("show status = %d, body = %s", rec.Code, rec.Body.String())
