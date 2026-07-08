@@ -110,6 +110,89 @@ func TestResolveEffectiveHostUsesDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveEffectiveHostUsesGroupDefaults(t *testing.T) {
+	config := Config{
+		Groups: map[string]GroupDefaults{
+			"testing": {
+				AuthRef:         "dev-root",
+				Port:            2222,
+				Jump:            "bastion",
+				ConnectTimeout:  "10s",
+				RunTimeout:      "1m",
+				RemoteScriptDir: "/var/tmp",
+				HostKeyCheck:    HostKeyCheckInsecure,
+				KnownHostsPath:  "~/.ssh/group_known_hosts",
+			},
+		},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts: []Host{
+			{Name: "bastion", IP: "1.2.3.4", AuthRef: "dev-root"},
+			{Name: "devhost", IP: "10.0.0.8", Group: "testing"},
+		},
+	}
+
+	host, ok, err := config.ResolveEffectiveHost("devhost", HostOverrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("host not found")
+	}
+	if host.AuthRef != "dev-root" || host.User != "root" || host.KeyPath != "~/.ssh/id_rsa" || host.Port != 2222 || host.Jump != "bastion" {
+		t.Fatalf("host = %+v", host)
+	}
+	if host.ConnectTimeout != "10s" || host.RunTimeout != "1m" || host.RemoteScriptDir != "/var/tmp" {
+		t.Fatalf("timeouts = %+v", host)
+	}
+	if host.HostKeyCheck != HostKeyCheckInsecure || host.KnownHostsPath != "~/.ssh/group_known_hosts" {
+		t.Fatalf("host key defaults = %+v", host)
+	}
+}
+
+func TestResolveEffectiveHostHostOverridesGroupDefaults(t *testing.T) {
+	config := Config{
+		Groups:       map[string]GroupDefaults{"testing": {AuthRef: "dev-root", User: "group-user", KeyPath: "~/.ssh/group", Port: 2222, Jump: "bastion"}},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts: []Host{
+			{Name: "bastion", IP: "1.2.3.4", AuthRef: "dev-root"},
+			{Name: "devhost", IP: "10.0.0.8", Group: "testing", User: "deploy", KeyPath: "~/.ssh/deploy", Port: 2200, Jump: "alt-bastion"},
+		},
+	}
+
+	host, ok, err := config.ResolveEffectiveHost("devhost", HostOverrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("host not found")
+	}
+	if host.User != "deploy" || host.KeyPath != "~/.ssh/deploy" || host.Port != 2200 || host.Jump != "alt-bastion" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestResolveEffectiveHostHostAuthRefOverridesGroupAuthRef(t *testing.T) {
+	config := Config{
+		Groups: map[string]GroupDefaults{"testing": {AuthRef: "group-auth"}},
+		AuthProfiles: []AuthProfile{
+			{Name: "group-auth", User: "group", KeyPath: "~/.ssh/group"},
+			{Name: "host-auth", User: "host", KeyPath: "~/.ssh/host"},
+		},
+		Hosts: []Host{{Name: "devhost", IP: "10.0.0.8", Group: "testing", AuthRef: "host-auth"}},
+	}
+
+	host, ok, err := config.ResolveEffectiveHost("devhost", HostOverrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("host not found")
+	}
+	if host.AuthRef != "host-auth" || host.User != "host" || host.KeyPath != "~/.ssh/host" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
 func TestResolveEffectiveHostMissingAuthRef(t *testing.T) {
 	config := Config{Hosts: []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "missing", Port: 22}}}
 	_, ok, err := config.ResolveEffectiveHost("devhost", HostOverrides{})

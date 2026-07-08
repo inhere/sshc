@@ -55,11 +55,13 @@ const (
 )
 
 type ImportResult struct {
-	BackupPath   string
-	HostsAdded   int
-	HostsUpdated int
-	AuthAdded    int
-	AuthUpdated  int
+	BackupPath    string
+	HostsAdded    int
+	HostsUpdated  int
+	GroupsAdded   int
+	GroupsUpdated int
+	AuthAdded     int
+	AuthUpdated   int
 }
 
 func GenerateExportKey() (string, error) {
@@ -162,8 +164,9 @@ func MergeImportedConfig(current, imported Config, strategy ImportStrategy) (Con
 		return mergeImportedConfig(current, imported, true)
 	case ImportReplace:
 		result := ImportResult{
-			HostsAdded: len(imported.Hosts),
-			AuthAdded:  len(imported.AuthProfiles),
+			HostsAdded:  len(imported.Hosts),
+			GroupsAdded: len(imported.Groups),
+			AuthAdded:   len(imported.AuthProfiles),
 		}
 		normalizeConfig(&imported)
 		return imported, result, nil
@@ -211,6 +214,26 @@ func mergeImportedConfig(current, imported Config, overwrite bool) (Config, Impo
 			merged.LogsPath = strings.TrimSpace(imported.LogsPath)
 		}
 		merged.Defaults = mergeDefaults(merged.Defaults, imported.Defaults)
+	}
+	if merged.Groups == nil {
+		merged.Groups = map[string]GroupDefaults{}
+	}
+	for name, group := range imported.Groups {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		NormalizeGroupDefaults(&group)
+		if _, ok := merged.Groups[name]; ok {
+			if !overwrite {
+				return Config{}, ImportResult{}, fmt.Errorf("group %q already exists", name)
+			}
+			merged.Groups[name] = group
+			result.GroupsUpdated++
+			continue
+		}
+		merged.Groups[name] = group
+		result.GroupsAdded++
 	}
 
 	for _, profile := range imported.AuthProfiles {

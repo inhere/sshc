@@ -365,6 +365,21 @@ func TestDoctorReportsMissingAuthRef(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsInvalidGroupDefaults(t *testing.T) {
+	issues := CheckConfig(Config{
+		Groups: map[string]GroupDefaults{
+			"testing": {AuthRef: "missing", Port: 70000, Jump: "missing-jump", HostKeyCheck: "bad"},
+		},
+	})
+	if !HasDoctorErrors(issues) ||
+		!doctorMessagesContain(issues, `group "testing" references missing auth profile "missing"`) ||
+		!doctorMessagesContain(issues, `group "testing" has invalid port`) ||
+		!doctorMessagesContain(issues, `group "testing" references missing jump host "missing-jump"`) ||
+		!doctorMessagesContain(issues, `group "testing" has invalid host_key_check "bad"`) {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
 func TestDoctorReportsInvalidPortAndHostKeyCheck(t *testing.T) {
 	issues := CheckConfig(Config{
 		Defaults: Defaults{HostKeyCheck: "bad"},

@@ -23,6 +23,7 @@ func CheckConfig(config Config) []DoctorIssue {
 	issues = append(issues, checkAuthDuplicates(config.AuthProfiles)...)
 	issues = append(issues, checkAuthRefs(config)...)
 	issues = append(issues, checkHostPorts(config.Hosts)...)
+	issues = append(issues, checkGroupDefaults(config)...)
 	issues = append(issues, checkHostKeyPolicy(config)...)
 	issues = append(issues, checkCommandProxyHosts(config)...)
 	if len(issues) == 0 {
@@ -100,6 +101,15 @@ func checkAuthRefs(config Config) []DoctorIssue {
 			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("host %q references missing auth profile %q", HostLogName(host), ref)})
 		}
 	}
+	for name, group := range config.Groups {
+		ref := strings.TrimSpace(group.AuthRef)
+		if ref == "" {
+			continue
+		}
+		if !profiles[ref] {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "groups", Message: fmt.Sprintf("group %q references missing auth profile %q", strings.TrimSpace(name), ref)})
+		}
+	}
 	return issues
 }
 
@@ -111,6 +121,30 @@ func checkHostPorts(hosts []Host) []DoctorIssue {
 		}
 		if host.Port < 1 || host.Port > 65535 {
 			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "hosts", Message: fmt.Sprintf("host %q has invalid port %d", HostLogName(host), host.Port)})
+		}
+	}
+	return issues
+}
+
+func checkGroupDefaults(config Config) []DoctorIssue {
+	var issues []DoctorIssue
+	store := storeFromConfig(config)
+	for name, group := range config.Groups {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "groups", Message: "group name is required"})
+			continue
+		}
+		if group.Port < 0 || group.Port > 65535 {
+			issues = append(issues, DoctorIssue{Level: DoctorError, Item: "groups", Message: fmt.Sprintf("group %q has invalid port %d", name, group.Port)})
+		}
+		jump := strings.TrimSpace(group.Jump)
+		if jump != "" {
+			if _, ok, err := store.ResolveHost(jump); err != nil {
+				issues = append(issues, DoctorIssue{Level: DoctorError, Item: "groups", Message: fmt.Sprintf("group %q jump %q is ambiguous: %v", name, jump, err)})
+			} else if !ok {
+				issues = append(issues, DoctorIssue{Level: DoctorError, Item: "groups", Message: fmt.Sprintf("group %q references missing jump host %q", name, jump)})
+			}
 		}
 	}
 	return issues
@@ -173,6 +207,9 @@ func checkHostKeyPolicy(config Config) []DoctorIssue {
 		issues = append(issues, DoctorIssue{Level: DoctorError, Item: item, Message: fmt.Sprintf("%s has invalid host_key_check %q", owner, value)})
 	}
 	check("defaults", "defaults", config.Defaults.HostKeyCheck)
+	for name, group := range config.Groups {
+		check("groups", fmt.Sprintf("group %q", strings.TrimSpace(name)), group.HostKeyCheck)
+	}
 	for _, host := range config.Hosts {
 		check("hosts", fmt.Sprintf("host %q", HostLogName(host)), host.HostKeyCheck)
 	}

@@ -70,6 +70,7 @@ sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "shared root login"
+sshc group set testing auth=dev-root port=22
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc host set devhost tags=app,testing remark="app server"
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
@@ -92,6 +93,7 @@ sshc list|ls            List saved hosts
 sshc cfg|config         Manage config
 sshc auth|cred          Manage credential profiles
 sshc host|hosts         Manage hosts
+sshc group|groups       Manage group defaults
 sshc run|exec           Run a remote command
 sshc batch-run|brun     Run a command or script on multiple hosts
 sshc login              Open an interactive SSH shell
@@ -178,6 +180,23 @@ sshc host rename old-name new-name
 ```
 
 Top-level `add`, `list`, and `ls` remain available for quick daily use.
+
+### Group Defaults
+
+Use group defaults when many hosts share the same auth profile, jump host, port,
+timeouts, or host key policy:
+
+```bash
+sshc group set testing auth=dev-root jump=bastion port=22
+sshc group set testing connect_timeout=10s run_timeout=60s remote_script_dir=/tmp
+sshc group list
+sshc group show testing
+sshc group unset testing jump port
+sshc group rm testing --yes
+```
+
+Hosts inherit defaults from their `group`. Values set directly on the host still
+take priority over group defaults.
 
 ### Import Hosts
 

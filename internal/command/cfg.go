@@ -341,7 +341,7 @@ func newCfgImportCmd() *gcli.Command {
 			} else {
 				fmt.Fprintf(cmdOutput(c), "backup: %s\n", result.BackupPath)
 			}
-			fmt.Fprintf(cmdOutput(c), "imported config: hosts_added=%d hosts_updated=%d auth_added=%d auth_updated=%d\n", result.HostsAdded, result.HostsUpdated, result.AuthAdded, result.AuthUpdated)
+			fmt.Fprintf(cmdOutput(c), "imported config: hosts_added=%d hosts_updated=%d groups_added=%d groups_updated=%d auth_added=%d auth_updated=%d\n", result.HostsAdded, result.HostsUpdated, result.GroupsAdded, result.GroupsUpdated, result.AuthAdded, result.AuthUpdated)
 			return nil
 		},
 	}

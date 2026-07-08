@@ -127,12 +127,14 @@ func TestMergeImportedConfigKeepsExistingValues(t *testing.T) {
 	current := Config{
 		LogsPath:     "current-logs",
 		Defaults:     Defaults{User: "root"},
+		Groups:       map[string]GroupDefaults{"current": {User: "root"}},
 		AuthProfiles: []AuthProfile{{Name: "current", User: "root"}},
 		Hosts:        []Host{{Name: "current", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"}},
 	}
 	imported := Config{
 		LogsPath:     "imported-logs",
 		Defaults:     Defaults{User: "ops", Port: 2222},
+		Groups:       map[string]GroupDefaults{"imported": {User: "ops", Port: 2200}},
 		AuthProfiles: []AuthProfile{{Name: "imported", User: "ops"}},
 		Hosts:        []Host{{Name: "imported", IP: "10.0.0.9", User: "ops", KeyPath: "~/.ssh/id_ed25519"}},
 	}
@@ -146,18 +148,23 @@ func TestMergeImportedConfigKeepsExistingValues(t *testing.T) {
 	if result.AuthAdded != 1 || result.HostsAdded != 1 || len(merged.AuthProfiles) != 2 || len(merged.Hosts) != 2 {
 		t.Fatalf("result=%+v merged=%+v", result, merged)
 	}
+	if result.GroupsAdded != 1 || len(merged.Groups) != 2 || merged.Groups["imported"].Port != 2200 {
+		t.Fatalf("groups result=%+v groups=%+v", result, merged.Groups)
+	}
 }
 
 func TestOverwriteImportedConfigUpdatesConflicts(t *testing.T) {
 	current := Config{
 		LogsPath:     "current-logs",
 		Defaults:     Defaults{User: "root"},
+		Groups:       map[string]GroupDefaults{"testing": {User: "root"}},
 		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root"}},
 		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Remark: "old"}},
 	}
 	imported := Config{
 		LogsPath:     "imported-logs",
 		Defaults:     Defaults{User: "ops"},
+		Groups:       map[string]GroupDefaults{"testing": {User: "ops", Port: 2222}},
 		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "ops"}},
 		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", User: "ops", KeyPath: "~/.ssh/id_ed25519", Remark: "new"}},
 	}
@@ -168,10 +175,10 @@ func TestOverwriteImportedConfigUpdatesConflicts(t *testing.T) {
 	if merged.LogsPath != "imported-logs" || merged.Defaults.User != "ops" {
 		t.Fatalf("merged = %+v", merged)
 	}
-	if result.AuthUpdated != 1 || result.HostsUpdated != 1 {
+	if result.AuthUpdated != 1 || result.HostsUpdated != 1 || result.GroupsUpdated != 1 {
 		t.Fatalf("result = %+v", result)
 	}
-	if merged.AuthProfiles[0].User != "ops" || merged.Hosts[0].Remark != "new" {
+	if merged.AuthProfiles[0].User != "ops" || merged.Hosts[0].Remark != "new" || merged.Groups["testing"].Port != 2222 {
 		t.Fatalf("merged entries = %+v %+v", merged.AuthProfiles, merged.Hosts)
 	}
 }
@@ -180,6 +187,7 @@ func TestReplaceImportedConfigReplacesAll(t *testing.T) {
 	current := Config{Hosts: []Host{{Name: "old", IP: "10.0.0.8"}}}
 	imported := Config{
 		LogsPath:     "imported",
+		Groups:       map[string]GroupDefaults{"testing": {User: "root"}},
 		AuthProfiles: []AuthProfile{{Name: "dev-root"}},
 		Hosts:        []Host{{Name: "new", IP: "10.0.0.9"}},
 	}
@@ -190,7 +198,7 @@ func TestReplaceImportedConfigReplacesAll(t *testing.T) {
 	if merged.LogsPath != "imported" || len(merged.Hosts) != 1 || merged.Hosts[0].Name != "new" {
 		t.Fatalf("merged = %+v", merged)
 	}
-	if result.HostsAdded != 1 || result.AuthAdded != 1 {
+	if result.HostsAdded != 1 || result.AuthAdded != 1 || result.GroupsAdded != 1 {
 		t.Fatalf("result = %+v", result)
 	}
 }

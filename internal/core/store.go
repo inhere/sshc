@@ -69,6 +69,19 @@ type Defaults struct {
 	KnownHostsPath  string `json:"known_hosts_path,omitempty"`
 }
 
+type GroupDefaults struct {
+	AuthRef         string `json:"auth_ref,omitempty"`
+	User            string `json:"user,omitempty"`
+	KeyPath         string `json:"key_path,omitempty"`
+	Port            int    `json:"port,omitempty"`
+	Jump            string `json:"jump,omitempty"`
+	ConnectTimeout  string `json:"connect_timeout,omitempty"`
+	RunTimeout      string `json:"run_timeout,omitempty"`
+	RemoteScriptDir string `json:"remote_script_dir,omitempty"`
+	HostKeyCheck    string `json:"host_key_check,omitempty"`
+	KnownHostsPath  string `json:"known_hosts_path,omitempty"`
+}
+
 type AuthProfile struct {
 	Name        string `json:"name"`
 	User        string `json:"user,omitempty"`
@@ -79,11 +92,12 @@ type AuthProfile struct {
 }
 
 type Config struct {
-	Version      int           `json:"version"`
-	LogsPath     string        `json:"logs_path,omitempty"`
-	Defaults     Defaults      `json:"defaults,omitempty"`
-	AuthProfiles []AuthProfile `json:"auth_profiles"`
-	Hosts        []Host        `json:"hosts"`
+	Version      int                      `json:"version"`
+	LogsPath     string                   `json:"logs_path,omitempty"`
+	Defaults     Defaults                 `json:"defaults,omitempty"`
+	Groups       map[string]GroupDefaults `json:"groups,omitempty"`
+	AuthProfiles []AuthProfile            `json:"auth_profiles"`
+	Hosts        []Host                   `json:"hosts"`
 }
 
 func (s *Store) Upsert(host Host) error {
@@ -570,6 +584,10 @@ func normalizeConfig(config *Config) {
 	if config.AuthProfiles == nil {
 		config.AuthProfiles = []AuthProfile{}
 	}
+	if config.Groups == nil {
+		config.Groups = map[string]GroupDefaults{}
+	}
+	normalizeGroups(config.Groups)
 	if config.Hosts == nil {
 		config.Hosts = []Host{}
 	}
@@ -581,6 +599,33 @@ func normalizeConfig(config *Config) {
 func normalizeConfigForSave(config *Config) {
 	config.Version = ConfigVersion
 	normalizeConfig(config)
+}
+
+func normalizeGroups(groups map[string]GroupDefaults) {
+	for name, group := range groups {
+		trimmed := strings.TrimSpace(name)
+		NormalizeGroupDefaults(&group)
+		if trimmed == "" {
+			delete(groups, name)
+			continue
+		}
+		if trimmed != name {
+			delete(groups, name)
+		}
+		groups[trimmed] = group
+	}
+}
+
+func NormalizeGroupDefaults(group *GroupDefaults) {
+	group.AuthRef = strings.TrimSpace(group.AuthRef)
+	group.User = strings.TrimSpace(group.User)
+	group.KeyPath = strings.TrimSpace(group.KeyPath)
+	group.Jump = strings.TrimSpace(group.Jump)
+	group.ConnectTimeout = strings.TrimSpace(group.ConnectTimeout)
+	group.RunTimeout = strings.TrimSpace(group.RunTimeout)
+	group.RemoteScriptDir = strings.TrimSpace(group.RemoteScriptDir)
+	group.HostKeyCheck = strings.TrimSpace(group.HostKeyCheck)
+	group.KnownHostsPath = strings.TrimSpace(group.KnownHostsPath)
 }
 
 func storeFromConfig(config Config) Store {

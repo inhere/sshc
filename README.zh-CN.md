@@ -66,6 +66,7 @@ sshc add --ip 192.168.1.10 --name devhost -u root -p password
 sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "共享 root 登录"
+sshc group set testing auth=dev-root port=22
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
 sshc host set devhost tags=app,testing remark="app server"
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
@@ -88,6 +89,7 @@ sshc list|ls         查看已保存主机
 sshc cfg|config      管理本地配置
 sshc auth|cred       管理可复用凭证
 sshc host|hosts      管理主机
+sshc group|groups    管理分组默认配置
 sshc run|exec        执行远程命令
 sshc batch-run|brun  在多台主机上执行命令或脚本
 sshc login           打开交互式 SSH shell
@@ -174,6 +176,21 @@ sshc host rename old-name new-name
 ```
 
 顶层 `add`、`list`、`ls` 仍保留，方便日常快速使用。
+
+### 分组默认配置
+
+多台主机共用同一套凭证、跳板机、端口、超时或 host key 策略时，可以使用 group defaults：
+
+```bash
+sshc group set testing auth=dev-root jump=bastion port=22
+sshc group set testing connect_timeout=10s run_timeout=60s remote_script_dir=/tmp
+sshc group list
+sshc group show testing
+sshc group unset testing jump port
+sshc group rm testing --yes
+```
+
+主机会按自己的 `group` 继承默认配置。直接写在 host 上的字段优先级更高。
 
 ### 导入主机
 

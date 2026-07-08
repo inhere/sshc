@@ -422,7 +422,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(host): add host tags
 ```
 
-### P1.2: group defaults 配置模型
+### P1.2: group defaults 配置模型（已完成）
 
 目标：
 
@@ -514,6 +514,15 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe group --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- `Config` 已新增 `groups` 配置，支持 `GroupDefaults` 继承 `auth_ref/user/key_path/port/jump/timeouts/host_key_check/known_hosts_path`。
+- effective host 合并顺序已按 `内置默认值 -> defaults -> auth profile -> group defaults -> host inline -> CLI overrides` 落地；host 的 `auth_ref` 优先于 group 的 `auth_ref`。
+- `cfg doctor` 已检查 group auth、port、jump 和 host key policy；cfg export/import 已保留并合并 groups。
+- 新增 `sshc group list/show/set/unset/rm`，`group set` 支持 `key=value...`，`group unset` 支持 `field...`。
+- 已更新 README/README.zh-CN 的 group defaults 示例。
+- 验证通过：`go test ./internal/core`、`go test ./internal/command`、`go test ./internal/bootstrap`。
 
 提交：
 

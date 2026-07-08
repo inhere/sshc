@@ -109,6 +109,7 @@ func ResolveConnectionForHost(host Host) (ResolvedConnection, error) {
 }
 
 func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost, bool, error) {
+	groupDefaults, hasGroupDefaults := c.GroupDefaultsForHost(host)
 	effective := EffectiveHost{
 		Host:            host,
 		ConnectTimeout:  DefaultConnectTimeout,
@@ -119,7 +120,7 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 	applyDefaults(&effective, c.Defaults)
 
 	if !IsCommandProxyHost(host) {
-		if ref := strings.TrimSpace(host.AuthRef); ref != "" {
+		if ref := effectiveAuthRef(host, groupDefaults); ref != "" {
 			profile, ok := c.FindAuthProfile(ref)
 			if !ok {
 				return EffectiveHost{}, false, fmt.Errorf("auth profile %q not found for host %q", ref, HostLogName(host))
@@ -128,6 +129,9 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 		}
 	}
 
+	if hasGroupDefaults {
+		applyGroupDefaults(&effective, groupDefaults)
+	}
 	applyHostInline(&effective, host)
 	applyOverrides(&effective, overrides)
 	if effective.Port == 0 {
@@ -138,6 +142,26 @@ func (c Config) EffectiveHost(host Host, overrides HostOverrides) (EffectiveHost
 		return EffectiveHost{}, false, err
 	}
 	return effective, true, nil
+}
+
+func (c Config) GroupDefaultsForHost(host Host) (GroupDefaults, bool) {
+	groupName := strings.TrimSpace(host.Group)
+	if groupName == "" || groupName == DefaultGroup || len(c.Groups) == 0 {
+		return GroupDefaults{}, false
+	}
+	group, ok := c.Groups[groupName]
+	if !ok {
+		return GroupDefaults{}, false
+	}
+	NormalizeGroupDefaults(&group)
+	return group, true
+}
+
+func effectiveAuthRef(host Host, group GroupDefaults) string {
+	if ref := strings.TrimSpace(host.AuthRef); ref != "" {
+		return ref
+	}
+	return strings.TrimSpace(group.AuthRef)
 }
 
 func (c Config) ResolveConnection(host Host) (ResolvedConnection, error) {
@@ -214,6 +238,39 @@ func applyAuthProfile(host *EffectiveHost, profile AuthProfile) {
 	}
 	if value := strings.TrimSpace(profile.KeyPath); value != "" {
 		host.KeyPath = value
+	}
+}
+
+func applyGroupDefaults(host *EffectiveHost, group GroupDefaults) {
+	if strings.TrimSpace(host.AuthRef) == "" {
+		host.AuthRef = strings.TrimSpace(group.AuthRef)
+	}
+	if value := strings.TrimSpace(group.User); value != "" {
+		host.User = value
+	}
+	if value := strings.TrimSpace(group.KeyPath); value != "" {
+		host.KeyPath = value
+	}
+	if group.Port > 0 {
+		host.Port = group.Port
+	}
+	if value := strings.TrimSpace(group.Jump); value != "" && strings.TrimSpace(host.Jump) == "" {
+		host.Jump = value
+	}
+	if value := strings.TrimSpace(group.ConnectTimeout); value != "" {
+		host.ConnectTimeout = value
+	}
+	if value := strings.TrimSpace(group.RunTimeout); value != "" {
+		host.RunTimeout = value
+	}
+	if value := strings.TrimSpace(group.RemoteScriptDir); value != "" {
+		host.RemoteScriptDir = value
+	}
+	if value := strings.TrimSpace(group.HostKeyCheck); value != "" {
+		host.HostKeyCheck = value
+	}
+	if value := strings.TrimSpace(group.KnownHostsPath); value != "" {
+		host.KnownHostsPath = value
 	}
 }
 
