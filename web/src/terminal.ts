@@ -7,7 +7,12 @@ export type TerminalMount = {
   dispose: () => void;
 };
 
-export function mountTerminal(container: HTMLElement, sessionID: string, onResize: (cols: number, rows: number) => void): TerminalMount {
+export function mountTerminal(
+  container: HTMLElement,
+  sessionID: string,
+  onResize: (cols: number, rows: number) => void,
+  onClose?: () => void,
+): TerminalMount {
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: '"Cascadia Mono", "SFMono-Regular", Consolas, monospace',
@@ -25,6 +30,7 @@ export function mountTerminal(container: HTMLElement, sessionID: string, onResiz
   terminal.open(container);
   fit.fit();
 
+  let disposed = false;
   const socket = new WebSocket(terminalWSURL(sessionID));
   socket.binaryType = "arraybuffer";
   socket.addEventListener("open", () => {
@@ -38,8 +44,15 @@ export function mountTerminal(container: HTMLElement, sessionID: string, onResiz
     }
     terminal.write(String(event.data));
   });
-  socket.addEventListener("close", () => terminal.writeln("\r\n[disconnected]"));
-  socket.addEventListener("error", () => terminal.writeln("\r\n[connection error]"));
+  socket.addEventListener("close", () => {
+    if (!disposed) {
+      terminal.writeln("\r\n[disconnected]");
+      onClose?.();
+    }
+  });
+  socket.addEventListener("error", () => {
+    if (!disposed) terminal.writeln("\r\n[connection error]");
+  });
 
   const dataDisposable = terminal.onData((data) => {
     if (socket.readyState === WebSocket.OPEN) {
@@ -54,6 +67,7 @@ export function mountTerminal(container: HTMLElement, sessionID: string, onResiz
   return {
     terminal,
     dispose: () => {
+      disposed = true;
       dataDisposable.dispose();
       window.removeEventListener("resize", resizeHandler);
       socket.close();

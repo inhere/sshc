@@ -48,7 +48,10 @@ type terminalResizeRequest struct {
 	Rows int `json:"rows"`
 }
 
-var openTerminalPTY = core.OpenWebPTY
+var (
+	errTerminalSessionNotFound = errors.New("terminal session not found")
+	openTerminalPTY            = core.OpenWebPTY
+)
 
 func newTerminalManager() *terminalManager {
 	return &terminalManager{sessions: make(map[string]*terminalSession)}
@@ -116,7 +119,7 @@ func (m *terminalManager) get(id string) (*terminalSession, bool) {
 func (m *terminalManager) resize(ctx context.Context, id string, cols, rows int) error {
 	session, ok := m.get(id)
 	if !ok {
-		return fmt.Errorf("terminal session %q not found", id)
+		return fmt.Errorf("%w: %q", errTerminalSessionNotFound, id)
 	}
 	if cols < 1 || rows < 1 {
 		return errors.New("cols and rows must be greater than 0")
@@ -135,14 +138,16 @@ func (m *terminalManager) resize(ctx context.Context, id string, cols, rows int)
 }
 
 func (m *terminalManager) close(ctx context.Context, id, reason string) error {
-	session, ok := m.get(id)
+	m.mu.Lock()
+	session, ok := m.sessions[strings.TrimSpace(id)]
+	if ok {
+		delete(m.sessions, session.ID)
+	}
+	m.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("terminal session %q not found", id)
+		return fmt.Errorf("%w: %q", errTerminalSessionNotFound, id)
 	}
 	err := session.close()
-	m.mu.Lock()
-	delete(m.sessions, session.ID)
-	m.mu.Unlock()
 	_ = appendTerminalAudit(ctx, terminalAuditRecord{
 		SessionID:  session.ID,
 		Host:       session.Host,
@@ -150,6 +155,14 @@ func (m *terminalManager) close(ctx context.Context, id, reason string) error {
 		Event:      "close",
 		Message:    reason,
 	})
+	return err
+}
+
+func (m *terminalManager) closeIfExists(ctx context.Context, id, reason string) error {
+	err := m.close(ctx, id, reason)
+	if errors.Is(err, errTerminalSessionNotFound) {
+		return nil
+	}
 	return err
 }
 

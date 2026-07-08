@@ -61,6 +61,10 @@ func TestTerminalSessionLifecycle(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("delete response = %d %s", rec.Code, rec.Body.String())
 	}
+	rec = requestJSON(t, srv, http.MethodDelete, "/api/terminal/sessions/"+created.ID, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second delete response = %d %s", rec.Code, rec.Body.String())
+	}
 	select {
 	case <-fake.closed:
 	case <-time.After(time.Second):

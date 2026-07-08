@@ -52,7 +52,7 @@ func (s *Server) handleTerminalDelete(c *rux.Context) {
 	if s.rejectReadonly(c) {
 		return
 	}
-	if err := s.terminals.close(c.Req.Context(), c.Param("id"), "deleted by user"); err != nil {
+	if err := s.terminals.closeIfExists(c.Req.Context(), c.Param("id"), "deleted by user"); err != nil {
 		writeError(c, http.StatusNotFound, err)
 		return
 	}

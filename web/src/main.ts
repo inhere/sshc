@@ -325,9 +325,14 @@ async function connectTerminal(host: string, cols: number, rows: number) {
     state.terminalSessionID = session.id;
     updateTerminalStatus("connected", session.host, true);
     const container = query("#terminal-container");
-    state.terminalMount = mountTerminal(container, session.id, (nextCols, nextRows) => {
-      void apiPost(`/api/terminal/sessions/${encodeURIComponent(session.id)}/resize`, { cols: nextCols, rows: nextRows }).catch(() => {});
-    });
+    state.terminalMount = mountTerminal(
+      container,
+      session.id,
+      (nextCols, nextRows) => {
+        void apiPost(`/api/terminal/sessions/${encodeURIComponent(session.id)}/resize`, { cols: nextCols, rows: nextRows }).catch(() => {});
+      },
+      () => markTerminalDisconnected(session.id, session.host),
+    );
     state.terminalMount.terminal.writeln(`connected to ${session.host}`);
     state.error = "";
     updateNotice();
@@ -339,9 +344,9 @@ async function connectTerminal(host: string, cols: number, rows: number) {
 
 async function closeTerminal(id: string) {
   if (!id) return;
-  disposeTerminal();
   try {
     await apiDelete(`/api/terminal/sessions/${encodeURIComponent(id)}`);
+    disposeTerminal();
     if (state.terminalSessionID === id) state.terminalSessionID = "";
     state.message = `closed terminal ${id}`;
     state.error = "";
@@ -357,6 +362,12 @@ function disposeTerminal() {
     state.terminalMount.dispose();
     state.terminalMount = null;
   }
+}
+
+function markTerminalDisconnected(id: string, host: string) {
+  if (state.terminalSessionID !== id) return;
+  state.terminalSessionID = "";
+  updateTerminalStatus("idle", host, false);
 }
 
 function bindHostForm() {
