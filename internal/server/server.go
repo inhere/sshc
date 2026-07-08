@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -72,6 +73,13 @@ func (s *Server) Start(ctx context.Context) (string, error) {
 		return "", err
 	}
 	url := listenerURL(ln.Addr())
+	slog.Info("serve_start",
+		slog.String("addr", s.config.Addr),
+		slog.String("url", url),
+		slog.Bool("open", s.config.Open),
+		slog.Bool("readonly", s.config.Readonly),
+		slog.Bool("token_enabled", s.tokenEnabled),
+	)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -91,7 +99,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.http == nil {
 		return nil
 	}
-	return s.http.Shutdown(ctx)
+	err := s.http.Shutdown(ctx)
+	if err != nil {
+		slog.Error("serve_shutdown", slog.Any("error", err))
+		return err
+	}
+	slog.Info("serve_shutdown")
+	return nil
 }
 
 func ValidateConfig(config Config) (Config, error) {

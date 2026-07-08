@@ -566,11 +566,21 @@ Example config:
 `logs_path` can be absolute, start with `~`, or be relative to
 `~/.config/sshc`.
 
-Default run log directory:
+Default remote run log directory:
 
 ```text
 ~/.config/sshc/logs/<host>.log
 ```
+
+sshc also writes its own runtime log with `log/slog`:
+
+```text
+~/.config/sshc/logs/runtime/sshc.log
+```
+
+The runtime log records command start/end, exit code, duration, process
+metadata, and serve lifecycle events. Sensitive command argument values such as
+passwords, tokens, keys, and export keys are masked before writing.
 
 Use another config file:
 

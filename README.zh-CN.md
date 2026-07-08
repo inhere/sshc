@@ -552,11 +552,20 @@ sshc run "testing gpu" -- uptime
 
 `logs_path` 可以是绝对路径、`~` 开头的路径，或相对于 `~/.config/sshc` 的路径。
 
-默认执行日志目录：
+默认远程执行日志目录：
 
 ```text
 ~/.config/sshc/logs/<host>.log
 ```
+
+sshc 自身也会使用 `log/slog` 写入运行日志：
+
+```text
+~/.config/sshc/logs/runtime/sshc.log
+```
+
+运行日志会记录命令启动/结束、退出码、耗时、进程信息和 serve 生命周期事件。
+写入前会脱敏 password、token、key、export key 等敏感命令参数值。
 
 使用其他配置文件：
 
