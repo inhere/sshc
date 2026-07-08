@@ -267,7 +267,7 @@ async function renderTerminal() {
   setContent(`
     <div class="terminal-layout">
       <form id="terminal-form" class="terminal-toolbar">
-        ${selectField("host", "Host", hosts.map((host) => host.name), true, "Select host", state.terminalHost)}
+        ${hostSelectField("host", "Host", hosts, true, "Select host", state.terminalHost)}
         <label><span>Cols</span><input name="cols" type="number" value="120" min="1"></label>
         <label><span>Rows</span><input name="rows" type="number" value="36" min="1"></label>
         <button id="terminal-connect" type="submit">${state.terminalSessionID ? "Reconnect" : "Connect"}</button>
@@ -515,9 +515,9 @@ async function renderLogs() {
   setTitle("Logs", "Read JSONL run history by target, text match, or task output.");
   const hosts = await apiGet<Host[]>("/api/hosts?show_ip=1");
   setActions(`
-    <select id="log-target" class="compact-input">
+    <select id="log-target" class="compact-input host-select">
       <option value="">All hosts</option>
-      ${hosts.map((host) => `<option value="${escapeAttr(host.name)}">${escapeHTML(host.name)}</option>`).join("")}
+      ${hosts.map((host) => `<option value="${escapeAttr(host.name)}">${escapeHTML(hostOptionLabel(host))}</option>`).join("")}
     </select>
     <input id="log-match" class="compact-input" placeholder="match">
     <button id="reload-logs" type="button">Search</button>
@@ -624,6 +624,33 @@ function selectField(name: string, label: string, values: string[], required = f
       </select>
     </label>
   `;
+}
+
+function hostSelectField(name: string, label: string, hosts: Host[], required = false, placeholder = "Select host", selected = "") {
+  return `
+    <label><span>${label}</span>
+      <select name="${name}" ${required ? "required" : ""}>
+        <option value="">${escapeHTML(placeholder)}</option>
+        ${hosts.map((host) => `<option value="${escapeAttr(host.name)}" ${host.name === selected ? "selected" : ""}>${escapeHTML(hostOptionLabel(host))}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function hostOptionLabel(host: Host) {
+  const details = [maskHostIP(host.ip || ""), host.remark || ""].map((value) => value.trim()).filter(Boolean);
+  if (details.length === 0) {
+    return host.name;
+  }
+  return `${host.name} (${details.join("/")})`;
+}
+
+function maskHostIP(ip: string) {
+  const parts = ip.split(".");
+  if (parts.length !== 4 || parts.some((part) => part === "")) {
+    return ip;
+  }
+  return `${parts[0]}.*.*.${parts[3]}`;
 }
 
 function authTypeField() {

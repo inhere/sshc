@@ -348,6 +348,10 @@ select {
   width: 150px;
 }
 
+.host-select {
+  width: min(320px, 42vw);
+}
+
 .toggle {
   display: inline-flex;
   grid-auto-flow: column;
