@@ -622,7 +622,7 @@ git diff --check -- internal README.md README.zh-CN.md
 feat(check): add host health checks
 ```
 
-### P1.4: host import --from-ssh-config
+### P1.4: host import --from-ssh-config（已完成）
 
 目标：
 
@@ -678,6 +678,16 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe host import --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- `host import` 已新增 `--from-ssh-config`，默认读取 `~/.ssh/config`，也支持 `-f/--file` 指定文件。
+- 新增 OpenSSH config import parser，映射 `Host/HostName/User/Port/IdentityFile/ProxyJump`。
+- 支持 `--group`、`--tags`、`--auth`、`--import-identity-file`、`--dry-run`、`--skip-existing`、`--overwrite`、`--yes`。
+- 设置 `--auth` 时默认不导入 `User/IdentityFile`，避免和 auth profile 混用；显式 `--import-identity-file` 时保留 `IdentityFile`。
+- pattern host、`Match`、`Include`、多级 `ProxyJump`、`ProxyCommand` 和 forward 初版 warning 或跳过，不做 sync。
+- 已更新 README/README.zh-CN 的 `--from-ssh-config` 示例和说明。
+- 验证通过：`go test ./internal/core`、`go test ./internal/command`、`go test ./...`、`go build -o tmp\sshc-p1.exe ./cmd/sshc`。
 
 提交：
 

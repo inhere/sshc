@@ -201,6 +201,7 @@ sshc host import -f ips.txt --format ips --auth dev-root --group testing --tags 
 sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --overwrite --yes
 sshc host import --from-clipboard --format plain --auth dev-root
+sshc host import --from-ssh-config --group imported --tags ssh-config --dry-run
 ```
 
 `ips` 是每行一个目标的简单格式：
@@ -239,6 +240,11 @@ devhost,10.0.0.8,dev-root,testing,"app,testing",app server,22
 默认遇到冲突会失败且不保存。使用 `--skip-existing` 跳过已存在主机，
 或使用 `--overwrite` 覆盖更新。`--dry-run` 只预览计划。导入的密码会在保存前加密，
 不会打印到输出里。
+
+`--from-ssh-config` 会从默认 `~/.ssh/config` 或 `-f/--file` 指定文件导入常见
+OpenSSH 配置。它会映射 `Host`、`HostName`、`User`、`Port`、`IdentityFile` 和
+单级 `ProxyJump`。pattern host、`Match`、`Include`、多级 `ProxyJump`、
+`ProxyCommand` 和端口转发会被跳过或以 warning 提示。
 
 ### 查看主机
 

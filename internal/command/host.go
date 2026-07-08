@@ -16,27 +16,29 @@ import (
 )
 
 type hostImportOptions struct {
-	File           string
-	FromClipboard  bool
-	Format         string
-	AuthRef        string
-	User           string
-	KeyPath        string
-	Group          string
-	Tags           string
-	Remark         string
-	Jump           string
-	Backend        string
-	Via            string
-	RunTemplate    string
-	LoginCommand   string
-	HostKeyCheck   string
-	KnownHostsPath string
-	Port           int
-	DryRun         bool
-	SkipExisting   bool
-	Overwrite      bool
-	Yes            bool
+	File               string
+	FromClipboard      bool
+	FromSSHConfig      bool
+	Format             string
+	AuthRef            string
+	User               string
+	KeyPath            string
+	Group              string
+	Tags               string
+	Remark             string
+	Jump               string
+	Backend            string
+	Via                string
+	RunTemplate        string
+	LoginCommand       string
+	HostKeyCheck       string
+	KnownHostsPath     string
+	Port               int
+	DryRun             bool
+	SkipExisting       bool
+	Overwrite          bool
+	Yes                bool
+	ImportIdentityFile bool
 }
 
 var hostTrust = core.TrustHostKeyWithOptions
@@ -97,10 +99,12 @@ Examples:
   sshc host import -f hosts.txt --format plain --dry-run
   sshc host import -f hosts.csv --format csv --overwrite --yes
   sshc host import --from-clipboard --format plain --auth dev-root
+  sshc host import --from-ssh-config --group imported --tags ssh-config --dry-run
 `),
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.File, "file", "f", "", "input file, or - for stdin")
 			c.BoolOpt(&opts.FromClipboard, "from-clipboard", "fc", false, "read import data from clipboard")
+			c.BoolOpt(&opts.FromSSHConfig, "from-ssh-config", "", false, "read import data from OpenSSH config")
 			c.StrOpt(&opts.Format, "format", "", "", "input format: ips, plain, or csv")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "default auth profile name")
 			c.StrOpt(&opts.User, "user", "u", "", "default ssh username")
@@ -120,22 +124,18 @@ Examples:
 			c.BoolOpt(&opts.SkipExisting, "skip-existing", "", false, "skip existing hosts")
 			c.BoolOpt(&opts.Overwrite, "overwrite", "", false, "overwrite existing hosts")
 			c.BoolOpt(&opts.Yes, "yes", "y", false, "confirm import")
+			c.BoolOpt(&opts.ImportIdentityFile, "import-identity-file", "", false, "import IdentityFile even when --auth is set")
 		},
 		Func: func(c *gcli.Command, _ []string) error {
-			data, source, err := readHostImportInput(opts)
-			if err != nil {
-				return err
-			}
-			format, err := resolveHostImportFormat(opts.Format, source, data)
-			if err != nil {
-				return err
-			}
 			config, err := core.LoadConfig()
 			if err != nil {
 				return err
 			}
 			defaults := hostImportDefaults(opts, config.Defaults)
-			hosts, parseErrs := core.ParseHostImport(bytes.NewReader(data), format, defaults)
+			hosts, format, parseErrs, err := parseHostImportHosts(c, opts, defaults)
+			if err != nil {
+				return err
+			}
 			if len(parseErrs) > 0 {
 				writeHostImportErrors(c, "invalid", parseErrs)
 				return fmt.Errorf("host import parse failed: %d error(s)", len(parseErrs))
@@ -214,6 +214,51 @@ func readHostImportInput(opts hostImportOptions) ([]byte, string, error) {
 		}
 		return data, file, nil
 	}
+}
+
+func parseHostImportHosts(c *gcli.Command, opts hostImportOptions, defaults core.HostImportDefaults) ([]core.Host, core.HostImportFormat, []core.HostImportError, error) {
+	if opts.FromSSHConfig {
+		if strings.TrimSpace(opts.Format) != "" {
+			return nil, "", nil, errors.New("--from-ssh-config and --format cannot be used together")
+		}
+		if opts.FromClipboard {
+			return nil, "", nil, errors.New("--from-ssh-config and --from-clipboard cannot be used together")
+		}
+		data, err := readSSHConfigImportInput(opts)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		hosts, warnings, parseErrs := core.ParseSSHConfigImport(bytes.NewReader(data), core.SSHConfigImportOptions{
+			Defaults:           defaults,
+			ImportIdentityFile: opts.ImportIdentityFile,
+		})
+		for _, warning := range warnings {
+			fmt.Fprintf(cmdOutput(c), "warning: %s\n", warning.String())
+		}
+		return hosts, core.HostImportPlain, parseErrs, nil
+	}
+	data, source, err := readHostImportInput(opts)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	format, err := resolveHostImportFormat(opts.Format, source, data)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	hosts, parseErrs := core.ParseHostImport(bytes.NewReader(data), format, defaults)
+	return hosts, format, parseErrs, nil
+}
+
+func readSSHConfigImportInput(opts hostImportOptions) ([]byte, error) {
+	file := strings.TrimSpace(opts.File)
+	if file == "" {
+		path, err := core.SSHConfigPathForImport()
+		if err != nil {
+			return nil, err
+		}
+		file = path
+	}
+	return os.ReadFile(file)
 }
 
 func resolveHostImportFormat(value, source string, data []byte) (core.HostImportFormat, error) {

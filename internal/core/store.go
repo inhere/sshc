@@ -534,6 +534,10 @@ func sshConfigPath() (string, error) {
 	return filepath.Join(home, ".ssh", "config"), nil
 }
 
+func SSHConfigPathForImport() (string, error) {
+	return sshConfigPath()
+}
+
 func SaveStore(store *Store) error {
 	config := configFromStore(*store)
 	return SaveConfig(&config)

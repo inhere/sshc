@@ -237,6 +237,125 @@ func TestHostImportFromClipboard(t *testing.T) {
 	}
 }
 
+func TestHostImportFromSSHConfig(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []core.Host{{Name: "bastion", IP: "1.2.3.4", AuthRef: "dev-root", Port: 22}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	input := `
+Host devhost
+  HostName 10.0.0.8
+  User root
+  Port 2222
+  IdentityFile ~/.ssh/id_rsa
+  ProxyJump bastion
+
+Host *.internal
+  HostName ignored
+`
+	path := filepath.Join(t.TempDir(), "ssh_config")
+	if err := os.WriteFile(path, []byte(input), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "--from-ssh-config", "-f", path, "--group", "imported", "--tags", "ssh-config", "--yes"}); err != nil {
+		t.Fatalf("host import ssh config: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 2 {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+	host := config.Hosts[1]
+	if host.Name != "devhost" || host.IP != "10.0.0.8" || host.User != "root" || host.Port != 2222 || host.KeyPath != "~/.ssh/id_rsa" || host.Jump != "bastion" {
+		t.Fatalf("host = %+v", host)
+	}
+	if host.Group != "imported" || strings.Join(host.Tags, ",") != "ssh-config" {
+		t.Fatalf("host defaults = %+v", host)
+	}
+}
+
+func TestHostImportFromSSHConfigDefaultPathAndDryRun(t *testing.T) {
+	withTempConfig(t)
+	home, err := core.SSHConfigPathForImport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(home), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(home, []byte("Host devhost\n  HostName 10.0.0.8\n  User root\n  IdentityFile ~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "--from-ssh-config", "--dry-run"}); err != nil {
+		t.Fatalf("host import ssh config dry-run: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 0 {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestHostImportFromSSHConfigAuthSkipsUserAndIdentity(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "ssh_config")
+	if err := os.WriteFile(path, []byte("Host devhost\n  HostName 10.0.0.8\n  User root\n  IdentityFile ~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "--from-ssh-config", "-f", path, "--auth", "dev-root", "--yes"}); err != nil {
+		t.Fatalf("host import ssh config auth: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[0]
+	if host.AuthRef != "dev-root" || host.User != "" || host.KeyPath != "" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
+func TestHostImportFromSSHConfigImportIdentityFileWithAuth(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "ssh_config")
+	if err := os.WriteFile(path, []byte("Host devhost\n  HostName 10.0.0.8\n  User root\n  IdentityFile ~/.ssh/id_rsa\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "import", "--from-ssh-config", "-f", path, "--auth", "dev-root", "--import-identity-file", "--yes"}); err != nil {
+		t.Fatalf("host import ssh config identity: %v", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := config.Hosts[0]
+	if host.AuthRef != "dev-root" || host.User != "" || host.KeyPath != "~/.ssh/id_rsa" {
+		t.Fatalf("host = %+v", host)
+	}
+}
+
 func TestHostImportRequiresYesInNonInteractiveMode(t *testing.T) {
 	withTempConfig(t)
 	path := filepath.Join(t.TempDir(), "hosts.ips")

@@ -207,6 +207,7 @@ sshc host import -f ips.txt --format ips --auth dev-root --group testing --tags 
 sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --overwrite --yes
 sshc host import --from-clipboard --format plain --auth dev-root
+sshc host import --from-ssh-config --group imported --tags ssh-config --dry-run
 ```
 
 `ips` is a simple one-target-per-line format:
@@ -245,6 +246,12 @@ devhost,10.0.0.8,dev-root,testing,"app,testing",app server,22
 By default, conflicts fail without saving. Use `--skip-existing` to ignore saved
 hosts or `--overwrite` to update them. `--dry-run` previews the plan. Imported
 passwords are encrypted before saving and are not printed.
+
+`--from-ssh-config` imports common OpenSSH config entries from `~/.ssh/config`
+or a file passed by `-f/--file`. It maps `Host`, `HostName`, `User`, `Port`,
+`IdentityFile`, and single-hop `ProxyJump`. Pattern hosts, `Match`, `Include`,
+multi-hop `ProxyJump`, `ProxyCommand`, and port forwards are skipped or reported
+as warnings.
 
 ### List Hosts
 
