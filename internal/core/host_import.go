@@ -22,6 +22,7 @@ type HostImportDefaults struct {
 	User            string
 	KeyPath         string
 	Group           string
+	Tags            []string
 	Remark          string
 	Port            int
 	Jump            string
@@ -410,6 +411,8 @@ func setHostImportField(host *Host, key, value string, line int) *HostImportErro
 		host.KeyPath = value
 	case "group":
 		host.Group = value
+	case "tags":
+		host.Tags = NormalizeTags(value)
 	case "remark":
 		host.Remark = value
 	case "port":
@@ -452,6 +455,7 @@ func applyHostImportDefaults(host *Host, defaults HostImportDefaults) {
 	setStringDefault(&host.User, defaults.User)
 	setStringDefault(&host.KeyPath, defaults.KeyPath)
 	setStringDefault(&host.Group, defaults.Group)
+	host.Tags = NormalizeTagList(append(defaults.Tags, host.Tags...))
 	setStringDefault(&host.Remark, defaults.Remark)
 	setStringDefault(&host.Jump, defaults.Jump)
 	setStringDefault(&host.Backend, defaults.Backend)
@@ -525,6 +529,8 @@ func normalizeHostImportField(field string) string {
 		return "password"
 	case "key", "keypath", "keyfile":
 		return "key_path"
+	case "tag":
+		return "tags"
 	case "jump_host":
 		return "jump"
 	case "run-template":
@@ -539,7 +545,7 @@ func normalizeHostImportField(field string) string {
 func isHostImportField(field string) bool {
 	switch field {
 	case "name", "ip", "auth_ref", "user", "password", "key_path",
-		"group", "remark", "port", "jump", "backend", "via", "run_template", "login_command", "connect_timeout", "run_timeout",
+		"group", "tags", "remark", "port", "jump", "backend", "via", "run_template", "login_command", "connect_timeout", "run_timeout",
 		"remote_script_dir", "host_key_check", "known_hosts_path":
 		return true
 	default:

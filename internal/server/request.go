@@ -68,6 +68,7 @@ func normalizeAPIHost(host *core.Host) {
 	host.KeyPath = strings.TrimSpace(host.KeyPath)
 	host.Remark = strings.TrimSpace(host.Remark)
 	host.Group = strings.TrimSpace(host.Group)
+	host.Tags = core.NormalizeTagList(host.Tags)
 	host.Jump = strings.TrimSpace(host.Jump)
 	host.Backend = strings.TrimSpace(host.Backend)
 	host.Via = strings.TrimSpace(host.Via)

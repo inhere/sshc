@@ -37,6 +37,7 @@ func TestParseHostImportPlain(t *testing.T) {
 name=devhost
 auth=dev-root
 group=testing
+tags=app,gpu
 remark=app server
 port=2222
 jump=bastion
@@ -61,6 +62,9 @@ known_hosts_path: ~/.ssh/known_hosts
 	}
 	if hosts[0].Name != "devhost" || hosts[0].AuthRef != "dev-root" || hosts[0].Group != "testing" || hosts[0].Port != 2222 || hosts[0].Jump != "bastion" {
 		t.Fatalf("host[0] = %+v", hosts[0])
+	}
+	if strings.Join(hosts[0].Tags, ",") != "app,gpu" {
+		t.Fatalf("tags = %+v", hosts[0].Tags)
 	}
 	if hosts[1].Name != "dbhost" || hosts[1].User != "root" || hosts[1].Password != "secret" || hosts[1].KeyPath != "~/.ssh/id_ed25519" {
 		t.Fatalf("host[1] = %+v", hosts[1])
@@ -109,9 +113,9 @@ func TestParseHostKV(t *testing.T) {
 }
 
 func TestParseHostImportCSV(t *testing.T) {
-	input := "name,ip,auth,group,remark,port,jump\n" +
-		"devhost,10.0.0.8,dev-root,testing,app server,2222,bastion\n" +
-		"dbhost,10.0.0.9,dev-root,testing,db server,22,bastion\n"
+	input := "name,ip,auth,group,tags,remark,port,jump\n" +
+		"devhost,10.0.0.8,dev-root,testing,\"app,gpu\",app server,2222,bastion\n" +
+		"dbhost,10.0.0.9,dev-root,testing,db,db server,22,bastion\n"
 	hosts, errs := ParseHostImportCSV(strings.NewReader(input), HostImportDefaults{})
 	if len(errs) != 0 {
 		t.Fatalf("errs = %+v", errs)
@@ -121,6 +125,9 @@ func TestParseHostImportCSV(t *testing.T) {
 	}
 	if hosts[0].Name != "devhost" || hosts[0].IP != "10.0.0.8" || hosts[0].AuthRef != "dev-root" || hosts[0].Port != 2222 {
 		t.Fatalf("host[0] = %+v", hosts[0])
+	}
+	if strings.Join(hosts[0].Tags, ",") != "app,gpu" {
+		t.Fatalf("tags = %+v", hosts[0].Tags)
 	}
 }
 
@@ -153,6 +160,7 @@ func TestParseHostImportAppliesDefaults(t *testing.T) {
 		User:            "root",
 		KeyPath:         "~/.ssh/id_rsa",
 		Group:           "testing",
+		Tags:            []string{"default", "imported"},
 		Remark:          "imported",
 		Port:            2222,
 		Jump:            "bastion",
@@ -169,6 +177,9 @@ func TestParseHostImportAppliesDefaults(t *testing.T) {
 	if host.AuthRef != "dev-root" || host.User != "root" || host.KeyPath != "~/.ssh/id_rsa" || host.Group != "testing" || host.Port != 2222 {
 		t.Fatalf("host = %+v", host)
 	}
+	if strings.Join(host.Tags, ",") != "default,imported" {
+		t.Fatalf("tags = %+v", host.Tags)
+	}
 	if host.Jump != "bastion" || host.ConnectTimeout != "10s" || host.RunTimeout != "1m" || host.RemoteScriptDir != "/var/tmp" {
 		t.Fatalf("host defaults = %+v", host)
 	}
@@ -178,13 +189,16 @@ func TestParseHostImportAppliesDefaults(t *testing.T) {
 }
 
 func TestParseHostImportRowOverridesDefaults(t *testing.T) {
-	input := "ip=10.0.0.8\nname=devhost\nauth=host-auth\ngroup=host-group\nport=2200\n"
-	hosts, errs := ParseHostImportPlain(strings.NewReader(input), HostImportDefaults{AuthRef: "default-auth", Group: "default-group", Port: 22})
+	input := "ip=10.0.0.8\nname=devhost\nauth=host-auth\ngroup=host-group\ntags=host-tag\nport=2200\n"
+	hosts, errs := ParseHostImportPlain(strings.NewReader(input), HostImportDefaults{AuthRef: "default-auth", Group: "default-group", Tags: []string{"default-tag"}, Port: 22})
 	if len(errs) != 0 {
 		t.Fatalf("errs = %+v", errs)
 	}
 	if hosts[0].AuthRef != "host-auth" || hosts[0].Group != "host-group" || hosts[0].Port != 2200 {
 		t.Fatalf("host = %+v", hosts[0])
+	}
+	if strings.Join(hosts[0].Tags, ",") != "default-tag,host-tag" {
+		t.Fatalf("tags = %+v", hosts[0].Tags)
 	}
 }
 

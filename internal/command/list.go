@@ -20,9 +20,10 @@ func NewListCmd() *gcli.Command {
 	cmd.Help = `
 Examples:
   sshc list --show-ip
+  sshc list --tag testing
 
 Output:
-  name    group    user@ip:port    auth    remark
+  name    group    tags    user@ip:port    auth    remark
 
 Notes:
   - IPv4 addresses are masked by default, for example 10.*.*.8.
@@ -38,7 +39,7 @@ func buildHostListTable(hosts []core.Host, showIP bool) string {
 		return ""
 	}
 	tb := table.New("", table.WithBorderFlags(table.BorderDefault), table.WithOverflowFlag(table.OverflowWrap))
-	tb.SetHeads("Name", "Group", "Address", "Auth", "Remark")
+	tb.SetHeads("Name", "Group", "Tags", "Address", "Auth", "Remark")
 	for _, host := range hosts {
 		name := host.Name
 		if name == "" {
@@ -54,7 +55,7 @@ func buildHostListTable(hosts []core.Host, showIP bool) string {
 			address = fmt.Sprintf("via:%s", strings.TrimSpace(host.Via))
 			auth = core.HostBackendCommandProxy
 		}
-		tb.AddRow(name, core.HostGroupName(host), address, auth, remark)
+		tb.AddRow(name, core.HostGroupName(host), core.HostTagsLabel(host), address, auth, remark)
 	}
 	return tb.String()
 }

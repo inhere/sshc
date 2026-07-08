@@ -71,6 +71,7 @@ sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "shared root login"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
+sshc host set devhost tags=app,testing remark="app server"
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc run devhost --script ./deploy.sh
@@ -114,7 +115,7 @@ sshc <command> --help
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
-sshc add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc add --ip 192.168.1.10 --name devhost --auth dev-root --tags app,testing
 sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc add -I
 sshc add --from-clipboard
@@ -130,6 +131,7 @@ user=root
 password=password
 name=devhost
 port=22
+tags=app,testing
 ```
 
 ```text
@@ -164,7 +166,10 @@ sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
+sshc host set devhost user=root port=22 group=testing tags=app,gpu
+sshc host unset devhost tags remark jump
 sshc host list --group testing --show-ip
+sshc host list --tag app,gpu
 sshc host list --match devhost
 sshc host show devhost
 sshc host trust devhost
@@ -177,7 +182,7 @@ Top-level `add`, `list`, and `ls` remain available for quick daily use.
 ### Import Hosts
 
 ```bash
-sshc host import -f ips.txt --format ips --auth dev-root --group testing --yes
+sshc host import -f ips.txt --format ips --auth dev-root --group testing --tags imported,testing --yes
 sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --overwrite --yes
 sshc host import --from-clipboard --format plain --auth dev-root
@@ -199,19 +204,21 @@ ip=10.0.0.8
 name=devhost
 auth=dev-root
 group=testing
+tags=app,testing
 
 ip: 10.0.0.9
 name: dbhost
 user: root
 password: secret
 group: testing
+tags: db,testing
 ```
 
 CSV imports must include a header row:
 
 ```csv
-name,ip,auth,group,remark,port
-devhost,10.0.0.8,dev-root,testing,app server,22
+name,ip,auth,group,tags,remark,port
+devhost,10.0.0.8,dev-root,testing,"app,testing",app server,22
 ```
 
 By default, conflicts fail without saving. Use `--skip-existing` to ignore saved
@@ -224,11 +231,13 @@ passwords are encrypted before saving and are not printed.
 sshc list
 sshc ls
 sshc list --show-ip
+sshc list --tag testing
 ```
 
-`sshc list` shows the host name, group, address, authentication type, and remark.
+`sshc list` shows the host name, group, tags, address, authentication type, and remark.
 IPv4 addresses are masked by default, for example `10.*.*.8`. Use `--show-ip`
-when you need the full address.
+when you need the full address. Use `--tag app,gpu` to list hosts that have all
+specified tags.
 
 Hosts from `~/.ssh/config` are also listed when they have `HostName`, `User`, and
 `IdentityFile`.

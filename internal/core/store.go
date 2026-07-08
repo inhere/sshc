@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -29,21 +30,22 @@ const (
 var userHomeDir = os.UserHomeDir
 
 type Host struct {
-	Name         string `json:"name"`
-	IP           string `json:"ip"`
-	AuthRef      string `json:"auth_ref,omitempty"`
-	User         string `json:"user"`
-	Password     string `json:"password,omitempty"`
-	PasswordEnc  string `json:"password_enc,omitempty"`
-	KeyPath      string `json:"key_path,omitempty"`
-	Remark       string `json:"remark,omitempty"`
-	Group        string `json:"group,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	Jump         string `json:"jump,omitempty"`
-	Backend      string `json:"backend,omitempty"`
-	Via          string `json:"via,omitempty"`
-	RunTemplate  string `json:"run_template,omitempty"`
-	LoginCommand string `json:"login_command,omitempty"`
+	Name         string   `json:"name"`
+	IP           string   `json:"ip"`
+	AuthRef      string   `json:"auth_ref,omitempty"`
+	User         string   `json:"user"`
+	Password     string   `json:"password,omitempty"`
+	PasswordEnc  string   `json:"password_enc,omitempty"`
+	KeyPath      string   `json:"key_path,omitempty"`
+	Remark       string   `json:"remark,omitempty"`
+	Group        string   `json:"group,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	Port         int      `json:"port,omitempty"`
+	Jump         string   `json:"jump,omitempty"`
+	Backend      string   `json:"backend,omitempty"`
+	Via          string   `json:"via,omitempty"`
+	RunTemplate  string   `json:"run_template,omitempty"`
+	LoginCommand string   `json:"login_command,omitempty"`
 
 	ConnectTimeout  string `json:"connect_timeout,omitempty"`
 	RunTimeout      string `json:"run_timeout,omitempty"`
@@ -141,6 +143,7 @@ func (s Store) MatchHosts(target string) []Host {
 			strings.TrimSpace(host.IP),
 			strings.TrimSpace(host.Remark),
 			strings.TrimSpace(HostGroupName(host)),
+			strings.Join(host.Tags, " "),
 		}, " "))
 		if matchAllParts(text, parts) {
 			matches = append(matches, host)
@@ -255,11 +258,72 @@ func NormalizeHostFields(host *Host) {
 	host.LoginCommand = strings.TrimSpace(host.LoginCommand)
 	host.Remark = strings.TrimSpace(host.Remark)
 	host.Group = strings.TrimSpace(host.Group)
+	host.Tags = NormalizeTagList(host.Tags)
 	host.ConnectTimeout = strings.TrimSpace(host.ConnectTimeout)
 	host.RunTimeout = strings.TrimSpace(host.RunTimeout)
 	host.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
 	host.HostKeyCheck = strings.TrimSpace(host.HostKeyCheck)
 	host.KnownHostsPath = strings.TrimSpace(host.KnownHostsPath)
+}
+
+func NormalizeTags(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return NormalizeTagList(strings.Split(value, ","))
+}
+
+func NormalizeTagList(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tags))
+	normalized := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	sort.Strings(normalized)
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func HostHasTags(host Host, tags []string) bool {
+	tags = NormalizeTagList(tags)
+	if len(tags) == 0 {
+		return true
+	}
+	hostTags := NormalizeTagList(host.Tags)
+	if len(hostTags) == 0 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(hostTags))
+	for _, tag := range hostTags {
+		seen[tag] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, ok := seen[tag]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func HostTagsLabel(host Host) string {
+	tags := NormalizeTagList(host.Tags)
+	if len(tags) == 0 {
+		return "-"
+	}
+	return strings.Join(tags, ",")
 }
 
 func HostGroupName(host Host) string {
@@ -508,6 +572,9 @@ func normalizeConfig(config *Config) {
 	}
 	if config.Hosts == nil {
 		config.Hosts = []Host{}
+	}
+	for i := range config.Hosts {
+		NormalizeHostFields(&config.Hosts[i])
 	}
 }
 

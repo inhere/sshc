@@ -317,6 +317,37 @@ func TestAuthLabel(t *testing.T) {
 	}
 }
 
+func TestNormalizeTags(t *testing.T) {
+	tags := NormalizeTags(" testing,app,,gpu,app ")
+	if got := strings.Join(tags, ","); got != "app,gpu,testing" {
+		t.Fatalf("tags = %q, want app,gpu,testing", got)
+	}
+	if got := NormalizeTags(" , "); len(got) != 0 {
+		t.Fatalf("empty tags = %+v", got)
+	}
+}
+
+func TestHostHasTags(t *testing.T) {
+	host := Host{Tags: []string{"testing", "app", "gpu"}}
+	if !HostHasTags(host, NormalizeTags("app,gpu")) {
+		t.Fatalf("host should have app,gpu: %+v", host.Tags)
+	}
+	if HostHasTags(host, NormalizeTags("app,db")) {
+		t.Fatalf("host should not have app,db: %+v", host.Tags)
+	}
+}
+
+func TestStoreMatchHostsIncludesTags(t *testing.T) {
+	store := Store{Hosts: []Host{
+		{Name: "devhost", IP: "10.0.0.8", Tags: []string{"app", "gpu"}},
+		{Name: "dbhost", IP: "10.0.0.9", Tags: []string{"db"}},
+	}}
+	matches := store.MatchHosts("app gpu")
+	if len(matches) != 1 || matches[0].Name != "devhost" {
+		t.Fatalf("matches = %+v", matches)
+	}
+}
+
 func TestDoctorReportsDuplicateHosts(t *testing.T) {
 	issues := CheckConfig(Config{Hosts: []Host{
 		{Name: "devhost", IP: "10.0.0.8"},

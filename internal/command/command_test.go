@@ -29,6 +29,7 @@ func TestAddAndList(t *testing.T) {
 		"--jump", "bastion",
 		"--remark", "testing host",
 		"--group", "testing",
+		"--tags", "testing,app",
 	})
 	if err != nil {
 		t.Fatalf("add host: %v", err)
@@ -43,6 +44,9 @@ func TestAddAndList(t *testing.T) {
 	}
 	if store.Hosts[0].KeyPath != "~/.ssh/id_rsa" || store.Hosts[0].Jump != "bastion" || store.Hosts[0].Remark != "testing host" || store.Hosts[0].Group != "testing" {
 		t.Fatalf("unexpected host metadata: %+v", store.Hosts[0])
+	}
+	if got := strings.Join(store.Hosts[0].Tags, ","); got != "app,testing" {
+		t.Fatalf("tags = %q, want app,testing", got)
 	}
 }
 
@@ -67,7 +71,7 @@ func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
 func TestAddFromClipboard(t *testing.T) {
 	withTempConfig(t)
 	t.Cleanup(setReadClipboardForTest(func() (string, error) {
-		return "ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\nname=devhost\njump=bastion\nremark=testing host\ngroup=testing\n", nil
+		return "ip=10.0.0.8\nuser=root\nkey=~/.ssh/id_rsa\nname=devhost\njump=bastion\nremark=testing host\ngroup=testing\ntags=app,testing\n", nil
 	}))
 
 	app := newTestApp()
@@ -84,6 +88,9 @@ func TestAddFromClipboard(t *testing.T) {
 	}
 	if host.Jump != "bastion" {
 		t.Fatalf("jump = %q, want bastion", host.Jump)
+	}
+	if got := strings.Join(host.Tags, ","); got != "app,testing" {
+		t.Fatalf("tags = %q, want app,testing", got)
 	}
 }
 
@@ -102,6 +109,7 @@ func TestParseClipboardHostKVUsesImportFields(t *testing.T) {
 name: devhost
 auth: dev-root
 group: testing
+tags: app,testing
 remark: app server
 keyfile: ~/.ssh/id_rsa
 jump_host: bastion
@@ -120,6 +128,9 @@ known_hosts_path: ~/.ssh/known_hosts
 	}
 	if host.Group != "testing" || host.Remark != "app server" || host.Jump != "bastion" {
 		t.Fatalf("host metadata = %+v", host)
+	}
+	if got := strings.Join(host.Tags, ","); got != "app,testing" {
+		t.Fatalf("tags = %q, want app,testing", got)
 	}
 	if host.ConnectTimeout != "10s" || host.RunTimeout != "1m" || host.RemoteScriptDir != "/var/tmp" {
 		t.Fatalf("host timeouts = %+v", host)
@@ -142,7 +153,7 @@ func TestParseClipboardHostErrors(t *testing.T) {
 }
 
 func TestCollectInteractiveHost(t *testing.T) {
-	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\nbastion\n")
+	input := strings.NewReader("devhost\n10.0.0.8\nroot\n\n~/.ssh/id_rsa\n2222\ntesting host\ntesting\napp,testing\nbastion\n")
 	host, err := collectInteractiveHost(input, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("collect interactive host: %v", err)
@@ -153,10 +164,13 @@ func TestCollectInteractiveHost(t *testing.T) {
 	if host.Password != "" || host.KeyPath != "~/.ssh/id_rsa" || host.Jump != "bastion" || host.Remark != "testing host" || host.Group != "testing" {
 		t.Fatalf("host metadata = %+v", host)
 	}
+	if got := strings.Join(host.Tags, ","); got != "app,testing" {
+		t.Fatalf("tags = %q, want app,testing", got)
+	}
 }
 
 func TestCollectInteractiveHostDefaults(t *testing.T) {
-	input := strings.NewReader("\n10.0.0.8\n\nsecret\n\n\n\n\n\n")
+	input := strings.NewReader("\n10.0.0.8\n\nsecret\n\n\n\n\n\n\n")
 	host, err := collectInteractiveHost(input, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("collect interactive host: %v", err)
@@ -195,11 +209,12 @@ func TestBuildHostListTable(t *testing.T) {
 		KeyPath: "~/.ssh/id_rsa",
 		Remark:  "testing host",
 		Group:   "testing",
+		Tags:    []string{"app", "testing"},
 		Port:    2222,
 	}}
 
 	out := buildHostListTable(hosts, false)
-	for _, want := range []string{"Name", "Group", "Address", "Auth", "Remark", "devhost", "testing", "root@10.*.*.8:2222", "key", "testing host"} {
+	for _, want := range []string{"Name", "Group", "Tags", "Address", "Auth", "Remark", "devhost", "testing", "app,testing", "root@10.*.*.8:2222", "key", "testing host"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("table output %q does not contain %q", out, want)
 		}
@@ -340,7 +355,7 @@ func TestHostListFiltersByGroupAndMatch(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
 		{Name: "testing-web", IP: "10.0.0.8", User: "root", Password: "secret", Group: "testing", Port: 22},
-		{Name: "prod-db", IP: "10.0.0.9", User: "root", Password: "secret", Group: "prod", Port: 22},
+		{Name: "prod-db", IP: "10.0.0.9", User: "root", Password: "secret", Group: "prod", Tags: []string{"db"}, Port: 22},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -353,6 +368,28 @@ func TestHostListFiltersByGroupAndMatch(t *testing.T) {
 	}
 	output := out.String()
 	if !strings.Contains(output, "testing-web") || strings.Contains(output, "prod-db") {
+		t.Fatalf("output = %q", output)
+	}
+}
+
+func TestHostListFiltersByTag(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{
+		{Name: "testing-web", IP: "10.0.0.8", User: "root", Password: "secret", Group: "testing", Tags: []string{"app", "testing"}, Port: 22},
+		{Name: "testing-db", IP: "10.0.0.9", User: "root", Password: "secret", Group: "testing", Tags: []string{"db", "testing"}, Port: 22},
+		{Name: "prod-web", IP: "10.0.0.10", User: "root", Password: "secret", Group: "prod", Tags: []string{"app", "prod"}, Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	if err := app.RunWithArgs([]string{"host", "list", "--tag", "app,testing"}); err != nil {
+		t.Fatalf("host list: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "testing-web") || strings.Contains(output, "testing-db") || strings.Contains(output, "prod-web") {
 		t.Fatalf("output = %q", output)
 	}
 }

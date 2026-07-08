@@ -23,7 +23,7 @@ func TestHostImportIPsCommand(t *testing.T) {
 	}
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--auth", "dev-root", "--group", "testing", "--yes"}); err != nil {
+	if err := app.RunWithArgs([]string{"host", "import", "-f", path, "--auth", "dev-root", "--group", "testing", "--tags", "imported,testing", "--yes"}); err != nil {
 		t.Fatalf("host import ips: %v", err)
 	}
 
@@ -36,6 +36,9 @@ func TestHostImportIPsCommand(t *testing.T) {
 	}
 	if config.Hosts[0].Port != core.DefaultSSHPort || config.Hosts[1].Port != core.DefaultSSHPort {
 		t.Fatalf("ports = %d,%d", config.Hosts[0].Port, config.Hosts[1].Port)
+	}
+	if strings.Join(config.Hosts[0].Tags, ",") != "imported,testing" {
+		t.Fatalf("tags = %+v", config.Hosts[0].Tags)
 	}
 }
 
@@ -287,18 +290,19 @@ func TestHostSetUpdatesFields(t *testing.T) {
 	app := newTestApp()
 	if err := app.RunWithArgs([]string{
 		"host", "set", "devhost",
-		"--ip", "10.0.0.10",
-		"--user", "deploy",
-		"--key", "~/.ssh/deploy",
-		"--remark", "testing host",
-		"--group", "testing",
-		"--jump", "bastion",
-		"--port", "2222",
-		"--connect-timeout", "10s",
-		"--run-timeout", "1m",
-		"--remote-script-dir", "/var/tmp",
-		"--host-key-check", core.HostKeyCheckInsecure,
-		"--known-hosts-path", "~/.ssh/known_hosts",
+		"ip=10.0.0.10",
+		"user=deploy",
+		"key=~/.ssh/deploy",
+		"remark=testing host",
+		"group=testing",
+		"tags=app,testing",
+		"jump=bastion",
+		"port=2222",
+		"connect_timeout=10s",
+		"run_timeout=1m",
+		"remote_script_dir=/var/tmp",
+		"host_key_check=" + core.HostKeyCheckInsecure,
+		"known_hosts_path=~/.ssh/known_hosts",
 	}); err != nil {
 		t.Fatalf("host set: %v", err)
 	}
@@ -313,6 +317,9 @@ func TestHostSetUpdatesFields(t *testing.T) {
 	}
 	if host.Remark != "testing host" || host.Group != "testing" || host.Jump != "bastion" || host.ConnectTimeout != "10s" || host.RunTimeout != "1m" {
 		t.Fatalf("host metadata = %+v", host)
+	}
+	if strings.Join(host.Tags, ",") != "app,testing" {
+		t.Fatalf("tags = %+v", host.Tags)
 	}
 	if host.RemoteScriptDir != "/var/tmp" || host.HostKeyCheck != core.HostKeyCheckInsecure || host.KnownHostsPath != "~/.ssh/known_hosts" {
 		t.Fatalf("host defaults = %+v", host)
@@ -331,10 +338,10 @@ func TestHostSetCommandProxyFields(t *testing.T) {
 	app := newTestApp()
 	if err := app.RunWithArgs([]string{
 		"host", "set", "lxc-app",
-		"--backend", core.HostBackendCommandProxy,
-		"--via", "pve-host",
-		"--run-template", "pct exec 101 -- sh -lc {{cmd}}",
-		"--login-command", "pct enter 101",
+		"backend=" + core.HostBackendCommandProxy,
+		"via=pve-host",
+		"run_template=pct exec 101 -- sh -lc {{cmd}}",
+		"login_command=pct enter 101",
 	}); err != nil {
 		t.Fatalf("host set command_proxy: %v", err)
 	}
@@ -365,7 +372,7 @@ func TestHostUnsetCommandProxyFields(t *testing.T) {
 	}
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"host", "unset", "lxc-app", "--backend", "--via", "--run-template", "--login-command"}); err != nil {
+	if err := app.RunWithArgs([]string{"host", "unset", "lxc-app", "backend", "via", "run_template", "login_command"}); err != nil {
 		t.Fatalf("host unset command_proxy: %v", err)
 	}
 	config, err := core.LoadConfig()
@@ -393,6 +400,7 @@ func TestHostUnsetFields(t *testing.T) {
 			KeyPath:         "~/.ssh/deploy",
 			Remark:          "testing host",
 			Group:           "testing",
+			Tags:            []string{"app", "testing"},
 			Port:            22,
 			ConnectTimeout:  "10s",
 			RunTimeout:      "1m",
@@ -407,15 +415,16 @@ func TestHostUnsetFields(t *testing.T) {
 	app := newTestApp()
 	if err := app.RunWithArgs([]string{
 		"host", "unset", "devhost",
-		"--user",
-		"--key",
-		"--remark",
-		"--group",
-		"--connect-timeout",
-		"--run-timeout",
-		"--remote-script-dir",
-		"--host-key-check",
-		"--known-hosts-path",
+		"user",
+		"key",
+		"remark",
+		"group",
+		"tags",
+		"connect_timeout",
+		"run_timeout",
+		"remote_script_dir",
+		"host_key_check",
+		"known_hosts_path",
 	}); err != nil {
 		t.Fatalf("host unset: %v", err)
 	}
@@ -425,7 +434,7 @@ func TestHostUnsetFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := config.Hosts[0]
-	if host.User != "" || host.KeyPath != "" || host.Remark != "" || host.Group != "" {
+	if host.User != "" || host.KeyPath != "" || host.Remark != "" || host.Group != "" || len(host.Tags) != 0 {
 		t.Fatalf("host = %+v", host)
 	}
 	if host.ConnectTimeout != "" || host.RunTimeout != "" || host.RemoteScriptDir != "" || host.HostKeyCheck != "" || host.KnownHostsPath != "" {
@@ -449,7 +458,7 @@ func TestHostUnsetRejectsInvalidAuth(t *testing.T) {
 	}
 
 	app := newTestApp()
-	err := app.RunWithArgs([]string{"host", "unset", "devhost", "--user", "--key"})
+	err := app.RunWithArgs([]string{"host", "unset", "devhost", "user", "key"})
 	if err == nil || !strings.Contains(err.Error(), "user is required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -584,8 +593,36 @@ func TestHostSetRejectsDuplicateIP(t *testing.T) {
 	}
 
 	app := newTestApp()
-	err := app.RunWithArgs([]string{"host", "set", "devhost", "--ip", "10.0.0.9"})
+	err := app.RunWithArgs([]string{"host", "set", "devhost", "ip=10.0.0.9"})
 	if err == nil || !strings.Contains(err.Error(), "host ip") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHostSetRejectsInvalidFieldWithoutSaving(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{
+		Name:    "devhost",
+		IP:      "10.0.0.8",
+		User:    "root",
+		KeyPath: "~/.ssh/id_rsa",
+		Remark:  "old",
+		Port:    22,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"host", "set", "devhost", "remark=new", "bad=value"})
+	if err == nil || !strings.Contains(err.Error(), "unknown host field") {
+		t.Fatalf("err = %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Hosts[0].Remark != "old" {
+		t.Fatalf("host was changed: %+v", config.Hosts[0])
 	}
 }

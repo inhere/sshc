@@ -67,6 +67,7 @@ sshc list
 sshc run devhost -- uptime
 sshc auth add dev-root -u root -p --remark "共享 root 登录"
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root # use auth refer
+sshc host set devhost tags=app,testing remark="app server"
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
 sshc run devhost --script ./deploy.sh
@@ -110,7 +111,7 @@ sshc <command> --help
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
-sshc add --ip 192.168.1.10 --name devhost --auth dev-root
+sshc add --ip 192.168.1.10 --name devhost --auth dev-root --tags app,testing
 sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc add -I
 sshc add --from-clipboard
@@ -126,6 +127,7 @@ user=root
 password=password
 name=devhost
 port=22
+tags=app,testing
 ```
 
 ```text
@@ -160,7 +162,10 @@ sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
+sshc host set devhost user=root port=22 group=testing tags=app,gpu
+sshc host unset devhost tags remark jump
 sshc host list --group testing --show-ip
+sshc host list --tag app,gpu
 sshc host list --match devhost
 sshc host show devhost
 sshc host trust devhost
@@ -173,7 +178,7 @@ sshc host rename old-name new-name
 ### 导入主机
 
 ```bash
-sshc host import -f ips.txt --format ips --auth dev-root --group testing --yes
+sshc host import -f ips.txt --format ips --auth dev-root --group testing --tags imported,testing --yes
 sshc host import -f hosts.txt --format plain --dry-run
 sshc host import -f hosts.csv --format csv --overwrite --yes
 sshc host import --from-clipboard --format plain --auth dev-root
@@ -195,19 +200,21 @@ ip=10.0.0.8
 name=devhost
 auth=dev-root
 group=testing
+tags=app,testing
 
 ip: 10.0.0.9
 name: dbhost
 user: root
 password: secret
 group: testing
+tags: db,testing
 ```
 
 CSV 导入必须包含 header：
 
 ```csv
-name,ip,auth,group,remark,port
-devhost,10.0.0.8,dev-root,testing,app server,22
+name,ip,auth,group,tags,remark,port
+devhost,10.0.0.8,dev-root,testing,"app,testing",app server,22
 ```
 
 默认遇到冲突会失败且不保存。使用 `--skip-existing` 跳过已存在主机，
@@ -220,10 +227,12 @@ devhost,10.0.0.8,dev-root,testing,app server,22
 sshc list
 sshc ls
 sshc list --show-ip
+sshc list --tag testing
 ```
 
-`sshc list` 会显示主机名、分组、地址、认证方式和备注。IPv4 地址默认会脱敏显示，
-例如 `10.*.*.8`。需要完整地址时使用 `--show-ip`。
+`sshc list` 会显示主机名、分组、标签、地址、认证方式和备注。IPv4 地址默认会脱敏显示，
+例如 `10.*.*.8`。需要完整地址时使用 `--show-ip`。使用 `--tag app,gpu`
+可以筛选同时具备这些标签的主机。
 
 如果 `~/.ssh/config` 中的主机同时配置了 `HostName`、`User` 和 `IdentityFile`，
 也会被读取展示。

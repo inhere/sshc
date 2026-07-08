@@ -34,7 +34,7 @@ func TestConfigSummaryAPI(t *testing.T) {
 func TestHostsCRUDAndMaskSecrets(t *testing.T) {
 	withTempConfig(t)
 	srv := newTestServer(t, Config{Addr: "127.0.0.1:0"})
-	createBody := `{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22,"group":"testing"}`
+	createBody := `{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22,"group":"testing","tags":["testing","app","app"]}`
 	rec := requestJSON(t, srv, http.MethodPost, "/api/hosts", createBody)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", rec.Code, rec.Body.String())
@@ -49,8 +49,11 @@ func TestHostsCRUDAndMaskSecrets(t *testing.T) {
 	if len(config.Hosts) != 1 || config.Hosts[0].Password != "secret" {
 		t.Fatalf("saved hosts = %+v", config.Hosts)
 	}
+	if strings.Join(config.Hosts[0].Tags, ",") != "app,testing" {
+		t.Fatalf("saved tags = %+v", config.Hosts[0].Tags)
+	}
 
-	updateBody := `{"name":"devhost","ip":"10.0.0.8","user":"root","port":22,"group":"prod","remark":"updated"}`
+	updateBody := `{"name":"devhost","ip":"10.0.0.8","user":"root","port":22,"group":"prod","remark":"updated","tags":["prod","app"]}`
 	rec = requestJSON(t, srv, http.MethodPut, "/api/hosts/devhost", updateBody)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("update status = %d, body = %s", rec.Code, rec.Body.String())
@@ -59,7 +62,7 @@ func TestHostsCRUDAndMaskSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Hosts[0].Password != "secret" || config.Hosts[0].Group != "prod" || config.Hosts[0].Remark != "updated" {
+	if config.Hosts[0].Password != "secret" || config.Hosts[0].Group != "prod" || config.Hosts[0].Remark != "updated" || strings.Join(config.Hosts[0].Tags, ",") != "app,prod" {
 		t.Fatalf("updated host = %+v", config.Hosts[0])
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gookit/cliui/cutypes"
@@ -22,6 +23,7 @@ type hostImportOptions struct {
 	User           string
 	KeyPath        string
 	Group          string
+	Tags           string
 	Remark         string
 	Jump           string
 	Backend        string
@@ -35,44 +37,6 @@ type hostImportOptions struct {
 	SkipExisting   bool
 	Overwrite      bool
 	Yes            bool
-}
-
-type hostSetOptions struct {
-	IP              string
-	User            string
-	AuthRef         string
-	KeyPath         string
-	Remark          string
-	Group           string
-	Jump            string
-	Backend         string
-	Via             string
-	RunTemplate     string
-	LoginCommand    string
-	Port            int
-	ConnectTimeout  string
-	RunTimeout      string
-	RemoteScriptDir string
-	HostKeyCheck    string
-	KnownHostsPath  string
-}
-
-type hostUnsetOptions struct {
-	User            bool
-	AuthRef         bool
-	KeyPath         bool
-	Remark          bool
-	Group           bool
-	Jump            bool
-	Backend         bool
-	Via             bool
-	RunTemplate     bool
-	LoginCommand    bool
-	ConnectTimeout  bool
-	RunTimeout      bool
-	RemoteScriptDir bool
-	HostKeyCheck    bool
-	KnownHostsPath  bool
 }
 
 var hostTrust = core.TrustHostKeyWithOptions
@@ -89,19 +53,20 @@ Examples:
   sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
   sshc host add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}" --login-command "pct enter 101"
   sshc host list --group testing
+  sshc host list --tag app,gpu
   sshc host list --match devhost
   sshc host list --show-ip
   sshc host show devhost
   sshc host trust devhost
-  sshc host set lxc-app --run-template "pct exec 101 -- sh -lc {{cmd}}"
-  sshc host set devhost --remark "testing host" --jump bastion
-  sshc host unset devhost --remark --jump
+  sshc host set devhost remark="testing host" jump=bastion tags=app,gpu
+  sshc host set lxc-app run_template="pct exec 101 -- sh -lc {{cmd}}"
+  sshc host unset devhost remark jump tags
   sshc host rm devhost --yes
   sshc host rename old-name new-name
 
 Notes:
   - host add supports the same fields as top-level add and adds --auth.
-  - host set/unset only change the selected host record.
+  - host set accepts key=value fields. host unset accepts field names.
   - command_proxy hosts are logical targets that execute through a configured via host.
   - host list masks IPv4 addresses unless --show-ip is set.
   - host show masks password fields unless --raw is set.
@@ -128,7 +93,7 @@ func newHostImportCmd() *gcli.Command {
 		Desc: "import ssh hosts",
 		Help: strings.TrimSpace(`
 Examples:
-  sshc host import -f ips.txt --format ips --auth dev-root --group testing
+  sshc host import -f ips.txt --format ips --auth dev-root --group testing --tags app,testing
   sshc host import -f hosts.txt --format plain --dry-run
   sshc host import -f hosts.csv --format csv --overwrite --yes
   sshc host import --from-clipboard --format plain --auth dev-root
@@ -141,6 +106,7 @@ Examples:
 			c.StrOpt(&opts.User, "user", "u", "", "default ssh username")
 			c.StrOpt(&opts.KeyPath, "key", "", "", "default ssh private key path")
 			c.StrOpt(&opts.Group, "group", "", "", "default host group")
+			c.StrOpt(&opts.Tags, "tags", "", "", "default comma-separated host tags")
 			c.StrOpt(&opts.Remark, "remark", "", "", "default host remark")
 			c.StrOpt(&opts.Jump, "jump", "", "", "default jump host name or ip")
 			c.StrOpt(&opts.Backend, "backend", "", "", "default host backend: ssh or command_proxy")
@@ -315,6 +281,7 @@ func hostImportDefaults(opts hostImportOptions, configDefaults core.Defaults) co
 		User:           firstNonEmpty(opts.User, configDefaults.User),
 		KeyPath:        strings.TrimSpace(opts.KeyPath),
 		Group:          group,
+		Tags:           core.NormalizeTags(opts.Tags),
 		Remark:         strings.TrimSpace(opts.Remark),
 		Port:           port,
 		Jump:           strings.TrimSpace(opts.Jump),
@@ -358,6 +325,7 @@ func newHostListCmd() *gcli.Command {
 	opts := struct {
 		ShowIP bool
 		Group  string
+		Tag    string
 		Match  string
 		JSON   bool
 	}{}
@@ -368,6 +336,7 @@ func newHostListCmd() *gcli.Command {
 		Config: func(c *gcli.Command) {
 			c.BoolOpt(&opts.ShowIP, "show-ip", "", false, "show full host IP address")
 			c.StrOpt(&opts.Group, "group", "", "", "filter by host group")
+			c.StrOpt(&opts.Tag, "tag", "", "", "filter by comma-separated host tags")
 			c.StrOpt(&opts.Match, "match", "", "", "match host text")
 			c.BoolOpt(&opts.JSON, "json", "", false, "output hosts as json")
 		},
@@ -376,7 +345,7 @@ func newHostListCmd() *gcli.Command {
 			if err != nil {
 				return err
 			}
-			hosts := filterHosts(store.Hosts, opts.Group, opts.Match)
+			hosts := filterHosts(store.Hosts, opts.Group, opts.Tag, opts.Match)
 			if opts.JSON {
 				return writeJSON(c, hosts)
 			}
@@ -506,32 +475,25 @@ func resolveTrustHost(target string, port int) (core.Host, error) {
 }
 
 func newHostSetCmd() *gcli.Command {
-	opts := hostSetOptions{}
 	return &gcli.Command{
 		Name: "set",
 		Desc: "set ssh host fields",
+		Help: strings.TrimSpace(`
+Examples:
+  sshc host set devhost user=root port=22 group=testing tags=app,gpu
+  sshc host set devhost auth=dev-root jump=bastion
+  sshc host set lxc-app backend=command_proxy via=pve-host run_template="pct exec 101 -- sh -lc {{cmd}}"
+`),
 		Config: func(c *gcli.Command) {
 			c.AddArg("target", "host ip or name", true)
-			c.StrOpt(&opts.IP, "ip", "", "", "ssh host ip or hostname")
-			c.StrOpt(&opts.User, "user", "u", "", "ssh username")
-			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile name")
-			c.StrOpt(&opts.KeyPath, "key", "", "", "ssh private key path")
-			c.StrOpt(&opts.Remark, "remark", "", "", "host remark")
-			c.StrOpt(&opts.Group, "group", "", "", "host group")
-			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
-			c.StrOpt(&opts.Backend, "backend", "", "", "host backend: ssh or command_proxy")
-			c.StrOpt(&opts.Via, "via", "", "", "command_proxy via host name or ip")
-			c.StrOpt(&opts.RunTemplate, "run-template", "", "", "command_proxy run template")
-			c.StrOpt(&opts.LoginCommand, "login-command", "", "", "command_proxy login command")
-			c.IntOpt(&opts.Port, "port", "", 0, "ssh port")
-			c.StrOpt(&opts.ConnectTimeout, "connect-timeout", "", "", "ssh connect timeout")
-			c.StrOpt(&opts.RunTimeout, "run-timeout", "", "", "remote command timeout")
-			c.StrOpt(&opts.RemoteScriptDir, "remote-script-dir", "", "", "remote script directory")
-			c.StrOpt(&opts.HostKeyCheck, "host-key-check", "", "", "host key check policy: known_hosts or insecure")
-			c.StrOpt(&opts.KnownHostsPath, "known-hosts-path", "", "", "known_hosts file path")
+			c.AddArg("fields", "host fields in key=value form", false, true)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
+			fields := c.Arg("fields").Strings()
+			if len(fields) == 0 {
+				return errors.New("no host field provided")
+			}
 			config, err := core.LoadConfig()
 			if err != nil {
 				return err
@@ -543,9 +505,9 @@ func newHostSetCmd() *gcli.Command {
 			if idx < 0 {
 				return fmt.Errorf("host %q not found", target)
 			}
-			changed := setHostFieldsFromOptions(&host, opts)
-			if changed == 0 {
-				return errors.New("no host field option provided")
+			changed, err := setHostFieldsFromArgs(&host, fields)
+			if err != nil {
+				return err
 			}
 			if err := saveUpdatedHost(config, idx, host); err != nil {
 				return err
@@ -557,30 +519,24 @@ func newHostSetCmd() *gcli.Command {
 }
 
 func newHostUnsetCmd() *gcli.Command {
-	opts := hostUnsetOptions{}
 	return &gcli.Command{
 		Name: "unset",
 		Desc: "unset ssh host fields",
+		Help: strings.TrimSpace(`
+Examples:
+  sshc host unset devhost tags remark jump
+  sshc host unset lxc-app backend via run_template login_command
+`),
 		Config: func(c *gcli.Command) {
 			c.AddArg("target", "host ip or name", true)
-			c.BoolOpt(&opts.User, "user", "u", false, "unset ssh username")
-			c.BoolOpt(&opts.AuthRef, "auth", "", false, "unset auth profile name")
-			c.BoolOpt(&opts.KeyPath, "key", "", false, "unset ssh private key path")
-			c.BoolOpt(&opts.Remark, "remark", "", false, "unset host remark")
-			c.BoolOpt(&opts.Group, "group", "", false, "unset host group")
-			c.BoolOpt(&opts.Jump, "jump", "", false, "unset jump host")
-			c.BoolOpt(&opts.Backend, "backend", "", false, "unset host backend")
-			c.BoolOpt(&opts.Via, "via", "", false, "unset command_proxy via host")
-			c.BoolOpt(&opts.RunTemplate, "run-template", "", false, "unset command_proxy run template")
-			c.BoolOpt(&opts.LoginCommand, "login-command", "", false, "unset command_proxy login command")
-			c.BoolOpt(&opts.ConnectTimeout, "connect-timeout", "", false, "unset ssh connect timeout")
-			c.BoolOpt(&opts.RunTimeout, "run-timeout", "", false, "unset remote command timeout")
-			c.BoolOpt(&opts.RemoteScriptDir, "remote-script-dir", "", false, "unset remote script directory")
-			c.BoolOpt(&opts.HostKeyCheck, "host-key-check", "", false, "unset host key check policy")
-			c.BoolOpt(&opts.KnownHostsPath, "known-hosts-path", "", false, "unset known_hosts file path")
+			c.AddArg("fields", "host field names to unset", false, true)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
+			fields := c.Arg("fields").Strings()
+			if len(fields) == 0 {
+				return errors.New("no host field provided")
+			}
 			config, err := core.LoadConfig()
 			if err != nil {
 				return err
@@ -592,9 +548,9 @@ func newHostUnsetCmd() *gcli.Command {
 			if idx < 0 {
 				return fmt.Errorf("host %q not found", target)
 			}
-			changed := unsetHostFieldsFromOptions(&host, opts)
-			if changed == 0 {
-				return errors.New("no host field option provided")
+			changed, err := unsetHostFieldsFromArgs(&host, fields)
+			if err != nil {
+				return err
 			}
 			if err := saveUpdatedHost(config, idx, host); err != nil {
 				return err
@@ -683,10 +639,11 @@ func newHostRenameCmd() *gcli.Command {
 	}
 }
 
-func filterHosts(hosts []core.Host, group, match string) []core.Host {
+func filterHosts(hosts []core.Host, group, tag, match string) []core.Host {
 	group = strings.TrimSpace(group)
+	tags := core.NormalizeTags(tag)
 	match = strings.TrimSpace(match)
-	if group == "" && match == "" {
+	if group == "" && len(tags) == 0 && match == "" {
 		return hosts
 	}
 	store := core.Store{Hosts: hosts}
@@ -694,79 +651,182 @@ func filterHosts(hosts []core.Host, group, match string) []core.Host {
 	if match != "" {
 		matched = store.MatchHosts(match)
 	}
-	if group == "" {
+	if group == "" && len(tags) == 0 {
 		return matched
 	}
 	filtered := make([]core.Host, 0, len(matched))
 	for _, host := range matched {
-		if core.HostGroupName(host) == group {
-			filtered = append(filtered, host)
+		if group != "" && core.HostGroupName(host) != group {
+			continue
 		}
+		if !core.HostHasTags(host, tags) {
+			continue
+		}
+		filtered = append(filtered, host)
 	}
 	return filtered
 }
 
-func setHostFieldsFromOptions(host *core.Host, opts hostSetOptions) int {
+func setHostFieldsFromArgs(host *core.Host, fields []string) (int, error) {
 	changed := 0
-	setString := func(dst *string, value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
+	for _, field := range fields {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok {
+			return 0, fmt.Errorf("invalid host field %q, expected key=value", field)
 		}
-		*dst = value
+		key = normalizeHostSetField(key)
+		value = strings.TrimSpace(value)
+		if key == "" {
+			return 0, fmt.Errorf("invalid host field %q", field)
+		}
+		if err := setHostField(host, key, value); err != nil {
+			return 0, err
+		}
 		changed++
 	}
-	setString(&host.IP, opts.IP)
-	setString(&host.User, opts.User)
-	setString(&host.AuthRef, opts.AuthRef)
-	setString(&host.KeyPath, opts.KeyPath)
-	setString(&host.Remark, opts.Remark)
-	setString(&host.Group, opts.Group)
-	setString(&host.Jump, opts.Jump)
-	setString(&host.Backend, opts.Backend)
-	setString(&host.Via, opts.Via)
-	setString(&host.RunTemplate, opts.RunTemplate)
-	setString(&host.LoginCommand, opts.LoginCommand)
-	setString(&host.ConnectTimeout, opts.ConnectTimeout)
-	setString(&host.RunTimeout, opts.RunTimeout)
-	setString(&host.RemoteScriptDir, opts.RemoteScriptDir)
-	setString(&host.KnownHostsPath, opts.KnownHostsPath)
-	if value := strings.TrimSpace(opts.HostKeyCheck); value != "" {
-		host.HostKeyCheck = value
-		changed++
+	if changed == 0 {
+		return 0, errors.New("no host field provided")
 	}
-	if opts.Port != 0 {
-		host.Port = opts.Port
-		changed++
-	}
-	return changed
+	core.NormalizeHostFields(host)
+	return changed, nil
 }
 
-func unsetHostFieldsFromOptions(host *core.Host, opts hostUnsetOptions) int {
-	changed := 0
-	unsetString := func(enabled bool, dst *string) {
-		if !enabled {
-			return
+func setHostField(host *core.Host, key, value string) error {
+	switch key {
+	case "name":
+		host.Name = value
+	case "ip":
+		host.IP = value
+	case "auth_ref":
+		host.AuthRef = value
+	case "user":
+		host.User = value
+	case "key_path":
+		host.KeyPath = value
+	case "group":
+		host.Group = value
+	case "tags":
+		host.Tags = core.NormalizeTags(value)
+	case "remark":
+		host.Remark = value
+	case "port":
+		port, err := parseHostPort(value)
+		if err != nil {
+			return err
 		}
-		*dst = ""
+		host.Port = port
+	case "jump":
+		host.Jump = value
+	case "backend":
+		host.Backend = value
+	case "via":
+		host.Via = value
+	case "run_template":
+		host.RunTemplate = value
+	case "login_command":
+		host.LoginCommand = value
+	case "connect_timeout":
+		host.ConnectTimeout = value
+	case "run_timeout":
+		host.RunTimeout = value
+	case "remote_script_dir":
+		host.RemoteScriptDir = value
+	case "host_key_check":
+		host.HostKeyCheck = value
+	case "known_hosts_path":
+		host.KnownHostsPath = value
+	default:
+		return fmt.Errorf("unknown host field %q", key)
+	}
+	return nil
+}
+
+func unsetHostFieldsFromArgs(host *core.Host, fields []string) (int, error) {
+	changed := 0
+	for _, field := range fields {
+		key := normalizeHostSetField(field)
+		if key == "" {
+			return 0, fmt.Errorf("invalid host field %q", field)
+		}
+		if err := unsetHostField(host, key); err != nil {
+			return 0, err
+		}
 		changed++
 	}
-	unsetString(opts.User, &host.User)
-	unsetString(opts.AuthRef, &host.AuthRef)
-	unsetString(opts.KeyPath, &host.KeyPath)
-	unsetString(opts.Remark, &host.Remark)
-	unsetString(opts.Group, &host.Group)
-	unsetString(opts.Jump, &host.Jump)
-	unsetString(opts.Backend, &host.Backend)
-	unsetString(opts.Via, &host.Via)
-	unsetString(opts.RunTemplate, &host.RunTemplate)
-	unsetString(opts.LoginCommand, &host.LoginCommand)
-	unsetString(opts.ConnectTimeout, &host.ConnectTimeout)
-	unsetString(opts.RunTimeout, &host.RunTimeout)
-	unsetString(opts.RemoteScriptDir, &host.RemoteScriptDir)
-	unsetString(opts.HostKeyCheck, &host.HostKeyCheck)
-	unsetString(opts.KnownHostsPath, &host.KnownHostsPath)
-	return changed
+	if changed == 0 {
+		return 0, errors.New("no host field provided")
+	}
+	core.NormalizeHostFields(host)
+	return changed, nil
+}
+
+func unsetHostField(host *core.Host, key string) error {
+	switch key {
+	case "name", "ip", "port":
+		return fmt.Errorf("host field %q cannot be unset", key)
+	case "auth_ref":
+		host.AuthRef = ""
+	case "user":
+		host.User = ""
+	case "key_path":
+		host.KeyPath = ""
+	case "group":
+		host.Group = ""
+	case "tags":
+		host.Tags = nil
+	case "remark":
+		host.Remark = ""
+	case "jump":
+		host.Jump = ""
+	case "backend":
+		host.Backend = ""
+	case "via":
+		host.Via = ""
+	case "run_template":
+		host.RunTemplate = ""
+	case "login_command":
+		host.LoginCommand = ""
+	case "connect_timeout":
+		host.ConnectTimeout = ""
+	case "run_timeout":
+		host.RunTimeout = ""
+	case "remote_script_dir":
+		host.RemoteScriptDir = ""
+	case "host_key_check":
+		host.HostKeyCheck = ""
+	case "known_hosts_path":
+		host.KnownHostsPath = ""
+	default:
+		return fmt.Errorf("unknown host field %q", key)
+	}
+	return nil
+}
+
+func normalizeHostSetField(field string) string {
+	field = strings.ToLower(strings.TrimSpace(field))
+	field = strings.ReplaceAll(field, "-", "_")
+	switch field {
+	case "auth":
+		return "auth_ref"
+	case "key", "keypath", "keyfile":
+		return "key_path"
+	case "tag":
+		return "tags"
+	default:
+		return field
+	}
+}
+
+func parseHostPort(value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, errors.New("port cannot be empty")
+	}
+	port, err := strconv.Atoi(value)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("invalid ssh port %q", value)
+	}
+	return port, nil
 }
 
 func saveUpdatedHost(config *core.Config, idx int, host core.Host) error {

@@ -26,6 +26,7 @@ var addOpts = struct {
 	KeyPath       string
 	Remark        string
 	Group         string
+	Tags          string
 	Port          int
 	AuthRef       string
 	Jump          string
@@ -48,7 +49,7 @@ Examples:
   sshc add --from-clipboard
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 2222
   sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
-  sshc add --ip 192.168.1.10 --name devhost -u root -p password --remark "testing host" --group testing --key ~/.ssh/id_rsa
+  sshc add --ip 192.168.1.10 --name devhost -u root -p password --remark "testing host" --group testing --tags app,testing --key ~/.ssh/id_rsa
   sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
   sshc add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}"
 
@@ -81,6 +82,7 @@ Notes:
 			c.StrOpt(&addOpts.LoginCommand, "login-command", "", "", "command_proxy login command")
 			c.StrOpt(&addOpts.Remark, "remark", "", "", "host remark")
 			c.StrOpt(&addOpts.Group, "group", "", core.DefaultGroup, "host group")
+			c.StrOpt(&addOpts.Tags, "tags", "", "", "comma-separated host tags")
 			c.IntOpt(&addOpts.Port, "port", "", core.DefaultSSHPort, "ssh port")
 		},
 		Func: func(c *gcli.Command, _ []string) error {
@@ -143,6 +145,7 @@ func resetAddOptions() {
 	addOpts.KeyPath = ""
 	addOpts.Remark = ""
 	addOpts.Group = core.DefaultGroup
+	addOpts.Tags = ""
 	addOpts.Port = core.DefaultSSHPort
 	addOpts.AuthRef = ""
 	addOpts.Jump = ""
@@ -172,6 +175,7 @@ func buildHostFromAddOptions() (core.Host, error) {
 		LoginCommand: strings.TrimSpace(addOpts.LoginCommand),
 		Remark:       strings.TrimSpace(addOpts.Remark),
 		Group:        strings.TrimSpace(addOpts.Group),
+		Tags:         core.NormalizeTags(addOpts.Tags),
 		Port:         addOpts.Port,
 	}
 	normalizeHostDefaults(&host)
@@ -217,6 +221,11 @@ func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error
 	if host.Group, err = promptLine(reader, output, "Group", core.DefaultGroup); err != nil {
 		return host, err
 	}
+	tags, err := promptLine(reader, output, "Tags", "")
+	if err != nil {
+		return host, err
+	}
+	host.Tags = core.NormalizeTags(tags)
 	if host.Jump, err = promptLine(reader, output, "Jump", ""); err != nil {
 		return host, err
 	}

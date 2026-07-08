@@ -313,7 +313,7 @@ sshc batch-run --rerun-failed 20260708-120102-a1b2 --parallel 5
 
 ## 阶段计划
 
-### P1.1: host tags 数据模型与解析
+### P1.1: host tags 数据模型与解析（已完成）
 
 目标：
 
@@ -406,6 +406,15 @@ go build -o tmp\sshc.exe ./cmd/sshc
 .\tmp\sshc.exe host list --help | Out-String
 git diff --check -- internal README.md README.zh-CN.md
 ```
+
+实施结果：
+
+- `core.Host` 已新增 `tags` 字段，配置加载/保存会统一 trim、去空、去重、排序。
+- `add/host add/host import/Web API` 已支持 tags 写入和归一化。
+- `host set` 已切换为 `key=value...` 多字段语法，`host unset` 已切换为 `field...` 多字段语法。
+- `host list/list` 已支持 `--tag` AND 过滤，table 输出增加 `Tags` 列，模糊匹配包含 tags。
+- 已更新 README/README.zh-CN 的 tags 和新 set/unset 示例。
+- 验证通过：`go test ./...`、`go build -o tmp\sshc-p1.exe ./cmd/sshc`、`git diff --check -- internal README.md README.zh-CN.md`。
 
 提交：
 
