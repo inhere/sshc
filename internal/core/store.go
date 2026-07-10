@@ -30,22 +30,26 @@ const (
 var userHomeDir = os.UserHomeDir
 
 type Host struct {
-	Name         string   `json:"name"`
-	IP           string   `json:"ip"`
-	AuthRef      string   `json:"auth_ref,omitempty"`
-	User         string   `json:"user"`
-	Password     string   `json:"password,omitempty"`
-	PasswordEnc  string   `json:"password_enc,omitempty"`
-	KeyPath      string   `json:"key_path,omitempty"`
-	Remark       string   `json:"remark,omitempty"`
-	Group        string   `json:"group,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Port         int      `json:"port,omitempty"`
-	Jump         string   `json:"jump,omitempty"`
-	Backend      string   `json:"backend,omitempty"`
-	Via          string   `json:"via,omitempty"`
-	RunTemplate  string   `json:"run_template,omitempty"`
-	LoginCommand string   `json:"login_command,omitempty"`
+	Name             string   `json:"name"`
+	IP               string   `json:"ip"`
+	AuthRef          string   `json:"auth_ref,omitempty"`
+	User             string   `json:"user"`
+	Password         string   `json:"password,omitempty"`
+	PasswordEnc      string   `json:"password_enc,omitempty"`
+	KeyPath          string   `json:"key_path,omitempty"`
+	KeyData          string   `json:"key_data,omitempty"`
+	KeyDataEnc       string   `json:"key_data_enc,omitempty"`
+	KeyPassphrase    string   `json:"key_passphrase,omitempty"`
+	KeyPassphraseEnc string   `json:"key_passphrase_enc,omitempty"`
+	Remark           string   `json:"remark,omitempty"`
+	Group            string   `json:"group,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	Port             int      `json:"port,omitempty"`
+	Jump             string   `json:"jump,omitempty"`
+	Backend          string   `json:"backend,omitempty"`
+	Via              string   `json:"via,omitempty"`
+	RunTemplate      string   `json:"run_template,omitempty"`
+	LoginCommand     string   `json:"login_command,omitempty"`
 
 	ConnectTimeout  string `json:"connect_timeout,omitempty"`
 	RunTimeout      string `json:"run_timeout,omitempty"`
@@ -83,12 +87,16 @@ type GroupDefaults struct {
 }
 
 type AuthProfile struct {
-	Name        string `json:"name"`
-	User        string `json:"user,omitempty"`
-	Password    string `json:"password,omitempty"`
-	PasswordEnc string `json:"password_enc,omitempty"`
-	KeyPath     string `json:"key_path,omitempty"`
-	Remark      string `json:"remark,omitempty"`
+	Name             string `json:"name"`
+	User             string `json:"user,omitempty"`
+	Password         string `json:"password,omitempty"`
+	PasswordEnc      string `json:"password_enc,omitempty"`
+	KeyPath          string `json:"key_path,omitempty"`
+	KeyData          string `json:"key_data,omitempty"`
+	KeyDataEnc       string `json:"key_data_enc,omitempty"`
+	KeyPassphrase    string `json:"key_passphrase,omitempty"`
+	KeyPassphraseEnc string `json:"key_passphrase_enc,omitempty"`
+	Remark           string `json:"remark,omitempty"`
 }
 
 type Config struct {
@@ -216,7 +224,7 @@ func validateHost(host Host) error {
 	if strings.TrimSpace(host.User) == "" && strings.TrimSpace(host.AuthRef) == "" {
 		return errors.New("user is required")
 	}
-	if strings.TrimSpace(host.AuthRef) == "" && host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
+	if strings.TrimSpace(host.AuthRef) == "" && !hasPasswordAuth(host) && !hasKeyAuth(host) {
 		return errors.New("password or key_path is required")
 	}
 	if host.Port < 1 || host.Port > 65535 {
@@ -265,6 +273,8 @@ func NormalizeHostFields(host *Host) {
 	host.AuthRef = strings.TrimSpace(host.AuthRef)
 	host.User = strings.TrimSpace(host.User)
 	host.KeyPath = strings.TrimSpace(host.KeyPath)
+	host.KeyDataEnc = strings.TrimSpace(host.KeyDataEnc)
+	host.KeyPassphraseEnc = strings.TrimSpace(host.KeyPassphraseEnc)
 	host.Jump = strings.TrimSpace(host.Jump)
 	host.Backend = strings.TrimSpace(host.Backend)
 	host.Via = strings.TrimSpace(host.Via)
@@ -278,6 +288,16 @@ func NormalizeHostFields(host *Host) {
 	host.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
 	host.HostKeyCheck = strings.TrimSpace(host.HostKeyCheck)
 	host.KnownHostsPath = strings.TrimSpace(host.KnownHostsPath)
+}
+
+func hasPasswordAuth(host Host) bool {
+	return host.Password != "" || host.PasswordEnc != ""
+}
+
+func hasKeyAuth(host Host) bool {
+	return strings.TrimSpace(host.KeyPath) != "" ||
+		host.KeyData != "" ||
+		host.KeyDataEnc != ""
 }
 
 func NormalizeTags(value string) []string {

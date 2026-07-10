@@ -94,6 +94,94 @@ func TestAddStoresRelativeKeyPathAsAbsolute(t *testing.T) {
 	}
 }
 
+func TestAddEmbedsKeyAndPassphraseFromEnv(t *testing.T) {
+	path := withTempConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "id_rsa")
+	keyContent := "FAKE_TEST_PRIVATE_KEY_CONTENT_12345\n"
+	if err := os.WriteFile(keyPath, []byte(keyContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(keyPassphraseEnvKey, " env-secret ")
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "--name", "devhost", "--key", keyPath, "--embed-key", "--key-passphrase", "env"})
+	if err != nil {
+		t.Fatalf("add embedded key: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if strings.Contains(content, keyContent) || strings.Contains(content, "env-secret") {
+		t.Fatalf("stored config leaked embedded key or passphrase: %s", content)
+	}
+	if !strings.Contains(content, `"key_data_enc": "v1:`) || !strings.Contains(content, `"key_passphrase_enc": "v1:`) {
+		t.Fatalf("stored config missing encrypted key fields: %s", content)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].KeyData != keyContent || config.Hosts[0].KeyPassphrase != "env-secret" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+	if config.Hosts[0].KeyPath != keyPath {
+		t.Fatalf("key path = %q, want %q", config.Hosts[0].KeyPath, keyPath)
+	}
+}
+
+func TestAddKeyPassphraseDefaultInput(t *testing.T) {
+	withTempConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(keyPath, []byte("FAKE_TEST_PRIVATE_KEY_CONTENT_INPUT\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var gotQuestion string
+	t.Cleanup(setReadInteractivePasswordForTest(func(question ...string) string {
+		if len(question) > 0 {
+			gotQuestion = question[0]
+		}
+		return " input-secret "
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "--name", "devhost", "--key", keyPath, "--key-passphrase"}); err != nil {
+		t.Fatalf("add key passphrase: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotQuestion != "Key passphrase: " {
+		t.Fatalf("question = %q, want Key passphrase: ", gotQuestion)
+	}
+	if len(config.Hosts) != 1 || config.Hosts[0].KeyPassphrase != "input-secret" {
+		t.Fatalf("hosts = %+v", config.Hosts)
+	}
+}
+
+func TestAddRejectsEmbedKeyWithoutKey(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "-p", "secret", "--name", "devhost", "--embed-key"})
+	if err == nil || !strings.Contains(err.Error(), "--embed-key requires --key") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAddRejectsInvalidKeyPassphraseSource(t *testing.T) {
+	withTempConfig(t)
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "--name", "devhost", "--key", "~/.ssh/id_rsa", "--key-passphrase=bad"})
+	if err == nil || !strings.Contains(err.Error(), "want input, clip, or env") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestAddFromClipboard(t *testing.T) {
 	withTempConfig(t)
 	t.Cleanup(setReadClipboardForTest(func() (string, error) {

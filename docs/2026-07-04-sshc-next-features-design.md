@@ -256,14 +256,19 @@ sshc
 
 - `password`
 - `password_enc`
-- 后续可能增加的 `key_passphrase_enc`
+- `key_data`
+- `key_data_enc`
+- `key_passphrase`
+- `key_passphrase_enc`
 - export/import 的临时解密内容
 
 默认输出配置时必须 mask：
 
 ```json
 {
-  "password_enc": "***"
+  "password_enc": "***",
+  "key_data_enc": "***",
+  "key_passphrase_enc": "***"
 }
 ```
 

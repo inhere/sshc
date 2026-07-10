@@ -34,16 +34,9 @@ func encryptConfigPasswords(config Config) (Config, error) {
 		config.AuthProfiles = profiles
 	}
 	for i := range config.AuthProfiles {
-		password := config.AuthProfiles[i].Password
-		if password == "" {
-			continue
-		}
-		encrypted, err := EncryptPassword(password)
-		if err != nil {
+		if err := encryptAuthProfileSecrets(&config.AuthProfiles[i]); err != nil {
 			return Config{}, err
 		}
-		config.AuthProfiles[i].Password = ""
-		config.AuthProfiles[i].PasswordEnc = encrypted
 	}
 
 	if len(config.Hosts) > 0 {
@@ -52,16 +45,9 @@ func encryptConfigPasswords(config Config) (Config, error) {
 		config.Hosts = hosts
 	}
 	for i := range config.Hosts {
-		password := config.Hosts[i].Password
-		if password == "" {
-			continue
-		}
-		encrypted, err := EncryptPassword(password)
-		if err != nil {
+		if err := encryptHostSecrets(&config.Hosts[i]); err != nil {
 			return Config{}, err
 		}
-		config.Hosts[i].Password = ""
-		config.Hosts[i].PasswordEnc = encrypted
 	}
 	return config, nil
 }
@@ -77,25 +63,80 @@ func decryptStorePasswords(store *Store) error {
 
 func decryptConfigPasswords(config *Config) error {
 	for i := range config.AuthProfiles {
-		if config.AuthProfiles[i].Password != "" || config.AuthProfiles[i].PasswordEnc == "" {
-			continue
-		}
-		password, err := DecryptPassword(config.AuthProfiles[i].PasswordEnc)
-		if err != nil {
+		if err := decryptAuthProfileSecrets(&config.AuthProfiles[i]); err != nil {
 			return err
 		}
-		config.AuthProfiles[i].Password = password
 	}
 	for i := range config.Hosts {
-		if config.Hosts[i].Password != "" || config.Hosts[i].PasswordEnc == "" {
-			continue
-		}
-		password, err := DecryptPassword(config.Hosts[i].PasswordEnc)
-		if err != nil {
+		if err := decryptHostSecrets(&config.Hosts[i]); err != nil {
 			return err
 		}
-		config.Hosts[i].Password = password
 	}
+	return nil
+}
+
+func encryptAuthProfileSecrets(profile *AuthProfile) error {
+	if err := encryptSecretField(&profile.Password, &profile.PasswordEnc); err != nil {
+		return err
+	}
+	if err := encryptSecretField(&profile.KeyData, &profile.KeyDataEnc); err != nil {
+		return err
+	}
+	return encryptSecretField(&profile.KeyPassphrase, &profile.KeyPassphraseEnc)
+}
+
+func encryptHostSecrets(host *Host) error {
+	if err := encryptSecretField(&host.Password, &host.PasswordEnc); err != nil {
+		return err
+	}
+	if err := encryptSecretField(&host.KeyData, &host.KeyDataEnc); err != nil {
+		return err
+	}
+	return encryptSecretField(&host.KeyPassphrase, &host.KeyPassphraseEnc)
+}
+
+func encryptSecretField(plain, encrypted *string) error {
+	if *plain == "" {
+		return nil
+	}
+	value, err := EncryptPassword(*plain)
+	if err != nil {
+		return err
+	}
+	*plain = ""
+	*encrypted = value
+	return nil
+}
+
+func decryptAuthProfileSecrets(profile *AuthProfile) error {
+	if err := decryptSecretField(&profile.Password, profile.PasswordEnc); err != nil {
+		return err
+	}
+	if err := decryptSecretField(&profile.KeyData, profile.KeyDataEnc); err != nil {
+		return err
+	}
+	return decryptSecretField(&profile.KeyPassphrase, profile.KeyPassphraseEnc)
+}
+
+func decryptHostSecrets(host *Host) error {
+	if err := decryptSecretField(&host.Password, host.PasswordEnc); err != nil {
+		return err
+	}
+	if err := decryptSecretField(&host.KeyData, host.KeyDataEnc); err != nil {
+		return err
+	}
+	return decryptSecretField(&host.KeyPassphrase, host.KeyPassphraseEnc)
+}
+
+func decryptSecretField(plain *string, encrypted string) error {
+	if *plain != "" || encrypted == "" {
+		return nil
+	}
+	value, err := DecryptPassword(encrypted)
+	if err != nil {
+		return err
+	}
+	*plain = value
 	return nil
 }
 

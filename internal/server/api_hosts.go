@@ -109,15 +109,33 @@ func (s *Server) handleHostsUpdate(c *rux.Context) {
 		writeError(c, http.StatusNotFound, fmt.Errorf("host %q not found", name))
 		return
 	}
-	if host.Password == "" && host.PasswordEnc == "" && host.AuthRef == "" && host.KeyPath == "" {
-		host.PasswordEnc = old.PasswordEnc
-	}
+	retainHostUpdateSecrets(&host, old)
 	config.Hosts[idx] = host
 	if err := saveCheckedConfig(config); err != nil {
 		writeError(c, http.StatusBadRequest, err)
 		return
 	}
 	writeOK(c, core.MaskHost(host))
+}
+
+func retainHostUpdateSecrets(host *core.Host, old core.Host) {
+	retainPassword := host.Password == "" && strings.TrimSpace(host.AuthRef) == "" && strings.TrimSpace(host.KeyPath) == ""
+	retainKey := shouldRetainHostKeySecrets(*host, old)
+	retainOrClearSecret(&host.Password, &host.PasswordEnc, old.PasswordEnc, retainPassword)
+	retainOrClearSecret(&host.KeyData, &host.KeyDataEnc, old.KeyDataEnc, retainKey)
+	retainOrClearSecret(&host.KeyPassphrase, &host.KeyPassphraseEnc, old.KeyPassphraseEnc, retainKey)
+}
+
+func shouldRetainHostKeySecrets(host core.Host, old core.Host) bool {
+	if strings.TrimSpace(host.AuthRef) != "" {
+		return false
+	}
+	keyPath := strings.TrimSpace(host.KeyPath)
+	oldKeyPath := strings.TrimSpace(old.KeyPath)
+	if keyPath != "" {
+		return keyPath == oldKeyPath
+	}
+	return host.Password == "" && !hasExplicitEncryptedSecret(host.PasswordEnc)
 }
 
 func (s *Server) handleHostsDelete(c *rux.Context) {

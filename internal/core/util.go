@@ -61,6 +61,10 @@ func expandUserPath(filePath string) string {
 	return filePath
 }
 
+func ExpandUserPath(filePath string) string {
+	return expandUserPath(filePath)
+}
+
 func RemoteFilePath(localPath, remotePath string) string {
 	if strings.HasSuffix(remotePath, "/") {
 		return JoinRemotePath(remotePath, filepath.Base(localPath))

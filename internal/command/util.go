@@ -14,6 +14,8 @@ import (
 	"github.com/inhere/sshc/internal/core"
 )
 
+const keyPassphraseEnvKey = "SSHC_KEY_PASSPHRASE"
+
 var commandOutput io.Writer = os.Stdout
 
 func cmdOutput(_ *gcli.Command) io.Writer {
@@ -91,6 +93,105 @@ func normalizeKeyPathForSave(path string) (string, error) {
 		return path, nil
 	}
 	return filepath.Abs(path)
+}
+
+type keyPassphraseFlag struct {
+	Source  string
+	SetFlag bool
+}
+
+func (f *keyPassphraseFlag) Set(value string) error {
+	value = normalizeKeyPassphraseSource(value)
+	if value == "" || value == "true" {
+		value = "input"
+	}
+	if value == "false" {
+		f.Source = ""
+		f.SetFlag = false
+		return nil
+	}
+	f.Source = value
+	f.SetFlag = true
+	return nil
+}
+
+func (f *keyPassphraseFlag) String() string {
+	return f.Source
+}
+
+func (f *keyPassphraseFlag) IsBoolFlag() bool {
+	return true
+}
+
+func consumeKeyPassphraseSourceArg(flag *keyPassphraseFlag, args []string) ([]string, error) {
+	if flag == nil || !flag.SetFlag || flag.Source != "input" || len(args) == 0 {
+		return args, nil
+	}
+	source := normalizeKeyPassphraseSource(args[0])
+	if !isKeyPassphraseSource(source) {
+		return nil, fmt.Errorf("invalid --key-passphrase source %q, want input, clip, or env", args[0])
+	}
+	if err := flag.Set(source); err != nil {
+		return nil, err
+	}
+	return args[1:], nil
+}
+
+func resolveKeyPassphrase(flag keyPassphraseFlag) (string, error) {
+	if !flag.SetFlag {
+		return "", nil
+	}
+	source := normalizeKeyPassphraseSource(flag.Source)
+	if source == "" {
+		source = "input"
+	}
+	switch source {
+	case "input":
+		return strings.TrimSpace(readInteractivePassword("Key passphrase: ")), nil
+	case "clip":
+		text, err := readClipboard()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(text), nil
+	case "env":
+		value := strings.TrimSpace(os.Getenv(keyPassphraseEnvKey))
+		if value == "" {
+			return "", fmt.Errorf("%s is empty", keyPassphraseEnvKey)
+		}
+		return value, nil
+	default:
+		return "", fmt.Errorf("invalid --key-passphrase source %q, want input, clip, or env", flag.Source)
+	}
+}
+
+func readKeyFileContent(keyPath string) (string, error) {
+	keyPath = strings.TrimSpace(keyPath)
+	if keyPath == "" {
+		return "", fmt.Errorf("--embed-key requires --key")
+	}
+	path := core.ExpandUserPath(keyPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read key file %s: %w", path, err)
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("key file %s is empty", path)
+	}
+	return string(data), nil
+}
+
+func normalizeKeyPassphraseSource(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isKeyPassphraseSource(value string) bool {
+	switch value {
+	case "input", "clip", "env":
+		return true
+	default:
+		return false
+	}
 }
 
 func clipboardLooksKV(text string) bool {

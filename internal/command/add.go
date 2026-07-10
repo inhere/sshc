@@ -24,6 +24,8 @@ var addOpts = struct {
 	User          string
 	Password      string
 	KeyPath       string
+	EmbedKey      bool
+	KeyPassphrase keyPassphraseFlag
 	Remark        string
 	Group         string
 	Tags          string
@@ -49,6 +51,9 @@ Examples:
   sshc add --from-clipboard
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 2222
   sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
+  sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa --embed-key
+  sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa --embed-key --key-passphrase
+  sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa --key-passphrase=env
   sshc add --ip 192.168.1.10 --name devhost -u root -p password --remark "testing host" --group testing --tags app,testing --key ~/.ssh/id_rsa
   sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
   sshc add --name lxc-app --backend command_proxy --via pve-host --run-template "pct exec 101 -- sh -lc {{cmd}}"
@@ -58,6 +63,9 @@ Notes:
   - If --group is empty, "default" is used.
   - Password or --key must be provided.
   - If both password and --key are provided, key authentication is tried first.
+  - --embed-key stores encrypted private key content in sshc.config.json.
+  - --key-passphrase reads a private key passphrase from hidden input by default.
+  - --key-passphrase=clip reads it from clipboard; --key-passphrase=env reads ${SSHC_KEY_PASSPHRASE}.
   - --jump stores a default jump host for run/login/scp/download.
   - command_proxy hosts use --via and --run-template/--login-command instead of direct SSH fields.
   - --from-clipboard accepts key=value lines or one line: ip,user,password,name,port.
@@ -74,6 +82,8 @@ Notes:
 			c.StrOpt(&addOpts.User, "user", "u", "", "ssh username")
 			c.StrOpt(&addOpts.Password, "password", "p", "", "ssh password")
 			c.StrOpt(&addOpts.KeyPath, "key", "", "", "ssh private key path")
+			c.BoolOpt(&addOpts.EmbedKey, "embed-key", "", false, "store encrypted private key content in config")
+			c.VarOpt(&addOpts.KeyPassphrase, "key-passphrase", "", "key passphrase source: input, clip, or env")
 			c.StrOpt(&addOpts.AuthRef, "auth", "", "", "auth profile name")
 			c.StrOpt(&addOpts.Jump, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&addOpts.Backend, "backend", "", "", "host backend: ssh or command_proxy")
@@ -84,8 +94,25 @@ Notes:
 			c.StrOpt(&addOpts.Group, "group", "", core.DefaultGroup, "host group")
 			c.StrOpt(&addOpts.Tags, "tags", "", "", "comma-separated host tags")
 			c.IntOpt(&addOpts.Port, "port", "", core.DefaultSSHPort, "ssh port")
+			c.AddArg("key_passphrase_source", "key passphrase source: input, clip, or env", false)
 		},
-		Func: func(c *gcli.Command, _ []string) error {
+		Func: func(c *gcli.Command, args []string) error {
+			var err error
+			if sourceArg := strings.TrimSpace(c.Arg("key_passphrase_source").String()); sourceArg != "" {
+				if !addOpts.KeyPassphrase.SetFlag {
+					return fmt.Errorf("unexpected argument %q", sourceArg)
+				}
+				if err := addOpts.KeyPassphrase.Set(sourceArg); err != nil {
+					return err
+				}
+			}
+			args, err = consumeKeyPassphraseSourceArg(&addOpts.KeyPassphrase, args)
+			if err != nil {
+				return err
+			}
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q", args[0])
+			}
 			if addOpts.Port == 0 {
 				addOpts.Port = core.DefaultSSHPort
 			}
@@ -95,7 +122,6 @@ Notes:
 
 			var (
 				host core.Host
-				err  error
 			)
 			if addOpts.Interactive {
 				host, err = collectInteractiveHost(cutypes.Input, cmdOutput(c))
@@ -112,6 +138,9 @@ Notes:
 				return err
 			}
 			if host.KeyPath, err = normalizeKeyPathForSave(host.KeyPath); err != nil {
+				return err
+			}
+			if err := applyHostKeyOptions(&host, addOpts.EmbedKey, addOpts.KeyPassphrase); err != nil {
 				return err
 			}
 
@@ -146,6 +175,8 @@ func resetAddOptions() {
 	addOpts.User = ""
 	addOpts.Password = ""
 	addOpts.KeyPath = ""
+	addOpts.EmbedKey = false
+	addOpts.KeyPassphrase = keyPassphraseFlag{}
 	addOpts.Remark = ""
 	addOpts.Group = core.DefaultGroup
 	addOpts.Tags = ""
@@ -183,6 +214,27 @@ func buildHostFromAddOptions() (core.Host, error) {
 	}
 	normalizeHostDefaults(&host)
 	return host, nil
+}
+
+func applyHostKeyOptions(host *core.Host, embedKey bool, passphraseFlag keyPassphraseFlag) error {
+	if embedKey {
+		keyData, err := readKeyFileContent(host.KeyPath)
+		if err != nil {
+			return err
+		}
+		host.KeyData = keyData
+	}
+	if passphraseFlag.SetFlag {
+		if strings.TrimSpace(host.KeyPath) == "" && strings.TrimSpace(host.KeyData) == "" && strings.TrimSpace(host.KeyDataEnc) == "" {
+			return fmt.Errorf("--key-passphrase requires --key")
+		}
+		passphrase, err := resolveKeyPassphrase(passphraseFlag)
+		if err != nil {
+			return err
+		}
+		host.KeyPassphrase = passphrase
+	}
+	return nil
 }
 
 func collectInteractiveHost(input io.Reader, output io.Writer) (core.Host, error) {

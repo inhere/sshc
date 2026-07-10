@@ -81,3 +81,27 @@ func normalizeAPIHost(host *core.Host) {
 		host.Group = core.DefaultGroup
 	}
 }
+
+func retainOrClearSecret(plain *string, encrypted *string, oldEncrypted string, retain bool) {
+	if strings.TrimSpace(*plain) != "" {
+		return
+	}
+	*plain = ""
+	switch strings.TrimSpace(*encrypted) {
+	case "":
+		if retain {
+			*encrypted = oldEncrypted
+		}
+	case core.MaskedSecret:
+		if retain {
+			*encrypted = oldEncrypted
+		} else {
+			*encrypted = ""
+		}
+	}
+}
+
+func hasExplicitEncryptedSecret(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && value != core.MaskedSecret
+}

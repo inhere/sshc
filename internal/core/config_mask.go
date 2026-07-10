@@ -27,6 +27,14 @@ func MaskHost(host Host) Host {
 		host.Password = ""
 		host.PasswordEnc = MaskedSecret
 	}
+	if host.KeyData != "" || host.KeyDataEnc != "" {
+		host.KeyData = ""
+		host.KeyDataEnc = MaskedSecret
+	}
+	if host.KeyPassphrase != "" || host.KeyPassphraseEnc != "" {
+		host.KeyPassphrase = ""
+		host.KeyPassphraseEnc = MaskedSecret
+	}
 	return host
 }
 
@@ -35,6 +43,14 @@ func MaskAuthProfile(profile AuthProfile) AuthProfile {
 		profile.Password = ""
 		profile.PasswordEnc = MaskedSecret
 	}
+	if profile.KeyData != "" || profile.KeyDataEnc != "" {
+		profile.KeyData = ""
+		profile.KeyDataEnc = MaskedSecret
+	}
+	if profile.KeyPassphrase != "" || profile.KeyPassphraseEnc != "" {
+		profile.KeyPassphrase = ""
+		profile.KeyPassphraseEnc = MaskedSecret
+	}
 	return profile
 }
 
@@ -42,7 +58,7 @@ func AuthLabel(host Host) string {
 	if ref := strings.TrimSpace(host.AuthRef); ref != "" {
 		return "auth:" + ref
 	}
-	hasKey := strings.TrimSpace(host.KeyPath) != ""
+	hasKey := hasKeyAuth(host)
 	hasPassword := host.Password != "" || host.PasswordEnc != ""
 	switch {
 	case hasKey && hasPassword:

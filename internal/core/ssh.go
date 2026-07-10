@@ -854,8 +854,15 @@ func firstNonEmptyString(values ...string) string {
 
 func hostAuth(host Host) (goph.Auth, error) {
 	var auth goph.Auth
-	if strings.TrimSpace(host.KeyPath) != "" {
-		keyAuth, err := goph.Key(expandUserPath(host.KeyPath), "")
+	passphrase := host.KeyPassphrase
+	if strings.TrimSpace(host.KeyData) != "" {
+		keyAuth, err := goph.RawKey(host.KeyData, passphrase)
+		if err != nil {
+			return nil, err
+		}
+		auth = append(auth, keyAuth...)
+	} else if strings.TrimSpace(host.KeyPath) != "" {
+		keyAuth, err := goph.Key(expandUserPath(host.KeyPath), passphrase)
 		if err != nil {
 			return nil, err
 		}

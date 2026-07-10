@@ -119,6 +119,8 @@ sshc <command> --help
 sshc add --ip 192.168.1.10 -u root -p password
 sshc add --ip 192.168.1.10 --name devhost -u root -p password --port 22
 sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa
+sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa --embed-key
+sshc add --ip 192.168.1.10 --name devhost -u root --key ~/.ssh/id_rsa --key-passphrase env
 sshc add --ip 192.168.1.10 --name devhost --auth dev-root --tags app,testing
 sshc add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 sshc add -I
@@ -126,6 +128,18 @@ sshc add --from-clipboard
 ```
 
 `sshc add -I` prompts for host fields interactively and hides password input.
+
+Use `--embed-key` with `--key` to store encrypted private key content in the
+config. This lets the saved host keep working after the config is moved to a
+machine where the original key path does not exist. The original `key_path` is
+kept for reference, but authentication prefers the embedded key data when it is
+present.
+
+Use `--key-passphrase` when the private key is encrypted. Without a value it
+prompts for hidden input. `--key-passphrase input`, `--key-passphrase clip`, and
+`--key-passphrase env` select hidden input, clipboard, or
+`SSHC_KEY_PASSPHRASE` respectively. The `--key-passphrase=env` form is also
+supported.
 
 `--from-clipboard` accepts either `key=value`/`key: value` lines or one CSV line:
 
@@ -149,6 +163,8 @@ Use `auth` profiles when multiple hosts share the same user, password, or key:
 ```bash
 sshc auth add dev-root -u root -p --remark "shared root login"
 sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
+sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --embed-key
+sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --key-passphrase clip
 sshc auth list
 sshc auth show dev-root
 sshc auth rm old-profile --yes
@@ -156,6 +172,10 @@ sshc auth rm old-profile --yes
 
 `sshc auth add -p` prompts for a hidden password. It intentionally does not
 accept `-p secret` or `--password secret`.
+
+`sshc auth add` supports the same `--embed-key` and `--key-passphrase` handling
+as `sshc add`, so shared credential profiles can carry encrypted key content and
+key passphrases without depending on a local key path.
 
 Attach a profile to a host:
 
@@ -614,6 +634,8 @@ Example config:
       "name": "dev-root",
       "user": "root",
       "password_enc": "v1:...",
+      "key_data_enc": "v1:...",
+      "key_passphrase_enc": "v1:...",
       "remark": "shared root login"
     }
   ],
@@ -761,8 +783,8 @@ prints the config file as stored on disk and is intended for local debugging.
   SSH management entry point to the network and must use `--token`.
 - Do not expose `sshc serve` directly to the public Internet. Put it behind a
   trusted tunnel or access-controlled network if remote access is required.
-- Web APIs and UI responses mask `password` and `password_enc`; passwords are not
-  displayed by the Web console.
+- Web APIs and UI responses mask `password`, `password_enc`, embedded key data,
+  and key passphrase fields; secrets are not displayed by the Web console.
 
 ## Documentation
 

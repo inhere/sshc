@@ -25,12 +25,18 @@ func NewAuthCmd() *gcli.Command {
 Examples:
   sshc auth add dev-root -u root -p --remark "shared root login"
   sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519
+  sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --embed-key
+  sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --embed-key --key-passphrase
+  sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --key-passphrase=env
   sshc auth show dev-root
   sshc auth show dev-root --raw
   sshc auth rm dev-root --yes
 
 Notes:
   - -p/--password prompts for a hidden password and does not accept an inline value.
+  - --embed-key stores encrypted private key content in sshc.config.json.
+  - --key-passphrase reads a private key passphrase from hidden input by default.
+  - --key-passphrase=clip reads it from clipboard; --key-passphrase=env reads ${SSHC_KEY_PASSPHRASE}.
   - Passwords are encrypted before writing sshc.config.json.
   - auth rm refuses profiles still referenced by any host.
 `),
@@ -49,6 +55,8 @@ func newAuthAddCmd() *gcli.Command {
 		User           string
 		PasswordPrompt bool
 		KeyPath        string
+		EmbedKey       bool
+		KeyPassphrase  keyPassphraseFlag
 		Remark         string
 	}{}
 	return &gcli.Command{
@@ -58,14 +66,21 @@ func newAuthAddCmd() *gcli.Command {
 			c.StrOpt(&opts.User, "user", "u", "", "ssh username")
 			c.BoolOpt(&opts.PasswordPrompt, "password", "p", false, "prompt for hidden password")
 			c.StrOpt(&opts.KeyPath, "key", "", "", "ssh private key path")
+			c.BoolOpt(&opts.EmbedKey, "embed-key", "", false, "store encrypted private key content in config")
+			c.VarOpt(&opts.KeyPassphrase, "key-passphrase", "", "key passphrase source: input, clip, or env")
 			c.StrOpt(&opts.Remark, "remark", "", "", "auth profile remark")
 			c.AddArg("name", "auth profile name", true)
 		},
 		Func: func(c *gcli.Command, args []string) error {
+			name := strings.TrimSpace(c.Arg("name").String())
+			var err error
+			name, args, err = consumeAuthAddKeyPassphraseSourceArg(&opts.KeyPassphrase, name, args)
+			if err != nil {
+				return err
+			}
 			if len(args) > 0 {
 				return errors.New("-p/--password does not accept an inline value")
 			}
-			name := strings.TrimSpace(c.Arg("name").String())
 			profile := core.AuthProfile{
 				Name:   name,
 				User:   strings.TrimSpace(opts.User),
@@ -76,6 +91,9 @@ func newAuthAddCmd() *gcli.Command {
 				return err
 			}
 			profile.KeyPath = keyPath
+			if err := applyAuthProfileKeyOptions(&profile, opts.EmbedKey, opts.KeyPassphrase); err != nil {
+				return err
+			}
 			if opts.PasswordPrompt {
 				profile.Password = strings.TrimSpace(readInteractivePassword("Password: "))
 			}
@@ -190,12 +208,41 @@ func newAuthRemoveCmd() *gcli.Command {
 	}
 }
 
+func consumeAuthAddKeyPassphraseSourceArg(flag *keyPassphraseFlag, name string, args []string) (string, []string, error) {
+	if flag == nil || !flag.SetFlag || flag.Source != "input" {
+		return name, args, nil
+	}
+	remaining, err := consumeKeyPassphraseSourceArg(flag, args)
+	return name, remaining, err
+}
+
 func validateAuthProfile(profile core.AuthProfile) error {
 	if strings.TrimSpace(profile.Name) == "" {
 		return errors.New("auth profile name is required")
 	}
-	if profile.Password == "" && strings.TrimSpace(profile.KeyPath) == "" {
+	if !authProfileHasPassword(profile) && !authProfileHasKey(profile) {
 		return errors.New("password or key is required")
+	}
+	return nil
+}
+
+func applyAuthProfileKeyOptions(profile *core.AuthProfile, embedKey bool, passphraseFlag keyPassphraseFlag) error {
+	if embedKey {
+		keyData, err := readKeyFileContent(profile.KeyPath)
+		if err != nil {
+			return err
+		}
+		profile.KeyData = keyData
+	}
+	if passphraseFlag.SetFlag {
+		if strings.TrimSpace(profile.KeyPath) == "" && strings.TrimSpace(profile.KeyData) == "" && strings.TrimSpace(profile.KeyDataEnc) == "" {
+			return fmt.Errorf("--key-passphrase requires --key")
+		}
+		passphrase, err := resolveKeyPassphrase(passphraseFlag)
+		if err != nil {
+			return err
+		}
+		profile.KeyPassphrase = passphrase
 	}
 	return nil
 }
@@ -231,8 +278,8 @@ func buildAuthListTable(profiles []core.AuthProfile) string {
 }
 
 func authProfileType(profile core.AuthProfile) string {
-	hasKey := strings.TrimSpace(profile.KeyPath) != ""
-	hasPassword := profile.Password != "" || profile.PasswordEnc != ""
+	hasKey := authProfileHasKey(profile)
+	hasPassword := authProfileHasPassword(profile)
 	switch {
 	case hasKey && hasPassword:
 		return "key+password"
@@ -243,6 +290,16 @@ func authProfileType(profile core.AuthProfile) string {
 	default:
 		return "-"
 	}
+}
+
+func authProfileHasKey(profile core.AuthProfile) bool {
+	return strings.TrimSpace(profile.KeyPath) != "" ||
+		strings.TrimSpace(profile.KeyData) != "" ||
+		strings.TrimSpace(profile.KeyDataEnc) != ""
+}
+
+func authProfileHasPassword(profile core.AuthProfile) bool {
+	return profile.Password != "" || profile.PasswordEnc != ""
 }
 
 func loadRawAuthProfile(name string) (core.AuthProfile, bool, error) {

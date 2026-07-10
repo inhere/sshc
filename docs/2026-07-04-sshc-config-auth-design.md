@@ -327,7 +327,7 @@ type EffectiveHost struct {
 
 - `ip` 非空。
 - `user` 非空。
-- 至少存在一种认证方式：`password`、`password_enc` 或 `key_path`。
+- 至少存在一种认证方式：`password`、`password_enc`、`key_path`、`key_data` 或 `key_data_enc`。
 - `port` 合法。
 - `connect_timeout` 合法。
 - 如果 `host_key_check=known_hosts`，known hosts 文件路径可解析。
@@ -338,15 +338,19 @@ type EffectiveHost struct {
 
 - `password`
 - `password_enc`
-- 后续可能新增的 `key_passphrase`
-- 后续可能新增的 `key_passphrase_enc`
+- `key_data`
+- `key_data_enc`
+- `key_passphrase`
+- `key_passphrase_enc`
 - export/import 过程中短暂出现的明文配置内容
 
 默认展示策略：
 
 ```json
 {
-  "password_enc": "***"
+  "password_enc": "***",
+  "key_data_enc": "***",
+  "key_passphrase_enc": "***"
 }
 ```
 
@@ -356,7 +360,7 @@ type EffectiveHost struct {
 - `host show` 默认 mask，`host show --raw` 才输出原始内容。
 - `auth show` 默认 mask，`auth show --raw` 才输出原始内容。
 - `list` 和 `auth list` 不展示密文，只展示认证类型，例如 `password`、`key`、`key+password`。
-- 日志不记录 password、password_enc。
+- 日志不记录 password、password_enc、key_data、key_data_enc、key_passphrase、key_passphrase_enc。
 
 `--raw` 是排障能力，不建议放在 README 快速示例里重点展示。
 

@@ -26,6 +26,36 @@ func TestHostAuthUsesKeyAndPassword(t *testing.T) {
 	}
 }
 
+func TestHostAuthUsesEmbeddedKey(t *testing.T) {
+	keyPath := writeTestPrivateKey(t)
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := hostAuth(Host{KeyData: string(data)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auth) != 1 {
+		t.Fatalf("auth methods = %d, want 1", len(auth))
+	}
+}
+
+func TestHostAuthPrefersEmbeddedKeyOverKeyPath(t *testing.T) {
+	keyPath := writeTestPrivateKey(t)
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := hostAuth(Host{KeyData: string(data), KeyPath: filepath.Join(t.TempDir(), "missing")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auth) != 1 {
+		t.Fatalf("auth methods = %d, want 1", len(auth))
+	}
+}
+
 func TestResolveEffectiveHostFromInlineAuth(t *testing.T) {
 	config := Config{Hosts: []Host{{
 		Name:     "devhost",
@@ -48,8 +78,9 @@ func TestResolveEffectiveHostFromInlineAuth(t *testing.T) {
 }
 
 func TestResolveEffectiveHostFromAuthProfile(t *testing.T) {
+	keyData := "embedded-key-data"
 	config := Config{
-		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", Password: "secret", KeyPath: "~/.ssh/id_rsa"}},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", Password: "secret", KeyPath: "~/.ssh/id_rsa", KeyData: keyData, KeyPassphrase: "key-secret"}},
 		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", AuthRef: "dev-root", Port: 22}},
 	}
 
@@ -57,14 +88,14 @@ func TestResolveEffectiveHostFromAuthProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || host.User != "root" || host.Password != "secret" || host.KeyPath != "~/.ssh/id_rsa" {
+	if !ok || host.User != "root" || host.Password != "secret" || host.KeyPath != "~/.ssh/id_rsa" || host.KeyData != keyData || host.KeyPassphrase != "key-secret" {
 		t.Fatalf("host = %+v, ok = %v", host, ok)
 	}
 }
 
 func TestResolveEffectiveHostHostOverridesAuthProfile(t *testing.T) {
 	config := Config{
-		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", Password: "profile", KeyPath: "~/.ssh/profile"}},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", Password: "profile", KeyPath: "~/.ssh/profile", KeyData: "profile-key-data", KeyPassphrase: "profile-key-secret"}},
 		Hosts: []Host{{
 			Name:     "devhost",
 			IP:       "10.0.0.8",
@@ -80,7 +111,23 @@ func TestResolveEffectiveHostHostOverridesAuthProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || host.User != "ops" || host.Password != "host" || host.KeyPath != "~/.ssh/host" || host.Port != 2222 {
+	if !ok || host.User != "ops" || host.Password != "host" || host.KeyPath != "~/.ssh/host" || host.KeyData != "" || host.KeyPassphrase != "" || host.Port != 2222 {
+		t.Fatalf("host = %+v, ok = %v", host, ok)
+	}
+}
+
+func TestResolveEffectiveHostGroupKeyPathClearsProfileEmbeddedKey(t *testing.T) {
+	config := Config{
+		Groups:       map[string]GroupDefaults{"testing": {AuthRef: "dev-root", KeyPath: "~/.ssh/group"}},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/profile", KeyData: "profile-key-data", KeyPassphrase: "profile-key-secret"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", Group: "testing"}},
+	}
+
+	host, ok, err := config.ResolveEffectiveHost("devhost", HostOverrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || host.KeyPath != "~/.ssh/group" || host.KeyData != "" || host.KeyPassphrase != "" {
 		t.Fatalf("host = %+v, ok = %v", host, ok)
 	}
 }

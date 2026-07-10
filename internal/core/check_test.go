@@ -47,6 +47,16 @@ func TestCheckHostReportsMissingKey(t *testing.T) {
 	}
 }
 
+func TestCheckHostSkipsMissingKeyPathWhenEmbeddedKeyExists(t *testing.T) {
+	t.Cleanup(setCheckTCPDialForTest(func(network, address string, timeout time.Duration) (net.Conn, error) {
+		return nil, errors.New("stop after config validation")
+	}))
+	result := CheckHost(Host{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: filepath.Join(t.TempDir(), "missing"), KeyData: "embedded-key", Port: 22, HostKeyCheck: HostKeyCheckInsecure}, CheckOptions{})
+	if result.Error == "" || strings.Contains(result.Error, "key_path") {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestCheckHostReportsTCPFailure(t *testing.T) {
 	keyPath := filepath.Join(t.TempDir(), "id_rsa")
 	if err := os.WriteFile(keyPath, []byte("key"), 0600); err != nil {

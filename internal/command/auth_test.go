@@ -70,6 +70,89 @@ func TestAuthAddKeyProfile(t *testing.T) {
 	}
 }
 
+func TestAuthAddEmbedsKeyAndPassphraseFromClipboard(t *testing.T) {
+	path := withTempConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+	keyContent := "FAKE_AUTH_PRIVATE_KEY_CONTENT_67890\n"
+	if err := os.WriteFile(keyPath, []byte(keyContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setReadClipboardForTest(func() (string, error) {
+		return " clip-secret \n", nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"auth", "add", "deploy-key", "-u", "deploy", "--key", keyPath, "--embed-key", "--key-passphrase", "clip"}); err != nil {
+		t.Fatalf("auth add embedded key: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if strings.Contains(content, keyContent) || strings.Contains(content, "clip-secret") {
+		t.Fatalf("stored config leaked embedded key or passphrase: %s", content)
+	}
+	if !strings.Contains(content, `"key_data_enc": "v1:`) || !strings.Contains(content, `"key_passphrase_enc": "v1:`) {
+		t.Fatalf("stored config missing encrypted key fields: %s", content)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].KeyData != keyContent || config.AuthProfiles[0].KeyPassphrase != "clip-secret" {
+		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+}
+
+func TestAuthAddKeyPassphraseSpaceSourceAfterName(t *testing.T) {
+	withTempConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(keyPath, []byte("FAKE_AUTH_PRIVATE_KEY_CONTENT_ENV\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(keyPassphraseEnvKey, "env-secret")
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"auth", "add", "deploy-key", "--key", keyPath, "--key-passphrase", "env"}); err != nil {
+		t.Fatalf("auth add key passphrase: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].Name != "deploy-key" || config.AuthProfiles[0].KeyPassphrase != "env-secret" {
+		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+}
+
+func TestAuthAddSourceLikeProfileNameStillWorks(t *testing.T) {
+	withTempConfig(t)
+	keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(keyPath, []byte("FAKE_AUTH_PRIVATE_KEY_CONTENT_CLIP\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(setReadClipboardForTest(func() (string, error) {
+		return "clip-secret", nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"auth", "add", "env", "--key", keyPath, "--key-passphrase", "clip"}); err != nil {
+		t.Fatalf("auth add key passphrase: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].Name != "env" || config.AuthProfiles[0].KeyPassphrase != "clip-secret" {
+		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+}
+
 func TestAuthAddStoresRelativeKeyPathAsAbsolute(t *testing.T) {
 	withTempConfig(t)
 
@@ -98,10 +181,12 @@ func TestAuthAddStoresRelativeKeyPathAsAbsolute(t *testing.T) {
 func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{
-		Name:     "dev-root",
-		User:     "root",
-		Password: "secret",
-		Remark:   "shared root login",
+		Name:          "dev-root",
+		User:          "root",
+		Password:      "secret",
+		KeyData:       "key-data",
+		KeyPassphrase: "key-secret",
+		Remark:        "shared root login",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +205,7 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	if err := app.RunWithArgs([]string{"auth", "show", "dev-root"}); err != nil {
 		t.Fatalf("auth show: %v", err)
 	}
-	if strings.Contains(out.String(), "secret") || !strings.Contains(out.String(), `"password_enc": "***"`) || !strings.Contains(out.String(), `"remark": "shared root login"`) {
+	if strings.Contains(out.String(), "secret") || strings.Contains(out.String(), "key-data") || !strings.Contains(out.String(), `"password_enc": "***"`) || !strings.Contains(out.String(), `"key_data_enc": "***"`) || !strings.Contains(out.String(), `"key_passphrase_enc": "***"`) || !strings.Contains(out.String(), `"remark": "shared root login"`) {
 		t.Fatalf("show output = %q", out.String())
 	}
 }
@@ -157,5 +242,14 @@ func TestAuthRemoveWithYes(t *testing.T) {
 	}
 	if len(config.AuthProfiles) != 0 {
 		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+}
+
+func TestAuthProfileTypeUsesEmbeddedKey(t *testing.T) {
+	if got := authProfileType(core.AuthProfile{KeyDataEnc: "v1:key"}); got != "key" {
+		t.Fatalf("authProfileType embedded key = %q, want key", got)
+	}
+	if err := validateAuthProfile(core.AuthProfile{Name: "deploy-key", KeyDataEnc: "v1:key"}); err != nil {
+		t.Fatalf("validate embedded key profile: %v", err)
 	}
 }

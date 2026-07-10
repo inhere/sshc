@@ -108,6 +108,54 @@ func TestHostsCRUDAndMaskSecrets(t *testing.T) {
 	}
 }
 
+func TestHostsUpdatePreservesEmbeddedKeySecrets(t *testing.T) {
+	withTempConfig(t)
+	srv := newTestServer(t, Config{Addr: "127.0.0.1:0"})
+	createBody := `{"name":"devhost","ip":"10.0.0.8","user":"root","key_path":"~/.ssh/id_rsa","key_data":"EMBEDDED_HOST_KEY","key_passphrase":"host-key-secret","port":22}`
+	rec := requestJSON(t, srv, http.MethodPost, "/api/hosts", createBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "EMBEDDED_HOST_KEY") || strings.Contains(rec.Body.String(), "host-key-secret") || !strings.Contains(rec.Body.String(), `"key_data_enc":"***"`) || !strings.Contains(rec.Body.String(), `"key_passphrase_enc":"***"`) {
+		t.Fatalf("create leaked embedded key secret: %s", rec.Body.String())
+	}
+
+	var masked core.Host
+	decodeResponseData(t, rec, &masked)
+	masked.Remark = "updated"
+	body, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = requestJSON(t, srv, http.MethodPut, "/api/hosts/devhost", string(body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Hosts[0].KeyData != "EMBEDDED_HOST_KEY" || config.Hosts[0].KeyPassphrase != "host-key-secret" || config.Hosts[0].Remark != "updated" {
+		t.Fatalf("updated host = %+v", config.Hosts[0])
+	}
+
+	config.AuthProfiles = []core.AuthProfile{{Name: "dev-root", User: "root", Password: "secret"}}
+	if err := core.SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	rec = requestJSON(t, srv, http.MethodPut, "/api/hosts/devhost", `{"name":"devhost","ip":"10.0.0.8","auth_ref":"dev-root","port":22}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("auth ref update status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	config, err = core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Hosts[0].AuthRef != "dev-root" || config.Hosts[0].KeyData != "" || config.Hosts[0].KeyDataEnc != "" || config.Hosts[0].KeyPassphrase != "" || config.Hosts[0].KeyPassphraseEnc != "" {
+		t.Fatalf("auth ref host = %+v", config.Hosts[0])
+	}
+}
+
 func TestReadonlyRejectsWrites(t *testing.T) {
 	withTempConfig(t)
 	srv := newTestServer(t, Config{Addr: "127.0.0.1:0", Readonly: true})
@@ -147,6 +195,50 @@ func TestAuthCRUDMasksSecretsAndRefusesUsedDelete(t *testing.T) {
 	rec = requestJSON(t, srv, http.MethodDelete, "/api/auth-profiles/dev-root", "")
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "used by hosts") {
 		t.Fatalf("auth delete response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthUpdatePreservesEmbeddedKeySecrets(t *testing.T) {
+	withTempConfig(t)
+	srv := newTestServer(t, Config{Addr: "127.0.0.1:0"})
+	createBody := `{"name":"deploy-key","user":"deploy","key_path":"~/.ssh/id_ed25519","key_data":"EMBEDDED_PROFILE_KEY","key_passphrase":"profile-key-secret","remark":"ops"}`
+	rec := requestJSON(t, srv, http.MethodPost, "/api/auth-profiles", createBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("auth create status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "EMBEDDED_PROFILE_KEY") || strings.Contains(rec.Body.String(), "profile-key-secret") || !strings.Contains(rec.Body.String(), `"key_data_enc":"***"`) || !strings.Contains(rec.Body.String(), `"key_passphrase_enc":"***"`) {
+		t.Fatalf("auth create leaked embedded key secret: %s", rec.Body.String())
+	}
+
+	var masked core.AuthProfile
+	decodeResponseData(t, rec, &masked)
+	masked.Remark = "updated"
+	body, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = requestJSON(t, srv, http.MethodPut, "/api/auth-profiles/deploy-key", string(body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("auth update status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthProfiles[0].KeyData != "EMBEDDED_PROFILE_KEY" || config.AuthProfiles[0].KeyPassphrase != "profile-key-secret" || config.AuthProfiles[0].Remark != "updated" {
+		t.Fatalf("auth profile = %+v", config.AuthProfiles[0])
+	}
+
+	rec = requestJSON(t, srv, http.MethodPut, "/api/auth-profiles/deploy-key", `{"name":"deploy-key","user":"deploy","key_path":"~/.ssh/other","remark":"new path"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("auth key path update status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	config, err = core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthProfiles[0].KeyPath != "~/.ssh/other" || config.AuthProfiles[0].KeyData != "" || config.AuthProfiles[0].KeyDataEnc != "" || config.AuthProfiles[0].KeyPassphrase != "" || config.AuthProfiles[0].KeyPassphraseEnc != "" {
+		t.Fatalf("new path auth profile = %+v", config.AuthProfiles[0])
 	}
 }
 

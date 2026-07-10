@@ -96,15 +96,30 @@ func (s *Server) handleAuthUpdate(c *rux.Context) {
 		writeError(c, http.StatusNotFound, fmt.Errorf("auth profile %q not found", name))
 		return
 	}
-	if profile.Password == "" && profile.PasswordEnc == "" {
-		profile.PasswordEnc = old.PasswordEnc
-	}
+	retainAuthUpdateSecrets(&profile, old)
 	config.AuthProfiles[idx] = profile
 	if err := saveCheckedConfig(config); err != nil {
 		writeError(c, http.StatusBadRequest, err)
 		return
 	}
 	writeOK(c, core.MaskAuthProfile(profile))
+}
+
+func retainAuthUpdateSecrets(profile *core.AuthProfile, old core.AuthProfile) {
+	retainPassword := profile.Password == ""
+	retainKey := shouldRetainAuthKeySecrets(*profile, old)
+	retainOrClearSecret(&profile.Password, &profile.PasswordEnc, old.PasswordEnc, retainPassword)
+	retainOrClearSecret(&profile.KeyData, &profile.KeyDataEnc, old.KeyDataEnc, retainKey)
+	retainOrClearSecret(&profile.KeyPassphrase, &profile.KeyPassphraseEnc, old.KeyPassphraseEnc, retainKey)
+}
+
+func shouldRetainAuthKeySecrets(profile core.AuthProfile, old core.AuthProfile) bool {
+	keyPath := strings.TrimSpace(profile.KeyPath)
+	oldKeyPath := strings.TrimSpace(old.KeyPath)
+	if keyPath != "" {
+		return keyPath == oldKeyPath
+	}
+	return profile.Password == "" && !hasExplicitEncryptedSecret(profile.PasswordEnc)
 }
 
 func (s *Server) handleAuthDelete(c *rux.Context) {

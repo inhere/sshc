@@ -79,6 +79,58 @@ func TestSaveStoreEncryptsPasswordAndLoadDecrypts(t *testing.T) {
 	}
 }
 
+func TestSaveConfigEncryptsEmbeddedKeyAndPassphrase(t *testing.T) {
+	path := withTempConfig(t)
+	keyData := "FAKE_CORE_PRIVATE_KEY_CONTENT_ABCDE\n"
+	config := &Config{
+		AuthProfiles: []AuthProfile{{
+			Name:          "deploy-key",
+			User:          "deploy",
+			KeyData:       keyData,
+			KeyPassphrase: "profile-passphrase",
+		}},
+		Hosts: []Host{{
+			Name:          "devhost",
+			IP:            "10.0.0.8",
+			User:          "root",
+			KeyData:       keyData,
+			KeyPassphrase: "host-passphrase",
+			Port:          22,
+		}},
+	}
+	if err := SaveConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthProfiles[0].KeyData != keyData || config.Hosts[0].KeyPassphrase != "host-passphrase" {
+		t.Fatalf("SaveConfig mutated source config: %+v", config)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	for _, leaked := range []string{keyData, "profile-passphrase", "host-passphrase"} {
+		if strings.Contains(content, leaked) {
+			t.Fatalf("stored config leaked %q: %s", leaked, content)
+		}
+	}
+	if strings.Count(content, `"key_data_enc": "v1:`) != 2 || strings.Count(content, `"key_passphrase_enc": "v1:`) != 2 {
+		t.Fatalf("stored config missing encrypted key fields: %s", content)
+	}
+
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.AuthProfiles) != 1 || loaded.AuthProfiles[0].KeyData != keyData || loaded.AuthProfiles[0].KeyPassphrase != "profile-passphrase" {
+		t.Fatalf("auth profiles = %+v", loaded.AuthProfiles)
+	}
+	if len(loaded.Hosts) != 1 || loaded.Hosts[0].KeyData != keyData || loaded.Hosts[0].KeyPassphrase != "host-passphrase" {
+		t.Fatalf("hosts = %+v", loaded.Hosts)
+	}
+}
+
 func TestLoadStoreSupportsLegacyPlaintextPassword(t *testing.T) {
 	path := withTempConfig(t)
 	data := []byte(`{"hosts":[{"name":"devhost","ip":"10.0.0.8","user":"root","password":"secret","port":22}]}` + "\n")
@@ -283,18 +335,18 @@ func TestDecryptConfigPasswordMissingKey(t *testing.T) {
 
 func TestMaskConfigHidesSensitiveFields(t *testing.T) {
 	config := Config{
-		AuthProfiles: []AuthProfile{{Name: "dev-root", Password: "secret", PasswordEnc: "v1:secret"}},
-		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", Password: "host-secret", PasswordEnc: "v1:host-secret"}},
+		AuthProfiles: []AuthProfile{{Name: "dev-root", Password: "secret", PasswordEnc: "v1:secret", KeyData: "key-data", KeyDataEnc: "v1:key-data", KeyPassphrase: "key-secret", KeyPassphraseEnc: "v1:key-secret"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", Password: "host-secret", PasswordEnc: "v1:host-secret", KeyData: "host-key-data", KeyDataEnc: "v1:host-key-data", KeyPassphrase: "host-key-secret", KeyPassphraseEnc: "v1:host-key-secret"}},
 	}
 
 	masked := MaskConfig(config)
-	if masked.AuthProfiles[0].Password != "" || masked.AuthProfiles[0].PasswordEnc != MaskedSecret {
+	if masked.AuthProfiles[0].Password != "" || masked.AuthProfiles[0].PasswordEnc != MaskedSecret || masked.AuthProfiles[0].KeyData != "" || masked.AuthProfiles[0].KeyDataEnc != MaskedSecret || masked.AuthProfiles[0].KeyPassphrase != "" || masked.AuthProfiles[0].KeyPassphraseEnc != MaskedSecret {
 		t.Fatalf("masked profile = %+v", masked.AuthProfiles[0])
 	}
-	if masked.Hosts[0].Password != "" || masked.Hosts[0].PasswordEnc != MaskedSecret {
+	if masked.Hosts[0].Password != "" || masked.Hosts[0].PasswordEnc != MaskedSecret || masked.Hosts[0].KeyData != "" || masked.Hosts[0].KeyDataEnc != MaskedSecret || masked.Hosts[0].KeyPassphrase != "" || masked.Hosts[0].KeyPassphraseEnc != MaskedSecret {
 		t.Fatalf("masked host = %+v", masked.Hosts[0])
 	}
-	if config.AuthProfiles[0].Password != "secret" || config.Hosts[0].Password != "host-secret" {
+	if config.AuthProfiles[0].Password != "secret" || config.AuthProfiles[0].KeyData != "key-data" || config.Hosts[0].Password != "host-secret" || config.Hosts[0].KeyData != "host-key-data" {
 		t.Fatalf("MaskConfig mutated input: %+v", config)
 	}
 }
@@ -307,6 +359,7 @@ func TestAuthLabel(t *testing.T) {
 		{host: Host{AuthRef: "dev-root", KeyPath: "~/.ssh/id_rsa"}, want: "auth:dev-root"},
 		{host: Host{KeyPath: "~/.ssh/id_rsa", Password: "secret"}, want: "key+password"},
 		{host: Host{KeyPath: "~/.ssh/id_rsa"}, want: "key"},
+		{host: Host{KeyDataEnc: "v1:key"}, want: "key"},
 		{host: Host{PasswordEnc: "v1:secret"}, want: "password"},
 		{host: Host{}, want: "-"},
 	}

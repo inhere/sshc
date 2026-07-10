@@ -133,10 +133,10 @@ func validateCheckHostConfig(host Host) error {
 	if strings.TrimSpace(host.User) == "" {
 		return fmt.Errorf("user is required for host %q", HostLogName(host))
 	}
-	if host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
+	if !hasPasswordAuth(host) && !hasKeyAuth(host) {
 		return fmt.Errorf("password or key_path is required for host %q", HostLogName(host))
 	}
-	if strings.TrimSpace(host.KeyPath) != "" {
+	if strings.TrimSpace(host.KeyPath) != "" && strings.TrimSpace(host.KeyData) == "" && strings.TrimSpace(host.KeyDataEnc) == "" {
 		path := expandUserPath(host.KeyPath)
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("key_path %s: %w", path, err)

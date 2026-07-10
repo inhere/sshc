@@ -50,6 +50,10 @@ func (h EffectiveHost) ToHost() Host {
 	host.Password = h.Password
 	host.PasswordEnc = h.PasswordEnc
 	host.KeyPath = strings.TrimSpace(h.KeyPath)
+	host.KeyData = h.KeyData
+	host.KeyDataEnc = h.KeyDataEnc
+	host.KeyPassphrase = h.KeyPassphrase
+	host.KeyPassphraseEnc = h.KeyPassphraseEnc
 	host.Port = h.Port
 	host.ConnectTimeout = strings.TrimSpace(h.ConnectTimeout)
 	host.RunTimeout = strings.TrimSpace(h.RunTimeout)
@@ -239,6 +243,18 @@ func applyAuthProfile(host *EffectiveHost, profile AuthProfile) {
 	if value := strings.TrimSpace(profile.KeyPath); value != "" {
 		host.KeyPath = value
 	}
+	if profile.KeyData != "" {
+		host.KeyData = profile.KeyData
+	}
+	if profile.KeyDataEnc != "" {
+		host.KeyDataEnc = profile.KeyDataEnc
+	}
+	if profile.KeyPassphrase != "" {
+		host.KeyPassphrase = profile.KeyPassphrase
+	}
+	if profile.KeyPassphraseEnc != "" {
+		host.KeyPassphraseEnc = profile.KeyPassphraseEnc
+	}
 }
 
 func applyGroupDefaults(host *EffectiveHost, group GroupDefaults) {
@@ -250,6 +266,10 @@ func applyGroupDefaults(host *EffectiveHost, group GroupDefaults) {
 	}
 	if value := strings.TrimSpace(group.KeyPath); value != "" {
 		host.KeyPath = value
+		host.KeyData = ""
+		host.KeyDataEnc = ""
+		host.KeyPassphrase = ""
+		host.KeyPassphraseEnc = ""
 	}
 	if group.Port > 0 {
 		host.Port = group.Port
@@ -286,6 +306,22 @@ func applyHostInline(effective *EffectiveHost, host Host) {
 	}
 	if value := strings.TrimSpace(host.KeyPath); value != "" {
 		effective.KeyPath = value
+		effective.KeyData = ""
+		effective.KeyDataEnc = ""
+		effective.KeyPassphrase = ""
+		effective.KeyPassphraseEnc = ""
+	}
+	if host.KeyData != "" {
+		effective.KeyData = host.KeyData
+	}
+	if host.KeyDataEnc != "" {
+		effective.KeyDataEnc = host.KeyDataEnc
+	}
+	if host.KeyPassphrase != "" {
+		effective.KeyPassphrase = host.KeyPassphrase
+	}
+	if host.KeyPassphraseEnc != "" {
+		effective.KeyPassphraseEnc = host.KeyPassphraseEnc
 	}
 	if host.Port > 0 {
 		effective.Port = host.Port
@@ -316,6 +352,10 @@ func applyOverrides(host *EffectiveHost, overrides HostOverrides) {
 	}
 	if value := strings.TrimSpace(overrides.KeyPath); value != "" {
 		host.KeyPath = value
+		host.KeyData = ""
+		host.KeyDataEnc = ""
+		host.KeyPassphrase = ""
+		host.KeyPassphraseEnc = ""
 	}
 	if overrides.Port > 0 {
 		host.Port = overrides.Port
@@ -368,7 +408,7 @@ func validateEffectiveHost(host EffectiveHost) error {
 	if strings.TrimSpace(host.User) == "" {
 		return fmt.Errorf("user is required for host %q", HostLogName(host.Host))
 	}
-	if host.Password == "" && host.PasswordEnc == "" && strings.TrimSpace(host.KeyPath) == "" {
+	if !hasPasswordAuth(host.Host) && !hasKeyAuth(host.Host) {
 		return fmt.Errorf("password or key_path is required for host %q", HostLogName(host.Host))
 	}
 	if host.Port < 1 || host.Port > 65535 {
