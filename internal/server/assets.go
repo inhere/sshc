@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/gookit/rux/v2"
@@ -52,36 +52,50 @@ func (s *Server) serveWebDir(c *rux.Context) bool {
 	if requestPath == "" {
 		requestPath = "index.html"
 	}
-	cleanPath := filepath.Clean(filepath.FromSlash(requestPath))
-	fullPath := filepath.Join(s.config.WebDir, cleanPath)
-	if !withinDir(s.config.WebDir, fullPath) {
+	if hasPathTraversal(requestPath) {
 		http.NotFound(c.Resp, c.Req)
 		return true
 	}
-	if fileInfo, err := os.Stat(fullPath); err == nil && !fileInfo.IsDir() {
-		http.ServeFile(c.Resp, c.Req, fullPath)
-		return true
+	root, err := os.OpenRoot(s.config.WebDir)
+	if err != nil {
+		return false
 	}
-	indexPath := filepath.Join(s.config.WebDir, "index.html")
-	if fileInfo, err := os.Stat(indexPath); err == nil && !fileInfo.IsDir() {
-		http.ServeFile(c.Resp, c.Req, indexPath)
-		return true
+	defer root.Close()
+
+	if isSPAAssetRequest(requestPath) {
+		return serveIndexFile(c, root)
 	}
-	return false
+	http.FileServerFS(root.FS()).ServeHTTP(c.Resp, c.Req)
+	return true
 }
 
-func withinDir(root, path string) bool {
-	rootAbs, err := filepath.Abs(root)
+func isSPAAssetRequest(requestPath string) bool {
+	cleanPath := strings.Trim(path.Clean("/"+requestPath), "/")
+	if cleanPath == "" {
+		return true
+	}
+	return !strings.Contains(path.Base(cleanPath), ".")
+}
+
+func serveIndexFile(c *rux.Context, root *os.Root) bool {
+	file, err := root.Open("index.html")
 	if err != nil {
 		return false
 	}
-	pathAbs, err := filepath.Abs(path)
-	if err != nil {
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.IsDir() {
 		return false
 	}
-	rel, err := filepath.Rel(rootAbs, pathAbs)
-	if err != nil {
-		return false
+	http.ServeContent(c.Resp, c.Req, "index.html", info.ModTime(), file)
+	return true
+}
+
+func hasPathTraversal(requestPath string) bool {
+	for part := range strings.SplitSeq(strings.ReplaceAll(requestPath, "\\", "/"), "/") {
+		if part == ".." {
+			return true
+		}
 	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	return false
 }

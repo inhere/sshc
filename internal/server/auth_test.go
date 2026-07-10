@@ -34,6 +34,9 @@ func TestTokenAuthGuardsAPI(t *testing.T) {
 		t.Fatalf("login response = %d %s", loginRec.Code, loginRec.Body.String())
 	}
 	sessionCookie := loginRec.Result().Cookies()[0]
+	if sessionCookie.Secure {
+		t.Fatalf("loopback http session cookie should not be secure")
+	}
 	var loginData loginResponse
 	decodeResponseData(t, loginRec, &loginData)
 	if loginData.CSRF == "" {
@@ -53,6 +56,23 @@ func TestTokenAuthGuardsAPI(t *testing.T) {
 	rec = requestJSONWithAuth(t, srv, http.MethodPost, "/api/hosts", createBody, sessionCookie, loginData.CSRF)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("csrf write response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLoginCookieSecureForHTTPS(t *testing.T) {
+	withTempConfig(t)
+	srv := newTestServer(t, Config{Addr: "127.0.0.1:0", Token: "secret"})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(`{"token":"secret"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login response = %d %s", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 || !cookies[0].Secure {
+		t.Fatalf("https session cookie should be secure: %+v", cookies)
 	}
 }
 

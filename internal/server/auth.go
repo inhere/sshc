@@ -94,9 +94,20 @@ func (s *Server) handleAuthLogin(c *rux.Context) {
 		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
+		Secure:   secureCookie(c.Req),
 		SameSite: http.SameSiteLaxMode,
 	})
 	writeOK(c, loginResponse{CSRF: csrf})
+}
+
+func secureCookie(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	if req.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func (s *Server) matchToken(token string) bool {

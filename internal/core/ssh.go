@@ -774,10 +774,13 @@ func scanRemoteSSHHostKey(host Host) (ssh.PublicKey, net.Addr, error) {
 	remote := conn.RemoteAddr()
 	var key ssh.PublicKey
 	config := &ssh.ClientConfig{
-		User:            firstNonEmptyString(host.User, "sshc"),
-		Auth:            []ssh.AuthMethod{},
-		Timeout:         timeout,
-		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error { key = serverKey; return nil },
+		User:    firstNonEmptyString(host.User, "sshc"),
+		Auth:    []ssh.AuthMethod{},
+		Timeout: timeout,
+		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error {
+			key = serverKey
+			return fmt.Errorf("host key scanned")
+		},
 	}
 	sshConn, _, _, err := newSSHClientConn(conn, address, config)
 	if sshConn != nil {
@@ -820,10 +823,13 @@ func scanRemoteSSHHostKeyViaJump(host Host) (ssh.PublicKey, net.Addr, error) {
 	}
 	var key ssh.PublicKey
 	config := &ssh.ClientConfig{
-		User:            firstNonEmptyString(conn.Target.User, "sshc"),
-		Auth:            []ssh.AuthMethod{},
-		Timeout:         timeout,
-		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error { key = serverKey; return nil },
+		User:    firstNonEmptyString(conn.Target.User, "sshc"),
+		Auth:    []ssh.AuthMethod{},
+		Timeout: timeout,
+		HostKeyCallback: func(_ string, _ net.Addr, serverKey ssh.PublicKey) error {
+			key = serverKey
+			return fmt.Errorf("host key scanned")
+		},
 	}
 	sshConn, _, _, err := newSSHClientConn(rawConn, address, config)
 	if sshConn != nil {

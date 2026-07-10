@@ -99,4 +99,11 @@ func TestWebDirServesFileAndSPAFallback(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != "web index" {
 		t.Fatalf("fallback status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/../secret.txt", nil)
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("traversal status = %d, body = %s", rec.Code, rec.Body.String())
+	}
 }
