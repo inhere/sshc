@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ func NewUploadCmd() *gcli.Command {
 	cmd := &gcli.Command{
 		Name:    "scp",
 		Desc:    "upload a file or directory to remote host",
-		Aliases: []string{"upload"},
+		Aliases: []string{"upload", "up"},
 		Help: strings.TrimSpace(`
 Examples:
   sshc scp -l ./local-file.txt -r /tmp/remote-file.txt devhost
@@ -28,6 +29,7 @@ Examples:
   sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
   sshc scp -l app.jar -r /tmp/app.jar inner-db --jump bastion
   sshc upload -l ./dist -r /opt/app/dist devhost
+  sshc up -l ./dist -r /opt/app/dist devhost
   sshc upload -l ./a.jar -l ./b.jar -r /opt/app/lib/ devhost
   sshc upload --map ./config/app.yml=/etc/app/app.yml --map ./scripts/deploy.sh=/opt/app/deploy.sh devhost
 
@@ -66,13 +68,24 @@ Path rules:
 				return err
 			}
 
-			result, err := scpUpload(host, jobs, core.TransferOptions{
+			transferOpts := core.TransferOptions{
 				SHA256:    opts.SHA256,
 				RemoveDir: opts.RemoveDir,
-			})
+			}
+			totalBytes, err := core.EstimateUploadBytes(jobs, transferOpts)
 			if err != nil {
 				return err
 			}
+			progress := newUploadProgress(cmdOutput(c), totalBytes)
+			progress.Start()
+			transferOpts.Progress = progress.Add
+
+			result, err := scpUpload(host, jobs, transferOpts)
+			if err != nil {
+				progress.FinishLine()
+				return err
+			}
+			progress.Complete()
 			fmt.Fprintf(cmdOutput(c), "uploaded %d path(s) to %s\n", len(jobs), core.HostLogName(host))
 			fmt.Fprintf(cmdOutput(c), "size=%d files=%d dirs=%d elapsed=%s\n", result.Bytes, result.Files, result.Directories, formatElapsed(result.Elapsed))
 			writeSHA256Result(c, result)
@@ -80,6 +93,63 @@ Path rules:
 		},
 	}
 	return cmd
+}
+
+const uploadProgressDots = 20
+
+type uploadProgress struct {
+	out     io.Writer
+	total   int64
+	written int64
+	printed int
+	started bool
+}
+
+func newUploadProgress(out io.Writer, total int64) *uploadProgress {
+	return &uploadProgress{out: out, total: total}
+}
+
+func (p *uploadProgress) Start() {
+	if p == nil || p.started {
+		return
+	}
+	fmt.Fprint(p.out, "Uploading ")
+	p.started = true
+}
+
+func (p *uploadProgress) Add(n int64) {
+	if p == nil || n <= 0 || p.total <= 0 {
+		return
+	}
+	p.written += n
+	if p.written > p.total {
+		p.written = p.total
+	}
+	want := int(p.written * uploadProgressDots / p.total)
+	for p.printed < want && p.printed < uploadProgressDots {
+		fmt.Fprint(p.out, ".")
+		p.printed++
+	}
+}
+
+func (p *uploadProgress) Complete() {
+	if p == nil || !p.started {
+		return
+	}
+	if p.total > 0 {
+		for p.printed < uploadProgressDots {
+			fmt.Fprint(p.out, ".")
+			p.printed++
+		}
+	}
+	fmt.Fprintln(p.out)
+}
+
+func (p *uploadProgress) FinishLine() {
+	if p == nil || !p.started {
+		return
+	}
+	fmt.Fprintln(p.out)
 }
 
 type uploadFlagOptions struct {

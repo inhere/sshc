@@ -40,6 +40,7 @@ type TransferResult struct {
 type TransferOptions struct {
 	SHA256    bool
 	RemoveDir bool
+	Progress  func(int64)
 }
 
 type TransferJob struct {
@@ -268,7 +269,7 @@ func uploadRemoteScript(client RemoteClient, localPath, remotePath string) error
 	if err := mkdirRemoteParent(sftpClient, remotePath); err != nil {
 		return err
 	}
-	_, err = uploadFileWithSFTP(sftpClient, localPath, remotePath)
+	_, err = uploadFileWithSFTP(sftpClient, localPath, remotePath, nil)
 	return err
 }
 
@@ -351,6 +352,50 @@ func UploadRemoteBatch(host Host, jobs []TransferJob, opts TransferOptions) (res
 	return result, nil
 }
 
+func EstimateUploadBytes(jobs []TransferJob, opts TransferOptions) (int64, error) {
+	expandedJobs, err := expandUploadJobs(jobs, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	var total int64
+	for _, job := range expandedJobs {
+		bytes, err := localUploadBytes(job.LocalPath)
+		if err != nil {
+			return 0, err
+		}
+		total += bytes
+	}
+	return total, nil
+}
+
+func localUploadBytes(localPath string) (int64, error) {
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return 0, err
+	}
+	if !info.IsDir() {
+		return info.Size(), nil
+	}
+
+	var total int64
+	err = filepath.WalkDir(filepath.Clean(localPath), func(current string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := os.Stat(current)
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
+}
+
 func expandUploadJobs(jobs []TransferJob, opts TransferOptions) ([]TransferJob, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("upload job is required")
@@ -418,7 +463,7 @@ func uploadPreparedJob(client RemoteClient, sftpClient *sftp.Client, job Transfe
 				return result, err
 			}
 		}
-		bytes, err := uploadFileWithSFTP(sftpClient, job.LocalPath, job.RemotePath)
+		bytes, err := uploadFileWithSFTP(sftpClient, job.LocalPath, job.RemotePath, opts.Progress)
 		if err != nil {
 			return result, err
 		}
@@ -459,7 +504,7 @@ func uploadPreparedJob(client RemoteClient, sftpClient *sftp.Client, job Transfe
 		if err := mkdirRemoteParent(sftpClient, remoteCurrent); err != nil {
 			return err
 		}
-		bytes, err := uploadFileWithSFTP(sftpClient, current, remoteCurrent)
+		bytes, err := uploadFileWithSFTP(sftpClient, current, remoteCurrent, opts.Progress)
 		if err != nil {
 			return err
 		}
@@ -891,7 +936,20 @@ func mkdirRemoteParent(client *sftp.Client, remotePath string) error {
 	return client.MkdirAll(parent)
 }
 
-func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string) (int64, error) {
+type progressWriter struct {
+	writer   io.Writer
+	progress func(int64)
+}
+
+func (w progressWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if n > 0 && w.progress != nil {
+		w.progress(int64(n))
+	}
+	return n, err
+}
+
+func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string, progress func(int64)) (int64, error) {
 	localFile, err := os.Open(localPath)
 	if err != nil {
 		return 0, err
@@ -904,7 +962,11 @@ func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string) (int6
 	}
 	defer remoteFile.Close()
 
-	return io.Copy(remoteFile, localFile)
+	var writer io.Writer = remoteFile
+	if progress != nil {
+		writer = progressWriter{writer: remoteFile, progress: progress}
+	}
+	return io.Copy(writer, localFile)
 }
 
 func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (int64, error) {

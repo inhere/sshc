@@ -1,6 +1,9 @@
 package command
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -8,8 +11,21 @@ import (
 	"github.com/inhere/sshc/internal/core"
 )
 
+func writeUploadTestFile(t *testing.T, name, data string) string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
 func TestSCPUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
+	localFile := writeUploadTestFile(t, "local.txt", "data")
 	store := &core.Store{Hosts: []core.Host{{
 		Name:     "devhost",
 		IP:       "10.0.0.8",
@@ -32,17 +48,52 @@ func TestSCPUsesSavedHost(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"scp", "--sha256", "--remove-dir", "-l", "local.txt", "-r", "/tmp/remote.txt", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"scp", "--sha256", "-l", localFile, "-r", "/tmp/remote.txt", "devhost"}); err != nil {
 		t.Fatalf("scp: %v", err)
 	}
 	if gotHost.IP != "10.0.0.8" {
 		t.Fatalf("host ip = %q", gotHost.IP)
 	}
-	if len(gotJobs) != 1 || gotJobs[0].LocalPath != "local.txt" || gotJobs[0].RemotePath != "/tmp/remote.txt" {
+	if len(gotJobs) != 1 || gotJobs[0].LocalPath != localFile || gotJobs[0].RemotePath != "/tmp/remote.txt" {
 		t.Fatalf("jobs = %+v", gotJobs)
 	}
 	if !gotOpts.SHA256 {
 		t.Fatal("sha256 option = false, want true")
+	}
+	if gotOpts.RemoveDir {
+		t.Fatal("remove-dir option = true, want false")
+	}
+}
+
+func TestSCPPassesRemoveDirOption(t *testing.T) {
+	withTempConfig(t)
+	localDir := filepath.Join(t.TempDir(), "dist")
+	if err := os.MkdirAll(localDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "app.jar"), []byte("data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	var gotOpts core.TransferOptions
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		gotOpts = opts
+		return core.TransferResult{Bytes: 4, Files: 1, Directories: 1, Elapsed: time.Second}, nil
+	}))
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"scp", "--remove-dir", "-l", localDir, "-r", "/tmp/dist", "devhost"}); err != nil {
+		t.Fatalf("scp remove-dir: %v", err)
 	}
 	if !gotOpts.RemoveDir {
 		t.Fatal("remove-dir option = false, want true")
@@ -51,6 +102,8 @@ func TestSCPUsesSavedHost(t *testing.T) {
 
 func TestSCPUsesRepeatedLocalPaths(t *testing.T) {
 	withTempConfig(t)
+	fileA := writeUploadTestFile(t, "a.jar", "a")
+	fileB := writeUploadTestFile(t, "b.jar", "b")
 	store := &core.Store{Hosts: []core.Host{{
 		Name:     "devhost",
 		IP:       "10.0.0.8",
@@ -69,13 +122,13 @@ func TestSCPUsesRepeatedLocalPaths(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"upload", "-l", "a.jar", "-l", "b.jar", "-r", "/opt/app/lib", "devhost"}); err != nil {
+	if err := app.RunWithArgs([]string{"upload", "-l", fileA, "-l", fileB, "-r", "/opt/app/lib", "devhost"}); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
 	if len(gotJobs) != 2 {
 		t.Fatalf("jobs len = %d, want 2: %+v", len(gotJobs), gotJobs)
 	}
-	for i, want := range []string{"a.jar", "b.jar"} {
+	for i, want := range []string{fileA, fileB} {
 		if gotJobs[i].LocalPath != want || gotJobs[i].RemotePath != "/opt/app/lib" || !gotJobs[i].RemoteDir {
 			t.Fatalf("job[%d] = %+v", i, gotJobs[i])
 		}
@@ -84,6 +137,8 @@ func TestSCPUsesRepeatedLocalPaths(t *testing.T) {
 
 func TestSCPUsesUploadMaps(t *testing.T) {
 	withTempConfig(t)
+	configFile := writeUploadTestFile(t, filepath.Join("config", "app.yml"), "app: test\n")
+	scriptFile := writeUploadTestFile(t, filepath.Join("scripts", "deploy.sh"), "echo deploy\n")
 	store := &core.Store{Hosts: []core.Host{{
 		Name:     "devhost",
 		IP:       "10.0.0.8",
@@ -104,8 +159,8 @@ func TestSCPUsesUploadMaps(t *testing.T) {
 	app := newTestApp()
 	err := app.RunWithArgs([]string{
 		"upload",
-		"--map", "./config/app.yml=/etc/app/app.yml",
-		"--map", "./scripts/deploy.sh=/opt/app/deploy.sh",
+		"--map", configFile + "=/etc/app/app.yml",
+		"--map", scriptFile + "=/opt/app/deploy.sh",
 		"devhost",
 	})
 	if err != nil {
@@ -114,16 +169,17 @@ func TestSCPUsesUploadMaps(t *testing.T) {
 	if len(gotJobs) != 2 {
 		t.Fatalf("jobs len = %d, want 2: %+v", len(gotJobs), gotJobs)
 	}
-	if gotJobs[0].LocalPath != "./config/app.yml" || gotJobs[0].RemotePath != "/etc/app/app.yml" || gotJobs[0].RemoteDir {
+	if gotJobs[0].LocalPath != configFile || gotJobs[0].RemotePath != "/etc/app/app.yml" || gotJobs[0].RemoteDir {
 		t.Fatalf("job[0] = %+v", gotJobs[0])
 	}
-	if gotJobs[1].LocalPath != "./scripts/deploy.sh" || gotJobs[1].RemotePath != "/opt/app/deploy.sh" || gotJobs[1].RemoteDir {
+	if gotJobs[1].LocalPath != scriptFile || gotJobs[1].RemotePath != "/opt/app/deploy.sh" || gotJobs[1].RemoteDir {
 		t.Fatalf("job[1] = %+v", gotJobs[1])
 	}
 }
 
 func TestSCPPassesJumpOption(t *testing.T) {
 	saveJumpCommandHosts(t)
+	localFile := writeUploadTestFile(t, "app.jar", "data")
 
 	var gotHost core.Host
 	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
@@ -132,11 +188,50 @@ func TestSCPPassesJumpOption(t *testing.T) {
 	}))
 
 	app := newTestApp()
-	if err := app.RunWithArgs([]string{"scp", "-l", "app.jar", "-r", "/tmp/app.jar", "inner-db", "--jump", "bastion"}); err != nil {
+	if err := app.RunWithArgs([]string{"scp", "-l", localFile, "-r", "/tmp/app.jar", "inner-db", "--jump", "bastion"}); err != nil {
 		t.Fatalf("scp with jump: %v", err)
 	}
 	if gotHost.Jump != "bastion" {
 		t.Fatalf("jump = %q, want bastion", gotHost.Jump)
+	}
+}
+
+func TestSCPUploadAliasAndProgress(t *testing.T) {
+	withTempConfig(t)
+	localFile := writeUploadTestFile(t, "app.bin", strings.Repeat("x", 20))
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, jobs []core.TransferJob, opts core.TransferOptions) (core.TransferResult, error) {
+		if opts.Progress == nil {
+			t.Fatal("progress callback is nil")
+		}
+		for range 4 {
+			opts.Progress(5)
+		}
+		return core.TransferResult{Bytes: 20, Files: 1, Elapsed: time.Second}, nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"up", "-l", localFile, "-r", "/tmp/app.bin", "devhost"}); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "Uploading "+strings.Repeat(".", uploadProgressDots)+"\n") {
+		t.Fatalf("progress output = %q", output)
+	}
+	if !strings.Contains(output, "uploaded 1 path(s) to devhost") {
+		t.Fatalf("upload summary missing: %q", output)
 	}
 }
 

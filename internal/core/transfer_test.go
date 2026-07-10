@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,5 +228,54 @@ func TestExpandUploadJobsRejectsSHA256Directory(t *testing.T) {
 	_, err := expandUploadJobs([]TransferJob{{LocalPath: t.TempDir(), RemotePath: "/opt/app/dist"}}, TransferOptions{SHA256: true})
 	if err == nil || !strings.Contains(err.Error(), "--sha256 is only supported for file transfers") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEstimateUploadBytes(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "dist")
+	if err := os.MkdirAll(filepath.Join(dir, "conf"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(dir, "app.jar"):      "ab",
+		filepath.Join(dir, "conf/app.yml"): "cde",
+		filepath.Join(root, "a.bin"):       "f",
+		filepath.Join(root, "b.bin"):       "g",
+	}
+	for file, data := range files {
+		if err := os.WriteFile(file, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	total, err := EstimateUploadBytes([]TransferJob{
+		{LocalPath: dir, RemotePath: "/opt/app/dist"},
+		{LocalPath: filepath.Join(root, "*.bin"), RemotePath: "/opt/app/bin"},
+	}, TransferOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 7 {
+		t.Fatalf("total = %d, want 7", total)
+	}
+}
+
+func TestProgressWriterReportsBytes(t *testing.T) {
+	var buf bytes.Buffer
+	var got int64
+	writer := progressWriter{
+		writer: &buf,
+		progress: func(n int64) {
+			got += n
+		},
+	}
+
+	n, err := writer.Write([]byte("abc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 || got != 3 || buf.String() != "abc" {
+		t.Fatalf("n=%d got=%d buf=%q", n, got, buf.String())
 	}
 }

@@ -39,7 +39,7 @@ orchestration platform. It focuses on the operational gap between ad hoc
 - Register command-proxy hosts for PVE/LXC, Docker, or vhost command execution
 - Run commands or scripts across multiple hosts with `batch-run/brun`
 - Set remote working directory, timeout, environment variables, sudo, and sudo user
-- Upload files with `upload` and download files with `download` over SFTP
+- Upload files with `upload/up` and download files with `download` over SFTP
   - Verify single-file transfers with SHA256
 - Keep per-host JSONL run logs under `~/.config/sshc/logs/`
 - Open an interactive remote PTY with `login/connect`
@@ -99,7 +99,7 @@ sshc check              Check host connectivity
 sshc run|exec           Run a remote command
 sshc batch-run|brun     Run a command or script on multiple hosts
 sshc login              Open an interactive SSH shell
-sshc scp|upload         Upload files or directories
+sshc scp|upload|up      Upload files or directories
 sshc download|dl        Download files or directories
 sshc log                Show or search run logs
 sshc serve              Start local Web console
@@ -493,12 +493,14 @@ sshc scp -l ./local-dir -r /tmp/remote-dir devhost
 sshc scp -l ./dist -r /opt/app/dist devhost --remove-dir
 sshc scp -l "./dist/*.jar" -r /opt/app/lib devhost
 sshc scp -l ./a.jar -l ./b.jar -r /opt/app/lib/ devhost
+sshc up -l ./dist -r /opt/app/dist devhost
 sshc scp --map ./config/app.yml=/etc/app/app.yml --map ./scripts/deploy.sh=/opt/app/deploy.sh devhost
 ```
 
 Use repeatable `-l/--local` when multiple local paths should go into one remote
 directory. Use repeatable `--map local=remote` when each local path needs an
-explicit remote destination.
+explicit remote destination. Upload prints a simple `Uploading ....................`
+progress line with up to 20 dots based on local file bytes.
 
 ### Download Files
 
