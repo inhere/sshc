@@ -13,11 +13,16 @@ import (
 
 func writeUploadTestFile(t *testing.T, name, data string) string {
 	t.Helper()
+	return writeUploadTestBytes(t, name, []byte(data))
+}
+
+func writeUploadTestBytes(t *testing.T, name string, data []byte) string {
+	t.Helper()
 	file := filepath.Join(t.TempDir(), name)
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(file, []byte(data), 0600); err != nil {
+	if err := os.WriteFile(file, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	return file
@@ -198,7 +203,7 @@ func TestSCPPassesJumpOption(t *testing.T) {
 
 func TestSCPUploadAliasAndProgress(t *testing.T) {
 	withTempConfig(t)
-	localFile := writeUploadTestFile(t, "app.bin", strings.Repeat("x", 20))
+	localFile := writeUploadTestBytes(t, "app.bin", bytes.Repeat([]byte("x"), transferProgressMinBytes+1))
 	store := &core.Store{Hosts: []core.Host{{
 		Name:     "devhost",
 		IP:       "10.0.0.8",
@@ -215,9 +220,9 @@ func TestSCPUploadAliasAndProgress(t *testing.T) {
 			t.Fatal("progress callback is nil")
 		}
 		for range 4 {
-			opts.Progress(5)
+			opts.Progress((transferProgressMinBytes + 1) / 4)
 		}
-		return core.TransferResult{Bytes: 20, Files: 1, Elapsed: time.Second}, nil
+		return core.TransferResult{Bytes: transferProgressMinBytes + 1, Files: 1, Elapsed: time.Second}, nil
 	}))
 
 	var out bytes.Buffer
@@ -227,11 +232,24 @@ func TestSCPUploadAliasAndProgress(t *testing.T) {
 		t.Fatalf("up: %v", err)
 	}
 	output := out.String()
-	if !strings.Contains(output, "Uploading "+strings.Repeat(".", uploadProgressDots)+"\n") {
+	if !strings.Contains(output, "Uploading "+strings.Repeat(".", transferProgressDots)+"\n") {
 		t.Fatalf("progress output = %q", output)
 	}
 	if !strings.Contains(output, "uploaded 1 path(s) to devhost") {
 		t.Fatalf("upload summary missing: %q", output)
+	}
+}
+
+func TestTransferProgressSkipsSmallTotals(t *testing.T) {
+	var out bytes.Buffer
+	progress := newTransferProgress(&out, "Uploading")
+	if progress.Start(transferProgressMinBytes) {
+		t.Fatal("progress started at threshold, want skip")
+	}
+	progress.Add(transferProgressMinBytes)
+	progress.Complete()
+	if out.String() != "" {
+		t.Fatalf("output = %q, want empty", out.String())
 	}
 }
 
@@ -360,6 +378,47 @@ func TestDownloadUsesSavedHost(t *testing.T) {
 	}
 	if !gotOpts.SHA256 {
 		t.Fatal("sha256 option = false, want true")
+	}
+}
+
+func TestDownloadProgress(t *testing.T) {
+	withTempConfig(t)
+	store := &core.Store{Hosts: []core.Host{{
+		Name:     "devhost",
+		IP:       "10.0.0.8",
+		User:     "root",
+		Password: "secret",
+		Port:     2222,
+	}}}
+	if err := core.SaveStore(store); err != nil {
+		t.Fatalf("save store: %v", err)
+	}
+
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, remotePath, localPath string, opts core.TransferOptions) (core.TransferResult, error) {
+		if opts.StartProgress == nil || opts.Progress == nil {
+			t.Fatal("progress callbacks are nil")
+		}
+		if !opts.StartProgress(transferProgressMinBytes + 1) {
+			t.Fatal("progress did not start")
+		}
+		for range 4 {
+			opts.Progress((transferProgressMinBytes + 1) / 4)
+		}
+		return core.TransferResult{Bytes: transferProgressMinBytes + 1, Files: 1, Elapsed: time.Second}, nil
+	}))
+
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"download", "-r", "/tmp/app.bin", "-l", "app.bin", "devhost"}); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "Downloading "+strings.Repeat(".", transferProgressDots)+"\n") {
+		t.Fatalf("progress output = %q", output)
+	}
+	if !strings.Contains(output, "downloaded devhost:/tmp/app.bin to app.bin") {
+		t.Fatalf("download summary missing: %q", output)
 	}
 }
 

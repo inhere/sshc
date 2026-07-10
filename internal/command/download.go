@@ -68,10 +68,17 @@ Path rules:
 				return err
 			}
 
-			result, err := downloadRemote(host, remotePath, localPath, core.TransferOptions{SHA256: downloadOpts.SHA256})
+			transferOpts := core.TransferOptions{SHA256: downloadOpts.SHA256}
+			progress := newTransferProgress(cmdOutput(c), "Downloading")
+			transferOpts.StartProgress = progress.Start
+			transferOpts.Progress = progress.Add
+
+			result, err := downloadRemote(host, remotePath, localPath, transferOpts)
 			if err != nil {
+				progress.FinishLine()
 				return err
 			}
+			progress.Complete()
 			fmt.Fprintf(cmdOutput(c), "downloaded %s:%s to %s\n", core.HostLogName(host), remotePath, localPath)
 			fmt.Fprintf(cmdOutput(c), "size=%d files=%d dirs=%d elapsed=%s\n", result.Bytes, result.Files, result.Directories, formatElapsed(result.Elapsed))
 			writeSHA256Result(c, result)

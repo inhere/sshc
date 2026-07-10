@@ -499,8 +499,9 @@ sshc scp --map ./config/app.yml=/etc/app/app.yml --map ./scripts/deploy.sh=/opt/
 
 Use repeatable `-l/--local` when multiple local paths should go into one remote
 directory. Use repeatable `--map local=remote` when each local path needs an
-explicit remote destination. Upload prints a simple `Uploading ....................`
-progress line with up to 20 dots based on local file bytes.
+explicit remote destination. Uploads larger than 5 MiB print a simple
+`Uploading ....................` progress line with up to 20 dots based on local
+file bytes.
 
 ### Download Files
 
@@ -512,7 +513,9 @@ sshc dl -r /tmp/remote-dir -l ./local-dir devhost
 ```
 
 Existing local directories receive the remote base name. Local paths ending with
-`/` or `\` are also treated as directories.
+`/` or `\` are also treated as directories. Downloads larger than 5 MiB print a
+simple `Downloading ....................` progress line with up to 20 dots based
+on remote file bytes.
 
 ### View Logs
 

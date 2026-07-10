@@ -38,9 +38,10 @@ type TransferResult struct {
 }
 
 type TransferOptions struct {
-	SHA256    bool
-	RemoveDir bool
-	Progress  func(int64)
+	SHA256        bool
+	RemoveDir     bool
+	StartProgress func(int64) bool
+	Progress      func(int64)
 }
 
 type TransferJob struct {
@@ -556,6 +557,9 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 		return result, err
 	}
 	if !info.IsDir() {
+		if opts.StartProgress != nil && !opts.StartProgress(info.Size()) {
+			opts.Progress = nil
+		}
 		localFile := LocalFilePath(remotePath, localPath)
 		if opts.SHA256 {
 			result.RemoteSHA256, err = remoteSHA256(client, remotePath)
@@ -563,7 +567,7 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 				return result, err
 			}
 		}
-		bytes, err := downloadFileWithSFTP(sftpClient, remotePath, localFile)
+		bytes, err := downloadFileWithSFTP(sftpClient, remotePath, localFile, opts.Progress)
 		if err != nil {
 			return result, err
 		}
@@ -586,6 +590,15 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 	}
 
 	root := strings.TrimRight(remotePath, "/")
+	if opts.StartProgress != nil {
+		total, err := remoteDownloadBytes(sftpClient, root)
+		if err != nil {
+			return result, err
+		}
+		if !opts.StartProgress(total) {
+			opts.Progress = nil
+		}
+	}
 	localRoot := LocalDirPath(root, localPath)
 	walker := sftpClient.Walk(root)
 	for walker.Step() {
@@ -605,7 +618,7 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 			}
 			continue
 		}
-		bytes, err := downloadFileWithSFTP(sftpClient, remoteCurrent, localCurrent)
+		bytes, err := downloadFileWithSFTP(sftpClient, remoteCurrent, localCurrent, opts.Progress)
 		if err != nil {
 			return result, err
 		}
@@ -613,6 +626,21 @@ func FetchRemote(host Host, remotePath, localPath string, opts TransferOptions) 
 		result.Files++
 	}
 	return result, nil
+}
+
+func remoteDownloadBytes(client *sftp.Client, remotePath string) (int64, error) {
+	var total int64
+	walker := client.Walk(remotePath)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			return 0, err
+		}
+		if walker.Stat().IsDir() {
+			continue
+		}
+		total += walker.Stat().Size()
+	}
+	return total, nil
 }
 
 func RejectCommandProxyTransfer(host Host) error {
@@ -969,7 +997,7 @@ func uploadFileWithSFTP(client *sftp.Client, localPath, remotePath string, progr
 	return io.Copy(writer, localFile)
 }
 
-func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (int64, error) {
+func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string, progress func(int64)) (int64, error) {
 	remoteFile, err := client.Open(remotePath)
 	if err != nil {
 		return 0, err
@@ -985,7 +1013,11 @@ func downloadFileWithSFTP(client *sftp.Client, remotePath, localPath string) (in
 	}
 	defer localFile.Close()
 
-	return io.Copy(localFile, remoteFile)
+	var writer io.Writer = localFile
+	if progress != nil {
+		writer = progressWriter{writer: localFile, progress: progress}
+	}
+	return io.Copy(writer, remoteFile)
 }
 
 func remoteSHA256(client RemoteClient, remotePath string) (string, error) {

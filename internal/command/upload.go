@@ -76,9 +76,10 @@ Path rules:
 			if err != nil {
 				return err
 			}
-			progress := newUploadProgress(cmdOutput(c), totalBytes)
-			progress.Start()
-			transferOpts.Progress = progress.Add
+			progress := newTransferProgress(cmdOutput(c), "Uploading")
+			if progress.Start(totalBytes) {
+				transferOpts.Progress = progress.Add
+			}
 
 			result, err := scpUpload(host, jobs, transferOpts)
 			if err != nil {
@@ -95,29 +96,38 @@ Path rules:
 	return cmd
 }
 
-const uploadProgressDots = 20
+const (
+	transferProgressDots     = 20
+	transferProgressMinBytes = 5 * 1024 * 1024
+)
 
-type uploadProgress struct {
+type transferProgress struct {
 	out     io.Writer
+	label   string
 	total   int64
 	written int64
 	printed int
 	started bool
 }
 
-func newUploadProgress(out io.Writer, total int64) *uploadProgress {
-	return &uploadProgress{out: out, total: total}
+func newTransferProgress(out io.Writer, label string) *transferProgress {
+	return &transferProgress{out: out, label: label}
 }
 
-func (p *uploadProgress) Start() {
+func (p *transferProgress) Start(total int64) bool {
 	if p == nil || p.started {
-		return
+		return false
 	}
-	fmt.Fprint(p.out, "Uploading ")
+	if total <= transferProgressMinBytes {
+		return false
+	}
+	p.total = total
+	fmt.Fprintf(p.out, "%s ", p.label)
 	p.started = true
+	return true
 }
 
-func (p *uploadProgress) Add(n int64) {
+func (p *transferProgress) Add(n int64) {
 	if p == nil || n <= 0 || p.total <= 0 {
 		return
 	}
@@ -125,19 +135,19 @@ func (p *uploadProgress) Add(n int64) {
 	if p.written > p.total {
 		p.written = p.total
 	}
-	want := int(p.written * uploadProgressDots / p.total)
-	for p.printed < want && p.printed < uploadProgressDots {
+	want := int(p.written * transferProgressDots / p.total)
+	for p.printed < want && p.printed < transferProgressDots {
 		fmt.Fprint(p.out, ".")
 		p.printed++
 	}
 }
 
-func (p *uploadProgress) Complete() {
+func (p *transferProgress) Complete() {
 	if p == nil || !p.started {
 		return
 	}
 	if p.total > 0 {
-		for p.printed < uploadProgressDots {
+		for p.printed < transferProgressDots {
 			fmt.Fprint(p.out, ".")
 			p.printed++
 		}
@@ -145,7 +155,7 @@ func (p *uploadProgress) Complete() {
 	fmt.Fprintln(p.out)
 }
 
-func (p *uploadProgress) FinishLine() {
+func (p *transferProgress) FinishLine() {
 	if p == nil || !p.started {
 		return
 	}
