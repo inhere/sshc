@@ -68,6 +68,32 @@ func TestAddAllowsKeyPathWithoutPassword(t *testing.T) {
 	}
 }
 
+func TestAddStoresRelativeKeyPathAsAbsolute(t *testing.T) {
+	withTempConfig(t)
+
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	relKey := filepath.Join("keys", "id_rsa")
+	want, err := filepath.Abs(relKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err = app.RunWithArgs([]string{"add", "--ip", "10.0.0.8", "-u", "root", "--name", "devhost", "--key", relKey})
+	if err != nil {
+		t.Fatalf("add host with relative key: %v", err)
+	}
+
+	store := readTestStore(t)
+	if len(store.Hosts) != 1 {
+		t.Fatalf("hosts len = %d, want 1", len(store.Hosts))
+	}
+	if store.Hosts[0].KeyPath != want {
+		t.Fatalf("key path = %q, want %q", store.Hosts[0].KeyPath, want)
+	}
+}
+
 func TestAddFromClipboard(t *testing.T) {
 	withTempConfig(t)
 	t.Cleanup(setReadClipboardForTest(func() (string, error) {

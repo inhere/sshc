@@ -67,11 +67,15 @@ func newAuthAddCmd() *gcli.Command {
 			}
 			name := strings.TrimSpace(c.Arg("name").String())
 			profile := core.AuthProfile{
-				Name:    name,
-				User:    strings.TrimSpace(opts.User),
-				KeyPath: strings.TrimSpace(opts.KeyPath),
-				Remark:  strings.TrimSpace(opts.Remark),
+				Name:   name,
+				User:   strings.TrimSpace(opts.User),
+				Remark: strings.TrimSpace(opts.Remark),
 			}
+			keyPath, err := normalizeKeyPathForSave(opts.KeyPath)
+			if err != nil {
+				return err
+			}
+			profile.KeyPath = keyPath
 			if opts.PasswordPrompt {
 				profile.Password = strings.TrimSpace(readInteractivePassword("Password: "))
 			}

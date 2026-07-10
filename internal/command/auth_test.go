@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,6 +67,31 @@ func TestAuthAddKeyProfile(t *testing.T) {
 	}
 	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].KeyPath != "~/.ssh/id_ed25519" {
 		t.Fatalf("auth profiles = %+v", config.AuthProfiles)
+	}
+}
+
+func TestAuthAddStoresRelativeKeyPathAsAbsolute(t *testing.T) {
+	withTempConfig(t)
+
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	relKey := filepath.Join("keys", "id_ed25519")
+	want, err := filepath.Abs(relKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"auth", "add", "deploy-key", "-u", "deploy", "--key", relKey}); err != nil {
+		t.Fatalf("auth add key: %v", err)
+	}
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 || config.AuthProfiles[0].KeyPath != want {
+		t.Fatalf("auth profiles = %+v, want key path %q", config.AuthProfiles, want)
 	}
 }
 

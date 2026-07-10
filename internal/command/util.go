@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -82,6 +83,14 @@ func parseClipboardHost(text string) (core.Host, error) {
 	}
 	normalizeHostDefaults(&host)
 	return host, nil
+}
+
+func normalizeKeyPathForSave(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" || strings.HasPrefix(path, "~") || filepath.IsAbs(path) {
+		return path, nil
+	}
+	return filepath.Abs(path)
 }
 
 func clipboardLooksKV(text string) bool {

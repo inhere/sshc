@@ -111,6 +111,9 @@ Notes:
 			if err != nil {
 				return err
 			}
+			if host.KeyPath, err = normalizeKeyPathForSave(host.KeyPath); err != nil {
+				return err
+			}
 
 			config, err := core.LoadConfig()
 			if err != nil {
