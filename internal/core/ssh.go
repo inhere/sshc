@@ -67,10 +67,6 @@ type RemoteClient interface {
 	Close() error
 }
 
-type sshKeepaliveSender interface {
-	SendRequest(string, bool, []byte) (bool, []byte, error)
-}
-
 type remoteClient struct {
 	*goph.Client
 	closeAll func() error
@@ -183,7 +179,10 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	}()
 	stopResize := startPTYResizeLoop(fd, session)
 	defer stopResize()
-	stopKeepalive := startSSHKeepalive(client, defaultKeepaliveEvery, defaultKeepaliveWait)
+	stopKeepalive := startSessionKeepalive(func() error {
+		_, err := session.SendRequest("keepalive@openssh.com", true, nil)
+		return err
+	}, client.Close, defaultKeepaliveEvery, defaultKeepaliveWait)
 	defer stopKeepalive()
 
 	if strings.TrimSpace(command) != "" {
@@ -195,11 +194,7 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	return session.Wait()
 }
 
-func startSSHKeepalive(client RemoteClient, interval, timeout time.Duration) func() {
-	sender, ok := client.(sshKeepaliveSender)
-	if !ok {
-		return func() {}
-	}
+func startSessionKeepalive(send, closeClient func() error, interval, timeout time.Duration) func() {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -208,10 +203,7 @@ func startSSHKeepalive(client RemoteClient, interval, timeout time.Duration) fun
 			select {
 			case <-ticker.C:
 				result := make(chan error, 1)
-				go func() {
-					_, _, err := sender.SendRequest("keepalive@openssh.com", true, nil)
-					result <- err
-				}()
+				go func() { result <- send() }()
 				select {
 				case err := <-result:
 					if err == nil {
@@ -221,7 +213,7 @@ func startSSHKeepalive(client RemoteClient, interval, timeout time.Duration) fun
 				case <-done:
 					return
 				}
-				_ = client.Close()
+				_ = closeClient()
 				return
 			case <-done:
 				return

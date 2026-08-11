@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,35 +19,21 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-type blockingKeepaliveClient struct {
-	remoteClient
-	requested   chan struct{}
-	closed      chan struct{}
-	requestOnce sync.Once
-	closeOnce   sync.Once
-}
-
-func (client *blockingKeepaliveClient) SendRequest(string, bool, []byte) (bool, []byte, error) {
-	client.requestOnce.Do(func() { close(client.requested) })
-	<-client.closed
-	return false, nil, errors.New("connection closed")
-}
-
-func (client *blockingKeepaliveClient) Close() error {
-	client.closeOnce.Do(func() { close(client.closed) })
-	return nil
-}
-
-func TestSSHKeepaliveClosesBlockedConnection(t *testing.T) {
-	client := &blockingKeepaliveClient{
-		requested: make(chan struct{}),
-		closed:    make(chan struct{}),
-	}
-	stop := startSSHKeepalive(client, time.Millisecond, 10*time.Millisecond)
+func TestSessionKeepaliveClosesBlockedSession(t *testing.T) {
+	requested := make(chan struct{})
+	closed := make(chan struct{})
+	stop := startSessionKeepalive(func() error {
+		close(requested)
+		<-closed
+		return errors.New("session closed")
+	}, func() error {
+		close(closed)
+		return nil
+	}, time.Millisecond, 10*time.Millisecond)
 	defer stop()
 
-	assert.Require(t, assert.True(t, receiveWithin(client.requested, time.Second)))
-	assert.True(t, receiveWithin(client.closed, time.Second))
+	assert.Require(t, assert.True(t, receiveWithin(requested, time.Second)))
+	assert.True(t, receiveWithin(closed, time.Second))
 }
 
 func receiveWithin(ch <-chan struct{}, timeout time.Duration) bool {
