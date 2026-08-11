@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,6 +19,19 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+func TestSessionInputWriterTimesOutBlockedWrite(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	input := sessionInputWriter{
+		writer:  writer,
+		timeout: 10 * time.Millisecond,
+		abort:   reader.Close,
+	}
+
+	_, err := input.Write([]byte("x"))
+	assert.Err(t, err)
+}
 
 func TestSessionKeepaliveClosesBlockedSession(t *testing.T) {
 	requested := make(chan struct{})

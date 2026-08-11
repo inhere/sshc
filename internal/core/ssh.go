@@ -27,6 +27,7 @@ const (
 	defaultPTYTerm         = "xterm-256color"
 	defaultKeepaliveEvery  = 30 * time.Second
 	defaultKeepaliveWait   = 10 * time.Second
+	defaultInputWriteWait  = 10 * time.Second
 )
 
 type TransferResult struct {
@@ -166,7 +167,10 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	}); err != nil {
 		return err
 	}
-	session.Stdin = opts.Stdin
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return err
+	}
 	session.Stdout = opts.Stdout
 	session.Stderr = opts.Stderr
 
@@ -186,12 +190,51 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	defer stopKeepalive()
 
 	if strings.TrimSpace(command) != "" {
-		return session.Run(command)
+		err = session.Start(command)
+	} else {
+		err = session.Shell()
 	}
-	if err := session.Shell(); err != nil {
+	if err != nil {
 		return err
 	}
+	go func() {
+		defer stdin.Close()
+		_, copyErr := io.Copy(sessionInputWriter{
+			writer:  stdin,
+			timeout: defaultInputWriteWait,
+			abort:   client.Close,
+		}, opts.Stdin)
+		if copyErr != nil {
+			_ = client.Close()
+		}
+	}()
 	return session.Wait()
+}
+
+type sessionInputWriter struct {
+	writer  io.Writer
+	timeout time.Duration
+	abort   func() error
+}
+
+func (writer sessionInputWriter) Write(data []byte) (int, error) {
+	type result struct {
+		n   int
+		err error
+	}
+	written := make(chan result, 1)
+	payload := append([]byte(nil), data...)
+	go func() {
+		n, err := writer.writer.Write(payload)
+		written <- result{n: n, err: err}
+	}()
+	select {
+	case res := <-written:
+		return res.n, res.err
+	case <-time.After(writer.timeout):
+		_ = writer.abort()
+		return 0, fmt.Errorf("ssh session input write timed out after %s", writer.timeout)
+	}
 }
 
 func startSessionKeepalive(send, closeClient func() error, interval, timeout time.Duration) func() {
