@@ -25,6 +25,8 @@ const (
 	defaultPTYWidth        = 120
 	defaultPTYHeight       = 40
 	defaultPTYTerm         = "xterm-256color"
+	defaultKeepaliveEvery  = 30 * time.Second
+	defaultKeepaliveWait   = 10 * time.Second
 )
 
 type TransferResult struct {
@@ -63,6 +65,10 @@ type RemoteClient interface {
 	NewSession() (*ssh.Session, error)
 	NewSftp(...sftp.ClientOption) (*sftp.Client, error)
 	Close() error
+}
+
+type sshKeepaliveSender interface {
+	SendRequest(string, bool, []byte) (bool, []byte, error)
 }
 
 type remoteClient struct {
@@ -177,6 +183,8 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	}()
 	stopResize := startPTYResizeLoop(fd, session)
 	defer stopResize()
+	stopKeepalive := startSSHKeepalive(client, defaultKeepaliveEvery, defaultKeepaliveWait)
+	defer stopKeepalive()
 
 	if strings.TrimSpace(command) != "" {
 		return session.Run(command)
@@ -185,6 +193,42 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 		return err
 	}
 	return session.Wait()
+}
+
+func startSSHKeepalive(client RemoteClient, interval, timeout time.Duration) func() {
+	sender, ok := client.(sshKeepaliveSender)
+	if !ok {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				result := make(chan error, 1)
+				go func() {
+					_, _, err := sender.SendRequest("keepalive@openssh.com", true, nil)
+					result <- err
+				}()
+				select {
+				case err := <-result:
+					if err == nil {
+						continue
+					}
+				case <-time.After(timeout):
+				case <-done:
+					return
+				}
+				_ = client.Close()
+				return
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 func normalizeLoginOptions(opts LoginOptions) LoginOptions {
