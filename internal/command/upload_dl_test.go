@@ -28,6 +28,32 @@ func writeUploadTestBytes(t *testing.T, name string, data []byte) string {
 	return file
 }
 
+func TestTransfersWithAuthUseUnregisteredIPs(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}); err != nil {
+		t.Fatal(err)
+	}
+	localFile := writeUploadTestFile(t, "local.txt", "data")
+	var uploadHost, downloadHost core.Host
+	t.Cleanup(setUploadRemoteForTest(func(host core.Host, _ []core.TransferJob, _ core.TransferOptions) (core.TransferResult, error) {
+		uploadHost = host
+		return core.TransferResult{}, nil
+	}))
+	t.Cleanup(setDownloadRemoteForTest(func(host core.Host, _, _ string, _ core.TransferOptions) (core.TransferResult, error) {
+		downloadHost = host
+		return core.TransferResult{}, nil
+	}))
+	if err := newTestApp().RunWithArgs([]string{"scp", "--auth", "ops", "-l", localFile, "-r", "/tmp/local.txt", "192.0.2.13"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := newTestApp().RunWithArgs([]string{"download", "--auth", "ops", "-r", "/tmp/app.log", "-l", "app.log", "192.0.2.14"}); err != nil {
+		t.Fatal(err)
+	}
+	if uploadHost.IP != "192.0.2.13" || uploadHost.User != "root" || downloadHost.IP != "192.0.2.14" || downloadHost.Password != "secret" {
+		t.Fatalf("upload=%+v download=%+v", uploadHost, downloadHost)
+	}
+}
+
 func TestSCPUsesSavedHost(t *testing.T) {
 	withTempConfig(t)
 	localFile := writeUploadTestFile(t, "local.txt", "data")

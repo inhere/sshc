@@ -72,6 +72,46 @@ func (c Config) ResolveEffectiveHost(target string, overrides HostOverrides) (Ef
 	return c.EffectiveHost(host, overrides)
 }
 
+// ResolveEffectiveHostWithAuth applies an explicit credential profile to a saved
+// host or an unregistered address without changing the stored configuration.
+func (c Config) ResolveEffectiveHostWithAuth(target, authRef string) (EffectiveHost, bool, error) {
+	if strings.TrimSpace(authRef) == "" {
+		return c.ResolveEffectiveHost(target, HostOverrides{})
+	}
+	store := storeFromConfig(c)
+	host, ok, err := store.ResolveHost(target)
+	if err != nil {
+		return EffectiveHost{}, false, err
+	}
+	if !ok {
+		if err := validateRawBatchTarget(strings.TrimSpace(target)); err != nil {
+			return EffectiveHost{}, false, err
+		}
+		host = Host{Name: target, IP: target}
+	}
+	if IsCommandProxyHost(host) {
+		return EffectiveHost{}, false, fmt.Errorf("--auth is not supported for command_proxy host %q", HostLogName(host))
+	}
+	host.AuthRef = strings.TrimSpace(authRef)
+	host.User, host.Password, host.PasswordEnc = "", "", ""
+	host.KeyPath, host.KeyData, host.KeyDataEnc = "", "", ""
+	host.KeyPassphrase, host.KeyPassphraseEnc = "", ""
+	effective, ok, err := c.EffectiveHost(host, HostOverrides{})
+	if err != nil {
+		return EffectiveHost{}, false, err
+	}
+	// Group defaults can contain credentials too; the explicit profile wins.
+	profile, _ := c.FindAuthProfile(host.AuthRef)
+	effective.Password, effective.PasswordEnc = "", ""
+	effective.KeyPath, effective.KeyData, effective.KeyDataEnc = "", "", ""
+	effective.KeyPassphrase, effective.KeyPassphraseEnc = "", ""
+	applyAuthProfile(&effective, profile)
+	if err := validateEffectiveHost(effective); err != nil {
+		return EffectiveHost{}, false, err
+	}
+	return effective, ok, nil
+}
+
 func ResolveHostWithSSHConfig(target string, overrides HostOverrides) (Host, bool, error) {
 	config, err := LoadConfigWithSSHConfig()
 	if err != nil {

@@ -59,6 +59,24 @@ func TestRunUsesSavedHost(t *testing.T) {
 	}
 }
 
+func TestRunWithAuthUsesUnregisteredIP(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var got core.Host
+	t.Cleanup(setRunRemoteForTest(func(host core.Host, _ string, _ core.RunOptions) ([]byte, error) {
+		got = host
+		return nil, nil
+	}))
+	if err := newTestApp().RunWithArgs([]string{"run", "--auth", "ops", "192.0.2.10", "--", "hostname"}); err != nil {
+		t.Fatal(err)
+	}
+	if got.IP != "192.0.2.10" || got.User != "root" || got.Password != "secret" {
+		t.Fatalf("host=%+v", got)
+	}
+}
+
 func TestRunCommandProxyWritesLogFields(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{

@@ -49,6 +49,7 @@ Path rules:
 			c.StrOpt(&opts.RemotePath, "remote", "r", "", "remote file or directory path")
 			c.VarOpt(&opts.Maps, "map", "", "upload mapping local=remote, repeatable")
 			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
+			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
 			c.BoolOpt(&opts.SHA256, "sha256", "", false, "verify file transfer with sha256")
 			c.BoolOpt(&opts.RemoveDir, "remove-dir", "", false, "remove remote directory before directory upload")
 			c.AddArg("target", "host ip or name", true)
@@ -60,7 +61,7 @@ Path rules:
 				return err
 			}
 
-			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: opts.Jump})
+			host, err := resolveCommandHostWithAuth(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump})
 			if err != nil {
 				return err
 			}
@@ -167,6 +168,7 @@ type uploadFlagOptions struct {
 	RemotePath string
 	Maps       gcli.Strings
 	Jump       string
+	AuthRef    string
 	SHA256     bool
 	RemoveDir  bool
 }

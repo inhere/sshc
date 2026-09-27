@@ -17,6 +17,17 @@ func TestCheckCommandRequiresSource(t *testing.T) {
 	}
 }
 
+func TestCheckWithAuthResolvesUnregisteredIP(t *testing.T) {
+	config := core.Config{AuthProfiles: []core.AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}
+	hosts, err := resolveCheckHosts(config, "192.0.2.12", checkOptions{AuthRef: "ops"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 1 || hosts[0].IP != "192.0.2.12" || hosts[0].Password != "secret" {
+		t.Fatalf("hosts=%+v", hosts)
+	}
+}
+
 func TestCheckCommandRejectsMultipleSources(t *testing.T) {
 	withTempConfig(t)
 	app := newTestApp()

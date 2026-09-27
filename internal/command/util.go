@@ -36,13 +36,22 @@ func resolveCommandHost(target string) (core.Host, error) {
 }
 
 func resolveCommandHostWithOptions(target string, opts core.ResolveConnectionOptions) (core.Host, error) {
-	host, ok, err := core.ResolveHostWithSSHConfig(target, core.HostOverrides{})
+	return resolveCommandHostWithAuth(target, "", opts)
+}
+
+func resolveCommandHostWithAuth(target, authRef string, opts core.ResolveConnectionOptions) (core.Host, error) {
+	config, err := core.LoadConfigWithSSHConfig()
+	if err != nil {
+		return core.Host{}, err
+	}
+	effective, ok, err := config.ResolveEffectiveHostWithAuth(target, authRef)
 	if err != nil {
 		return core.Host{}, err
 	}
 	if !ok {
 		return core.Host{}, fmt.Errorf("host %q not found", target)
 	}
+	host := effective.ToHost()
 	if jump := strings.TrimSpace(opts.Jump); jump != "" {
 		host.Jump = jump
 	}

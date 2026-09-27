@@ -10,18 +10,16 @@ import (
 	"github.com/gookit/gcli/v3"
 )
 
-var (
-	downloadOpts = struct {
+var downloadRemote = core.FetchRemote
+
+func NewDownloadCmd() *gcli.Command {
+	downloadOpts := struct {
 		LocalPath  string
 		RemotePath string
 		Jump       string
+		AuthRef    string
 		SHA256     bool
 	}{}
-
-	downloadRemote = core.FetchRemote
-)
-
-func NewDownloadCmd() *gcli.Command {
 	cmd := &gcli.Command{
 		Name:    "download",
 		Desc:    "download a file or directory from remote host",
@@ -46,6 +44,7 @@ Path rules:
 			c.StrOpt(&downloadOpts.LocalPath, "local", "l", "", "local destination path")
 			c.StrOpt(&downloadOpts.RemotePath, "remote", "r", "", "remote file or directory path")
 			c.StrOpt(&downloadOpts.Jump, "jump", "", "", "jump host name or ip")
+			c.StrOpt(&downloadOpts.AuthRef, "auth", "", "", "auth profile for target")
 			c.BoolOpt(&downloadOpts.SHA256, "sha256", "", false, "verify file transfer with sha256")
 			c.AddArg("target", "host ip or name", true)
 		},
@@ -60,7 +59,7 @@ Path rules:
 				return errors.New("remote path is required")
 			}
 
-			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: downloadOpts.Jump})
+			host, err := resolveCommandHostWithAuth(target, downloadOpts.AuthRef, core.ResolveConnectionOptions{Jump: downloadOpts.Jump})
 			if err != nil {
 				return err
 			}

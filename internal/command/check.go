@@ -21,6 +21,7 @@ type checkOptions struct {
 	Parallel int
 	JSON     bool
 	Timeout  string
+	AuthRef  string
 }
 
 func NewCheckCmd() *gcli.Command {
@@ -49,6 +50,7 @@ Notes:
 			c.IntOpt(&opts.Parallel, "parallel", "", 5, "max hosts to check at once")
 			c.BoolOpt(&opts.JSON, "json", "", false, "output check results as json")
 			c.StrOpt(&opts.Timeout, "timeout", "", "", "connect timeout, eg: 5s or bare seconds")
+			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
 			c.AddArg("target", "host ip or name", false)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
@@ -84,6 +86,9 @@ Notes:
 }
 
 func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]core.Host, error) {
+	if strings.TrimSpace(opts.AuthRef) != "" && target == "" {
+		return nil, errors.New("target is required with --auth")
+	}
 	sourceCount := 0
 	if target != "" {
 		sourceCount++
@@ -106,6 +111,13 @@ func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]
 	store := core.Store{Hosts: config.Hosts}
 	switch {
 	case target != "":
+		if strings.TrimSpace(opts.AuthRef) != "" {
+			effective, _, err := config.ResolveEffectiveHostWithAuth(target, opts.AuthRef)
+			if err != nil {
+				return nil, err
+			}
+			return []core.Host{effective.ToHost()}, nil
+		}
 		host, ok, err := store.ResolveHost(target)
 		if err != nil {
 			return nil, err

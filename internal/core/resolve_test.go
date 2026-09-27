@@ -69,3 +69,38 @@ func TestStoreResolveHostRejectsMultiplePartialMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveEffectiveHostWithAuthUsesRawAddressAndDoesNotPersist(t *testing.T) {
+	config := Config{AuthProfiles: []AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}
+	host, ok, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "ops")
+	if err != nil || !ok {
+		t.Fatalf("resolve: host=%+v ok=%v err=%v", host, ok, err)
+	}
+	if host.IP != "192.0.2.10" || host.User != "root" || host.Password != "secret" || host.Port != 22 {
+		t.Fatalf("host=%+v", host)
+	}
+	if len(config.Hosts) != 0 {
+		t.Fatalf("raw target was persisted: %+v", config.Hosts)
+	}
+	if _, _, err := config.ResolveEffectiveHostWithAuth("192.0.2.10:22", "ops"); err == nil {
+		t.Fatal("expected host:port rejection")
+	}
+	if _, _, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "missing"); err == nil {
+		t.Fatal("expected missing auth profile error")
+	}
+}
+
+func TestResolveEffectiveHostWithAuthOverridesSavedCredentials(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "ops", User: "deploy", KeyPath: "~/.ssh/ops"}},
+		Groups:       map[string]GroupDefaults{"team": {User: "group-user", KeyPath: "~/.ssh/group"}},
+		Hosts:        []Host{{Name: "saved", IP: "192.0.2.11", User: "old", Password: "old-secret", Port: 2222, Jump: "bastion", Group: "team"}},
+	}
+	host, ok, err := config.ResolveEffectiveHostWithAuth("saved", "ops")
+	if err != nil || !ok {
+		t.Fatalf("resolve: host=%+v ok=%v err=%v", host, ok, err)
+	}
+	if host.IP != "192.0.2.11" || host.Port != 2222 || host.Jump != "bastion" || host.User != "deploy" || host.KeyPath != "~/.ssh/ops" || host.Password != "" {
+		t.Fatalf("host=%+v", host)
+	}
+}

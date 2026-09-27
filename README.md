@@ -177,6 +177,20 @@ accept `-p secret` or `--password secret`.
 as `sshc add`, so shared credential profiles can carry encrypted key content and
 key passphrases without depending on a local key path.
 
+Use a profile with an unregistered IP without adding a host entry:
+
+```bash
+sshc run --auth dev-root 192.168.1.10 -- hostname
+sshc login --auth dev-root 192.168.1.11
+sshc check --auth dev-root 192.168.1.12
+sshc scp --auth dev-root -l ./app.jar -r /tmp/app.jar 192.168.1.13
+sshc download --auth dev-root -r /tmp/app.log -l ./app.log 192.168.1.14
+```
+
+`--auth` selects credentials for this command only; it does not save the IP as a
+host. It overrides a saved host's credentials while retaining its address,
+port, and jump setting. Host key checking still follows the configured policy.
+
 Attach a profile to a host:
 
 ```bash

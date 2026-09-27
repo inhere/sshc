@@ -20,6 +20,7 @@ var selectLoginHost = selectLoginHostInteractive
 func NewLoginCmd() *gcli.Command {
 	var termName string
 	var jumpName string
+	var authRef string
 
 	cmd := &gcli.Command{
 		Name:    "login",
@@ -43,11 +44,23 @@ Notes:
 		Config: func(c *gcli.Command) {
 			c.AddArg("target", "host ip or name", false)
 			c.StrOpt(&jumpName, "jump", "", "", "jump host name or ip")
+			c.StrOpt(&authRef, "auth", "", "", "auth profile for target")
 			c.StrOpt(&termName, "term", "", "", "remote terminal type, defaults to TERM or xterm-256color")
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
-			host, selectedTarget, err := resolveLoginHost(target, core.ResolveConnectionOptions{Jump: jumpName}, c)
+			if authRef != "" && target == "" {
+				return fmt.Errorf("target is required with --auth")
+			}
+			var host core.Host
+			var selectedTarget string
+			var err error
+			if authRef != "" {
+				host, err = resolveCommandHostWithAuth(target, authRef, core.ResolveConnectionOptions{Jump: jumpName})
+				selectedTarget = target
+			} else {
+				host, selectedTarget, err = resolveLoginHost(target, core.ResolveConnectionOptions{Jump: jumpName}, c)
+			}
 			if err != nil {
 				return err
 			}

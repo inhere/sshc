@@ -61,6 +61,7 @@ Notes:
 			c.StrOpt(&opts.EnvFile, "efile", "", "", "load environment variables from file")
 			c.StrOpt(&opts.CWD, "cwd", "", "", "remote working directory")
 			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
+			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
 			c.BoolOpt(&opts.Sudo, "sudo", "", false, "run remote command with sudo")
 			c.StrOpt(&opts.SudoUser, "sudo-user", "", "", "run remote command as user via sudo")
 			c.StrOpt(&opts.Script, "script", "", "", "local shell script to upload and run")
@@ -83,7 +84,7 @@ Notes:
 			if err != nil {
 				return err
 			}
-			host, err := resolveCommandHostWithOptions(target, core.ResolveConnectionOptions{Jump: opts.Jump})
+			host, err := resolveCommandHostWithAuth(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump})
 			if err != nil {
 				return err
 			}
@@ -169,6 +170,7 @@ type runFlagOptions struct {
 	EnvFile          string
 	CWD              string
 	Jump             string
+	AuthRef          string
 	Sudo             bool
 	SudoUser         string
 	Script           string

@@ -153,6 +153,19 @@ sshc auth rm old-profile --yes
 `sshc auth add -p` 会隐藏读取密码，不支持 `-p secret` 或
 `--password secret` 这种命令行明文密码。
 
+无需逐个登记 IP，也可以在单次连接中复用凭证：
+
+```bash
+sshc run --auth dev-root 192.168.1.10 -- hostname
+sshc login --auth dev-root 192.168.1.11
+sshc check --auth dev-root 192.168.1.12
+sshc scp --auth dev-root -l ./app.jar -r /tmp/app.jar 192.168.1.13
+sshc download --auth dev-root -r /tmp/app.log -l ./app.log 192.168.1.14
+```
+
+`--auth` 只为本次命令选用凭证，不会保存 IP。如果目标已登记，它会覆盖主机凭证，
+保留该主机的地址、端口和跳板设置；主机密钥检查仍按现有配置执行。
+
 把凭证绑定到主机：
 
 ```bash
