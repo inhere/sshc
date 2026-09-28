@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # sshc 本地端口转发设计
 
-> 状态：Draft 0.4 / 待人工计划批准
+> 状态：Draft 0.6 / 待人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=让本机客户端通过 sshc 访问远程 SSH 主机可达的 DB、Redis 等 TCP 服务；allowed_scope=CLI、本地端口转发核心、配置解析复用、tunnels 配置集合、cfg export/import 与 doctor 协同、测试和使用文档；non_goals=远程端口转发、SOCKS、Web 控制台、command_proxy 转发、守护进程管理、转发审计日志；expansion_policy=DEFER_OR_REQUEST；review budget=0.2 已消费一轮设计评审，本修订后只做一轮 changed-scope 复评；停止条件=命令契约、连接生命周期（含空闲存活与断开检测）、安全边界和验收证据明确后停止。
 
@@ -13,6 +13,8 @@
 | 0.2 | 2026-09-27 | Codex | 根据用户确认增加命名保存配置、完整 `tunnel/tun` 命令组，并简化本地 endpoint 输入 |
 | 0.3 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-design-review.md` 修订：修正转发 seam 事实、补空闲存活与断开检测、确定 tunnel 校验等级与 doctor 协同、把 tunnels 纳入 cfg export/import、补引用完整性规则、拆分 `target`/`address` 并支持持久化 `port`/`jump`、新增验收章节，并收敛待确认事项 |
 | 0.4 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-plan-review.md` 的 P5 对账：把 `forwardDialer` 形态补齐为 `Dial`/`SendKeepalive`/`Wait`/`Close`，与决策 12 的存活监视一致（原稿只写 `Dial`/`Close`，两者矛盾） |
+| 0.5 | 2026-09-28 | Jcode | 按设计 changed-scope 复评（候选 `19597c1`）的 D-N1/D-N2/D-N3：把 host 模式的“存在性保证”写成可实施规则（保存时解析并固化规范 host 名，forward 时只用精确匹配，禁止模糊回退与未登记降级）；名词表补充存活方法；A1 补非 loopback 非 wildcard 拒绝用例 |
+| 0.6 | 2026-09-28 | Jcode | 关闭 D-N3：`--forward` 解析示例与 A1 示例的本地侧改为 loopback（`127.0.0.1:15432=10.0.0.8:5432`），并明确“本地侧必须 loopback、远端侧可为 target 视角任意地址”，消除与非 loopback 监听拒绝规则的矛盾 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -40,7 +42,7 @@
 | forward rule | 一个 `local endpoint -> remote endpoint` 映射 |
 | tunnel profile | 命名保存的 SSH target（host 或 address）、认证覆盖、可选 port/jump 和一个或多个 forward rule |
 | forward session | 一个 SSH client 和一个或多个本地监听器的前台生命周期 |
-| forward dialer | 转发核心使用的拨号缝：对 SSH 会话发起 `direct-tcpip`，并负责会话关闭 |
+| forward dialer | 转发核心使用的会话缝：对 SSH 会话发起 `direct-tcpip`，承载 keepalive 与连接关闭观察，并负责会话关闭 |
 | 存活监视 | 判断空闲 SSH 会话是否仍可用（keepalive 与连接关闭观察）的机制 |
 | local forwarding | OpenSSH `-L` 语义；连接由本机进入，经 SSH 会话到远端服务 |
 
@@ -154,7 +156,7 @@ sshc tunnel forward --address 192.168.1.20 --auth dev-root \
 | `--allow-non-loopback` | 初版不实现；非 loopback 监听在后续安全设计中单独评审 |
 | `--background` | 初版不实现；避免没有可观测的生命周期和 stop 语义 |
 
-`--forward` 的解析规则：本地侧只写端口时默认规范化为 `127.0.0.1:port`；远端侧只写端口时默认规范化为 `127.0.0.1:port`；完整地址可写成 `192.168.1.10:15432=10.0.0.8:5432`。端口范围为 1..65535，允许本地端口为 `0`；不接受 Unix socket、端口范围和 UDP。IPv6 使用带方括号的标准形式，例如 `[::1]:15432=[::1]:5432`。
+`--forward` 的解析规则：本地侧只写端口时默认规范化为 `127.0.0.1:port`；远端侧只写端口时默认规范化为 `127.0.0.1:port`；完整地址可写成 `127.0.0.1:15432=10.0.0.8:5432`（本地侧必须是 loopback，远端侧可以是 SSH target 视角的任意地址）。端口范围为 1..65535，允许本地端口为 `0`；不接受 Unix socket、端口范围和 UDP。IPv6 使用带方括号的标准形式，例如 `[::1]:15432=[::1]:5432`。
 
 输出约定（本版固定，计划阶段不再重开）：默认就绪信息（含 `local -> remote` 与 `:0` 分配到的实际端口）写到 stderr 诊断流；`--json` 时同一信息以单行 JSON 写到 stdout，stdout 不接受其他内容；单条连接失败、连接关闭和字节统计只在 `--verbose`/debug 级别输出。
 
@@ -204,7 +206,7 @@ sshc tunnel forward --address 192.168.1.20 --auth dev-root \
 
 保存时校验（`tunnel add` 内的硬校验，不进入全局写入门禁）：
 
-- `target` 模式必须解析到已存在 host，否则报错并提示改用 `--address`；这保证 host 被删除或改名后 forward 阶段明确报 `host not found`，而不会静默把名称当未登记地址使用。
+- `target` 模式：保存时用现有解析链解析出**规范 host 名**写入 profile（模糊匹配仍可用，但其结果必须固化为规范名）；forward 时只用**精确匹配**（`Store.Find` 语义：name 或 ip 完全相等）确认 host 仍存在，不存在直接报错并提示改 host 或改用 `--address`。禁止在 host 模式调用 `Store.ResolveHost` 的模糊回退，也禁止走 `ResolveEffectiveHostWithAuth` 的“未登记目标降级”路径（即不得因为 profile 带 `auth_ref` 就把失配的 target 当地址目标）。这是决策 8 的存在性保证的可实施形式。
 - `address` 模式必须已有 `auth_ref`；`--port`/`--jump` 写入 profile。
 - 全部 forward rule 必须能解析；本地端口重复、保留地址绑定（非 loopback）和非法端口在保存阶段即拒绝。
 
@@ -322,13 +324,13 @@ local client connects to local listener
 
 | 编号 | 验证点 | 方式 |
 |---|---|---|
-| A1 | `--forward` 解析与规范化 | 表驱动单元测试：`15432=127.0.0.1:5432`、`15432=5432`、`[::1]:15432=[::1]:5432`、`192.168.1.10:15432=10.0.0.8:5432`；非法端口、`0.0.0.0` 本地绑定、重复本地端口报错 |
+| A1 | `--forward` 解析与规范化 | 表驱动单元测试：`15432=127.0.0.1:5432`、`15432=5432`、`[::1]:15432=[::1]:5432`、`127.0.0.1:15432=10.0.0.8:5432`；非法端口、`0.0.0.0` 本地绑定、非 loopback 非 wildcard 本地绑定（如 `192.168.1.5:15432=...`）、重复本地端口报错 |
 | A2 | 单条连接转发 | 使用 `remoteClientDialForTest` 等价的拨号缝（`internal/core/ssh.go:88-100` 同形态）接入本地 echo 服务，验证双向数据与半关闭 |
 | A3 | 空闲存活与失效 | 假拨号缝下停止响应 keepalive / 直接关闭假连接，断言 listeners 关闭、`Wait()` 返回非零、无 goroutine 泄漏 |
 | A4 | `local:0` 实际端口与就绪输出 | 断言 ready 行包含系统分配的端口；`--json` 时 stdout 恰有一行 JSON 就绪对象 |
 | A5 | 多规则回滚 | 占用其中一个本地端口，断言启动失败时其他 listener 与 SSH client 均已释放 |
 | A6 | Ctrl-C 有序关闭 | 发送 interrupt，断言活动连接被关闭、listener 释放、进程返回 0 |
-| A7 | 配置与引用 | `tunnel add` 非法输入被拒；`--address` 缺 `--auth` 被拒；`--target` 指向不存在 host 被拒；`auth rm` 拒绝被 tunnel 引用的 profile；`cfg doctor` 对过期 tunnel 只产出 warn |
+| A7 | 配置与引用 | `tunnel add` 非法输入被拒；`--address` 缺 `--auth` 被拒；`--target` 指向不存在 host 被拒；host 被重命名/删除后 host 模式 forward 精确匹配报错且不落到未登记目标；`auth rm` 拒绝被 tunnel 引用的 profile；`cfg doctor` 对过期 tunnel 只产出 warn |
 | A8 | 迁移链路 | `cfg export`/`cfg import --merge|--overwrite|--replace` 往返后 tunnels 与 `TunnelsAdded`/`TunnelsUpdated` 统计正确 |
 | A9 | 真实主机（可选，人工） | 对已配置 host 执行 `tunnel forward`，用本地 `psql`/`redis-cli` 或 `nc` 完成一次读写，再验证 Ctrl-C 后端口释放 |
 
@@ -350,7 +352,7 @@ A1-A8 是计划必须给出的自动化验收；A9 记为人工验证步骤，�
 - 配置新增 `tunnels` 集合，沿用现有原子保存；旧配置缺少该字段时按空集合处理。
 - `tunnels` 纳入 `cfg export/import` 合并与统计，避免迁移时静默丢失（决策 10）。
 - tunnel 检查进入 `cfg doctor` 时只使用 `DoctorWarn`，且写入路径的最小校验在 `tunnel add` 内完成；`CheckConfig` 不因 tunnel 问题阻塞 host/group/web/import 等无关写入（决策 11）。
-- 引用完整性：`auth rm` 拒绝删除被 tunnel profile 引用的 profile（与现有 host 引用策略一致）；`host rm` 对被 tunnel `target` 引用的 host 给出提示；host 改名后 host 模式 tunnel 在 forward 阶段明确报 `host not found`，不静默漂移。
+- 引用完整性：`auth rm` 拒绝删除被 tunnel profile 引用的 profile（与现有 host 引用策略一致）；`host rm` 对被 tunnel `target`/`jump` 引用的 host 给出提示；host 改名后 host 模式 tunnel 在 forward 阶段用精确匹配报 `host not found`，不静默漂移（实现约束见配置策略的“保存时校验”）。
 - 前台进程是生命周期真源；终止进程即停止转发。
 - `--forward ...:0=...` 的实际端口按输出约定打印；首版不写 run log，若需要审计后续增加专用 forward session log schema。
 
