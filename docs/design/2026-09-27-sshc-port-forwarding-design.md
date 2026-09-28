@@ -399,4 +399,4 @@ A1-A8 是计划必须给出的自动化验收；A9 记为人工验证步骤，�
 
 本设计以 `sshc tunnel/tun` 作为 v1 命令组，支持 `tunnel add/list/show/rm/forward`，将命名 tunnel profile 保存到独立的 `tunnels` 配置集合，并让该集合与 `cfg doctor`、`cfg export/import`、`auth rm`/`host rm` 保持一致的校验和引用语义。`tunnel forward` 复用现有 SSH/auth/jump 连接，经包内 `forwardDialer`（`*remoteClient.Dial`）建立 direct-tcpip channel；本地只写端口时默认绑定 `127.0.0.1`，默认前台运行并拒绝非 loopback 监听；空闲会话通过 keepalive 与连接关闭观察保证失效可见。它覆盖"本地连接远程 DB/Redis"的核心结果，同时把远程转发、SOCKS、后台管理、审计日志和 command_proxy 转发留在后续边界。
 
-当前为 `Draft 0.4`。需要用户确认命令组、持久化字段（`target`/`address`/`port`/`jump`）、export/import 覆盖与覆盖规则后，才能进入实施计划；设计批准本身不授权代码实施、提交、发布或部署。
+当前为 `Draft 0.6`。需要用户确认命令组、持久化字段（`target`/`address`/`port`/`jump`）、export/import 覆盖与覆盖规则后，才能进入实施计划；设计批准本身不授权代码实施、提交、发布或部署。
