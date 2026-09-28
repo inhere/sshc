@@ -103,7 +103,7 @@
 
 ### Workspace baseline
 
-- Git root：`D:\work\inhere\my-tools-dev\inhere-tools\sshc`（独立仓库；父仓库 `my-tools-dev` 将其视为未跟踪目录，本计划不触碰父仓库）。分支 `main`，提交链 `a78aa21`→`716428c`→`7e1f5ee`→`4e00830`→`f7a046d`→`1186160`；`go vet ./...` 无输出，`gofmt -l internal cmd` 仅有第 112 行的 2 个既有偏差。
+- Git root：`D:\work\inhere\my-tools-dev\inhere-tools\sshc`（独立仓库；父仓库 `my-tools-dev` 将其视为未跟踪目录，本计划不触碰父仓库）。分支 `main`；评审时点提交链（历史快照）`a78aa21`→`716428c`→`7e1f5ee`→`4e00830`→`f7a046d`→`1186160`，当前 HEAD 由 T1 开始时复录；`go vet ./...` 无输出，`gofmt -l internal cmd` 仅有第 112 行的 2 个既有偏差。
 - 基线验证已完成：`go build ./...` OK；`go test ./... -count=1` 全绿（4 个包）。Go `1.25.10`。
 - 变更基线：本轮只按第 5 节任务改动 expected paths；出现其他路径改动按 "错误路径即停止" 处理。
 
