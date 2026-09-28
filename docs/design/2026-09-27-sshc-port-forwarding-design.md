@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # sshc 本地端口转发设计
 
-> 状态：Draft 0.3 / 待人工计划批准
+> 状态：Draft 0.4 / 待人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=让本机客户端通过 sshc 访问远程 SSH 主机可达的 DB、Redis 等 TCP 服务；allowed_scope=CLI、本地端口转发核心、配置解析复用、tunnels 配置集合、cfg export/import 与 doctor 协同、测试和使用文档；non_goals=远程端口转发、SOCKS、Web 控制台、command_proxy 转发、守护进程管理、转发审计日志；expansion_policy=DEFER_OR_REQUEST；review budget=0.2 已消费一轮设计评审，本修订后只做一轮 changed-scope 复评；停止条件=命令契约、连接生命周期（含空闲存活与断开检测）、安全边界和验收证据明确后停止。
 
@@ -12,6 +12,7 @@
 | 0.1 | 2026-09-27 | Codex | 初稿：确定本地 TCP 转发命令、连接复用方式、安全边界和实施分阶段方案 |
 | 0.2 | 2026-09-27 | Codex | 根据用户确认增加命名保存配置、完整 `tunnel/tun` 命令组，并简化本地 endpoint 输入 |
 | 0.3 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-design-review.md` 修订：修正转发 seam 事实、补空闲存活与断开检测、确定 tunnel 校验等级与 doctor 协同、把 tunnels 纳入 cfg export/import、补引用完整性规则、拆分 `target`/`address` 并支持持久化 `port`/`jump`、新增验收章节，并收敛待确认事项 |
+| 0.4 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-plan-review.md` 的 P5 对账：把 `forwardDialer` 形态补齐为 `Dial`/`SendKeepalive`/`Wait`/`Close`，与决策 12 的存活监视一致（原稿只写 `Dial`/`Close`，两者矛盾） |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -251,9 +252,12 @@ type ForwardSession interface {
 
 func StartLocalForward(host Host, rules []ForwardRule, opts ForwardOptions) (ForwardSession, error)
 
-// 包内拨号缝：不扩展 RemoteClient 接口，避免波及既有测试替身。
+// 包内会话缝：不扩展 RemoteClient 接口，避免波及既有测试替身。
+// 除拨号与关闭外，还需承载存活监视（SendKeepalive/Wait），与决策 12 一致。
 type forwardDialer interface {
     Dial(network, addr string) (net.Conn, error)
+    SendKeepalive() error // 发送 keepalive@openssh.com 并要求回复
+    Wait() error          // SSH 连接关闭时返回
     Close() error
 }
 
@@ -263,7 +267,7 @@ func newForwardDialer(host Host) (forwardDialer, error)
 实现约束：
 
 1. 先解析并校验所有规则，再建立 SSH client，避免只启动部分 listener 后才发现另一条规则非法。
-2. `newForwardDialer` 复用 `newSSHClient` 的建连与关闭语义（直接连接、jump、认证、host key）；它只暴露 `Dial`/`Close`，使 `RemoteClient` 接口保持不变。
+2. `newForwardDialer` 复用 `newSSHClient` 的建连与关闭语义（直接连接、jump、认证、host key）；它只暴露拨号、存活与关闭四个方法，使 `RemoteClient` 接口保持不变。
 3. listener 建立后返回实际端口；任一 listener 建立失败时关闭已建立 listener 和 SSH client。
 4. accept loop 中每条本地连接调用 `forwardDialer.Dial("tcp", rule.RemoteAddr)`；临时 accept 错误按退避重试（首个 5ms，指数增长到上限 1s，持续失败时按 debug 记录），非临时错误终止 session。
 5. 双向 copy 使用半关闭语义：任一方向读到 EOF 时对该方向的对端执行 `CloseWrite`（可用时），两个方向都结束或出错后关闭整条连接并清理 goroutine。
@@ -363,7 +367,7 @@ A1-A8 是计划必须给出的自动化验收；A9 记为人工验证步骤，�
 4. **本地 endpoint 默认只写端口。** `15432` 等价于 `127.0.0.1:15432`；完整地址仅在用户需要指定地址时使用，但 v1 仍拒绝非 loopback 监听。
 5. **规则使用 `local=remote` 结构化格式，不提供 `-L` 短名。** 等号区分两侧，端口简写降低输入成本，带方括号的 IPv6 保持可解析；`-L` 会暗示 OpenSSH `port:host:hostport` 语法，本版不承诺该兼容。
 6. **默认 loopback 且前台运行。** 先保证暴露面和生命周期可观察，再评估后台管理。
-7. **转发复用 `*remoteClient.Dial`，通过包内 `forwardDialer` 缝接入，不扩展 `RemoteClient` 接口。** 现有 jump、认证、host key 和 close 语义集中在 `newSSHClient`，新实现只负责 listener、channel、copy 与存活监视；扩接口会波及 `fakeRemoteClient`（`internal/core/command_proxy_test.go:125`）等替身，收益不足。
+7. **转发复用 `*remoteClient.Dial`，通过包内 `forwardDialer` 缝接入，不扩展 `RemoteClient` 接口。** 现有 jump、认证、host key 和 close 语义集中在 `newSSHClient`，新实现只负责 listener、channel、copy 与存活监视；扩接口会波及 `fakeRemoteClient`（`internal/core/command_proxy_test.go:125`）等替身，收益不足。该缝的完整形态为 `Dial`/`SendKeepalive`/`Wait`/`Close`（见架构段）。
 8. **`target`/`address` 双模式，`tunnel edit` 延后。** 已登记 host 用 `--target`，未登记地址用 `--address` + `--auth`，避免 host 名称消失后被静默当作未登记地址；交互编辑留待后续。
 9. **`tunnel add` 默认拒绝重名，`--force` 覆盖。** 避免误改共享配置。
 10. **tunnels 参与 `cfg export/import`。** 迁移包必须携带隧道配置，避免换机静默丢失；冲突策略与 host 一致。

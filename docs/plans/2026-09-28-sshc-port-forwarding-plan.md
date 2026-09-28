@@ -1,9 +1,9 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # sshc 本地端口转发 实施计划
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.4 / 待人工计划批准
 >
-> thinking_mode=RIGOROUS；core_objective=按已批准的 design Draft 0.3 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
+> thinking_mode=RIGOROUS；core_objective=按 design Draft 0.4 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
 
 ## 修订记录
 
@@ -11,6 +11,8 @@
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Jcode | 初稿：按 design 0.3 拆出隧道配置与解析、持久化/doctor/export-import、转发核心与会话生命周期、CLI 命令组、引用完整性、文档与验收闭环共 7 个任务 |
 | 0.2 | 2026-09-28 | Jcode | 校正任务 owner 文件与验证用例命名：T5 测试归属 `auth_test.go`/`command_test.go`（对齐既有 `TestAuthRemove*`、`TestHostRemove*`），T1 expected symbols 去掉未定义角色的 `ValidateTunnelTarget`；范围、验收与验证要求不变 |
+| 0.3 | 2026-09-28 | Jcode | 按计划自检结果修正验证契约：gofmt 门禁收窄到本计划改动文件并登记 2 个既有无关偏差；新增“验证证据规则”禁止 `-run` 无匹配测试的空洞通过；T4 明确可重复 `--forward` 用 `VarOpt` 并登记命令组别名路由已实测；范围与验收不变 |
+| 0.4 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-plan-review.md` 的 P1/P2/P3/P4/P5/P6 修正：新增命令层会话缝与信号缝（`hooks_test.go` 模式）、A6 归属与测试名、T2 选择器改为既有 `TestDoctor*`、定义 `TunnelForward`→`ForwardRule` 唯一转换点、与 design 0.4 的缝形态对齐、刷新基线 provenance；另补 2 项 LOW 说明 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -38,11 +40,12 @@
 
 ## 输入与批准证据
 
-- 设计输入：`docs/design/2026-09-27-sshc-port-forwarding-design.md`，Draft 0.3，commit `716428c`，validator `--kind design` = `{"ok": true, "errors": []}`。
+- 设计输入：`docs/design/2026-09-27-sshc-port-forwarding-design.md`，Draft 0.4，validator `--kind design` = `{"ok": true, "errors": []}`（0.3 于 `716428c`，0.4 按本计划评审 P5 对齐 seam 形态）。
 - 评审输入：`docs/review/2026-09-28-sshc-port-forwarding-design-review.md`（结论 BLOCKED 针对 candidate 0.2 `0308bf4`；处置记录给出 F1-F11 在 0.3 的落点）。
 - 用户批准证据：用户消息「提交，批准进入实施计划」（2026-09-28）——批准内容为提交评审/设计修订并进入计划阶段。
-- 关联历史文档（只读参考）：`docs/2026-07-08-sshc-usability-enhancements-design.md` 的 P2 tunnel 提案（已被 design 0.3 取代）、`docs/plan/2026-07-07-sshc-serve-v1-plan.md`（历史计划风格）。
-- workspace baseline：Git root `D:\work\inhere\my-tools-dev\inhere-tools\sshc`；branch `main`；HEAD `716428c`；`git status` clean；无他人 dirty/untracked 归属冲突。基线验证：`go build ./...` 通过，`go test ./... -count=1` 在 `internal/bootstrap`、`internal/command`、`internal/core`、`internal/server` 全绿。工具链 `go1.25.10 windows/amd64`；CI 使用 `go test -cover ./...`（Go 1.25/stable）。
+- 关联历史文档（只读参考）：`docs/2026-07-08-sshc-usability-enhancements-design.md` 的 P2 tunnel 提案（已被 design 0.3/0.4 取代）、`docs/plan/2026-07-07-sshc-serve-v1-plan.md`（历史计划风格）。
+- workspace baseline：Git root `D:\work\inhere\my-tools-dev\inhere-tools\sshc`；branch `main`；设计/评审/计划提交历史 `a78aa21`→`716428c`→`7e1f5ee`→`4e00830`；基线验证：`go build ./...` 通过，`go test ./... -count=1` 在 `internal/bootstrap`、`internal/command`、`internal/core`、`internal/server` 全绿，`go vet ./...` 无输出。工具链 `go1.25.10 windows/amd64`；CI 使用 `go test -cover ./...`（Go 1.25/stable）。
+- 基线 provenance 说明：上述事实采录于计划评审时点（HEAD `4e00830`，当时仅本计划文件处于修订中，故 `docs/review/2026-09-28-sshc-port-forwarding-plan-review.md` 将该轮记为 advisory）；计划 0.4 提交后，HEAD 与 `git status` 由 T1 开始时复录一次，不新增任务。
 - expected paths / symbols（planning evidence，非封闭白名单）：
 
 | 文件 | 新增/修改 | 预计符号 |
@@ -105,7 +108,9 @@
 ### 环境与依赖
 
 - 无需网络与真实 SSH 主机即可完成 A1-A8（全部使用假 dialer/本地 echo 服务）。
-- 统一验证命令：`go build ./...`、`go test ./... -count=1`、`gofmt -l internal cmd`（期望无输出）。CI 等价命令为 `go test -cover ./...`。
+- 统一验证命令：`go build ./...`、`go test ./... -count=1`、`gofmt -l <本计划改动的文件>`（期望无输出）。CI 等价命令为 `go test -cover ./...`（CI 不跑 gofmt）。
+- gofmt 基线例外：HEAD `716428c` 上 `gofmt -l internal cmd` 已有 2 个与本计划无关的既有偏差（`internal/command/serve.go` 的导入顺序与字段对齐、`internal/command/log_test.go` 整文件空格缩进）。本计划不修这两个文件；要把仓库恢复到全量 gofmt clean 需单独的微任务与授权。
+- 验证证据规则（防空洞通过）：`go test -run '<pattern>'` 在无匹配测试时输出 `no tests to run` 并返回 PASS/exit 0，退出码本身不构成证据。每个任务的证据必须包含 `-v` 输出中列出预期测试名的 `--- PASS: TestX` 行，且新增测试必须落在同一 `-run` 选择器内被实际执行（实现时先确认 `-v` 输出里出现 RUN/PASS 行）。
 
 ### fail-closed 条件
 
@@ -138,20 +143,21 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
   3. 实现 `NormalizeTunnelProfile`（TrimSpace、规则规范化、名称安全字符校验）与 `ValidateTunnelProfile(cfg Config, p TunnelProfile) error`：`target`/`address` 互斥且必填其一；`address` 必须有 `auth_ref` 且 `auth_ref` 必须存在；`port` 范围；`jump` 必须是已登记 host；`forwards` 至少一项、本地端口不重复、本地 host 必须是 loopback。
   4. 实现 `FindTunnel`、`UpsertTunnel(profiles, p, force)`（重名且非 force 时报错）、`RemoveTunnel`、`TunnelsUsingAuth(profiles, name) []string`。
   5. 实现 `ResolveTunnelHost(cfg Config, p TunnelProfile) (Host, error)`：host 模式走 `ResolveEffectiveHostWithAuth(target, authRef)`，解析失败直接报错不降级；address 模式走 `ResolveEffectiveHostWithAuth(address, authRef)` 且要求 `auth_ref` 非空；最后应用 `HostOverrides{Port: p.Port}` 与 `Jump`。
-  6. 测试 `tunnel_test.go`：A1 全表（含拒绝用例）；`target` 指向不存在 host、`address` 缺 `auth_ref`、非 loopback 本地绑定、重复本地端口、重名 add 非 force 等失败路径；`ResolveTunnelHost` 的 host/address 两模式与 port/jump 覆盖。
-- 验证: `go test ./internal/core/ -run 'TestParseForwardRule|TestValidateTunnelProfile|TestResolveTunnelHost|TestUpsertTunnel' -count=1 -v`
-- 完成标准: 上述测试通过；A1 用例全部覆盖 design 0.3 验收表 A1 列出的输入；非法输入返回可读错误且不写配置。
-- 依赖: 无（需 design 0.3 决策 5/8/9）
+  6. 提供唯一转换点 `func (p TunnelProfile) ForwardRules() ([]ForwardRule, error)`：持久化 `TunnelForward{local,remote}` → 运行时 `ForwardRule{LocalAddr,RemoteAddr}`（与 T3 同包），命令层不得自行拼装规则。
+  7. 测试 `tunnel_test.go`：A1 全表（含拒绝用例）；`target` 指向不存在 host、`address` 缺 `auth_ref`、非 loopback 本地绑定、重复本地端口、重名 add 非 force 等失败路径；`ResolveTunnelHost` 的 host/address 两模式与 port/jump 覆盖；`ForwardRules()` 转换结果与持久化字段一致。
+- 验证: `go test ./internal/core/ -run 'TestParseForwardRule|TestValidateTunnelProfile|TestResolveTunnelHost|TestUpsertTunnel|TestTunnelProfileForwardRules' -count=1 -v`
+- 完成标准: 上述测试通过；A1 用例全部覆盖 design 0.4 验收表 A1 列出的输入；非法输入返回可读错误且不写配置。
+- 依赖: 无（需 design 0.4 决策 5/8/9）
 
 ### T2 tunnels 持久化、doctor warn 与 cfg export/import 合并
 
 - 文件: `internal/core/store.go`、`internal/core/config_doctor.go`、`internal/core/config_export.go`（修改）、`internal/core/config_test.go`、`internal/core/config_export_test.go`（修改/新增）
 - 动作:
-  1. `Config` 增加 `Tunnels []TunnelProfile \`json:"tunnels"\``；`normalizeConfig` 置空切片并按 `NormalizeTunnelProfile` 规范化每项（含 `normalizeConfigForSave` 路径）。
+  1. `Config` 增加 `Tunnels []TunnelProfile \`json:"tunnels"\``；`normalizeConfig` 置空切片并按 `NormalizeTunnelProfile` 规范化每项（含 `normalizeConfigForSave` 路径）；就地规范化与既有 `config.Hosts[i]` 行为一致，tunnels 无秘密字段因此不需要改动 `encryptConfigPasswords`/`decryptConfigPasswords`（`internal/core/password_crypto.go:30-77` 只遍历 AuthProfiles 与 Hosts）。
   2. `config_doctor.go` 增加 `checkTunnels(config)`：tunnel 名称重复、`target`/`address` 缺失或互斥冲突、`auth_ref` 不存在、`jump` 不存在、forward 规则不可解析、`target` 不再解析到 host 等，全部使用 `DoctorWarn`；`CheckConfig` 只追加 warn，不产生 `DoctorError`。
   3. `config_export.go`：`ImportResult` 增加 `TunnelsAdded`/`TunnelsUpdated`；`mergeImportedConfig` 为 tunnels 增加与 host 相同语义的分支（默认冲突即报错、overwrite 覆盖）；`ImportReplace` 直接采用导入包（天然覆盖 tunnels）；`MaskConfig` 无需改动（无秘密字段），但需在测试中断言 tunnel 字段完整保留。
   4. 测试：doctor 对过期 tunnel（host 已删）只返回 warn；`cfg` 层往返 `EncryptConfigExport`/`DecryptConfigExport`（tunnels 保留）与 merge/overwrite/replace 的统计与冲突行为；旧配置缺 `tunnels` 时加载为空集合且保存后字段存在但不改变其他集合。
-- 验证: `go test ./internal/core/ -run 'TestCheckConfig|TestTunnel|TestMergeImported|TestConfigExport' -count=1 -v`，并 `go test ./internal/server/ -count=1`（确认 serve 写入路径仍通过 `CheckConfig` 门禁）
+- 验证: `go test ./internal/core/ -run 'TestDoctor|TestTunnel|TestMergeImported|TestConfigExport' -count=1 -v`（既有 doctor 测试为 `TestDoctorReports*`/`TestDoctorAccepts*`，见 `internal/core/config_test.go:404-460`；新增 tunnel 用例必须落在同一选择器内并出现在 `-v` 输出），并 `go test ./internal/server/ -count=1`（确认 serve 写入路径仍通过 `CheckConfig` 门禁）
 - 完成标准: A7/A8 的 core 级证据通过；`CheckConfig` 不因 tunnel 问题返回 error 级；export/import 往返后 tunnels 与统计正确。
 - 依赖: T1
 
@@ -160,7 +166,7 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 - 文件: `internal/core/forward.go`（新增）、`internal/core/forward_test.go`（新增）
 - 动作:
   1. 定义 `ForwardRule{LocalAddr, RemoteAddr string}`、`ForwardOptions{ConnectTimeout, KeepaliveEvery, KeepaliveWait time.Duration; Logf func(string, ...any)}`（Keepalive 缺省 30s/10s）、`ForwardSession{Endpoints() []string; Wait() error; Close() error}`。
-  2. 定义会话缝 `forwardDialer{Dial(network, addr string) (net.Conn, error); SendKeepalive() error; Wait() error; Close() error}`，实现 `remoteDialer{client *remoteClient}`（`Dial` 直转、`SendKeepalive` 发 `keepalive@openssh.com` 并要求回复、`Wait` 等待 SSH 连接结束、`Close` 复用 `closeAll`），并提供 `newForwardDialer(host Host) (forwardDialer, error)` 与测试伴生变量 `newForwardDialerForTest`。不修改 `RemoteClient` 接口。
+  2. 定义会话缝 `forwardDialer{Dial(network, addr string) (net.Conn, error); SendKeepalive() error; Wait() error; Close() error}`（形态与 design 0.4 架构段一致），实现 `remoteDialer{client *remoteClient}`（`Dial` 直转、`SendKeepalive` 发 `keepalive@openssh.com` 并要求回复、`Wait` 等待 SSH 连接结束、`Close` 复用 `closeAll`），并提供 `newForwardDialer(host Host) (forwardDialer, error)` 与测试伴生变量 `newForwardDialerForTest`。不修改 `RemoteClient` 接口。
   3. `StartLocalForward(host, rules, opts)`：先全部校验规则再建会话；逐条 `net.Listen`（本地 host 必须 loopback，端口 `0` 允许）；任一 listener 失败即回滚已建 listener 与会话；返回 session 携带 `Endpoints()` 实际地址。
   4. accept 循环：临时错误（`net.Error` 且 `Temporary()` 或等价判断）按 5ms 起步、上限 1s 的指数退避重试并在 `Logf` 记录；非临时错误结束会话。
   5. 每连接 `Dial("tcp", remote)` + 双向 copy：单方向 EOF 时对写端 `CloseWrite`（`*net.TCPConn` 可用时），两方向结束或出错后关闭整条连接；统计字节与时长只在 `Logf` 输出。
@@ -173,18 +179,19 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 
 ### T4 `tunnel/tun` CLI 命令组、目标解析、输出约定与信号退出
 
-- 文件: `internal/command/tunnel.go`（新增）、`internal/command/tunnel_test.go`（新增）、`internal/command/util.go`（如需）、`internal/bootstrap/init.go`（修改）
+- 文件: `internal/command/tunnel.go`（新增）、`internal/command/tunnel_test.go`（新增）、`internal/command/hooks_test.go`（新增测试缝）、`internal/command/util.go`（如需）、`internal/bootstrap/init.go`（修改）
 - 动作:
-  1. `NewTunnelCmd()` 注册 `add`、`list`、`show`、`rm`、`forward`（别名 `tun`），`Category` 与 `host/auth` 一致；选项按 design 0.3 表格：`--target`、`--address`、`--forward`（可重复）、`--auth`、`--port`、`--jump`、`--connect-timeout`、`--json`、`--verbose`、`--quiet`、`--force`、`--yes`。
+  1. `NewTunnelCmd()` 注册 `add`、`list`、`show`、`rm`、`forward`（别名 `tun`），`Category` 与 `host/auth` 一致；选项按 design 0.4 表格：`--target`、`--address`、`--forward`（可重复，用 `c.VarOpt` 收集，同 `run --env` 模式）、`--auth`、`--port`、`--jump`、`--connect-timeout`、`--json`、`--verbose`、`--quiet`、`--force`、`--yes`。命令组别名路由已实测：`go run ./cmd/sshc cred list` 正确落到 `auth list`（exit 0），`tun` 可同样工作。
   2. `add`：加载 `core.LoadConfig()`，构造 profile（`--address` 时强制 `--auth`），调用 `core.ValidateTunnelProfile` + `core.UpsertTunnel`，保存前运行 `core.CheckConfig` 且只把 error 级问题视为阻断，最后 `core.SaveConfig`；成功输出保存摘要。
   3. `forward`：支持 `name` 与临时模式（`--target` 或 `--address`）；命令行 `--forward` 出现即整体替换保存规则；解析目标得到 `core.Host`（复用 `resolveCommandHostWithAuth` 与 `ResolveTunnelHost` 的覆盖语义）；`command_proxy` 目标直接报错。
-  4. 就绪输出：默认把 `tunnel ready local -> remote`（含 `:0` 实际端口）写 stderr；`--json` 时同一信息以单行 JSON 写 stdout（结构 `{"name","target","address","listeners":[{"local","remote"}]}`），stdout 无其他内容；`--quiet` 抑制非错误诊断；`--verbose` 打开连接级日志。
+  4. 就绪输出：默认把 `tunnel ready local -> remote`（含 `:0` 实际端口）写 stderr；`--json` 时同一信息以单行 JSON 写 stdout（结构 `{"name","target","address","listeners":[{"local","remote"}]}`），stdout 无其他内容；`--quiet` 抑制非错误诊断；`--verbose` 只控制连接级 `Logf`，环境级 verbosity 沿用 gcli 的 `gcli.IsDebugMode()`/`GCLI_VERBOSE`（仓库当前未使用，不新增第二套机制）。
   5. 信号：`signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`，收到信号调用 `session.Close()` 并返回 0；SSH 失效或启动失败返回非零。
   6. `list`/`show`：表格输出（名称、模式、target/address、port、jump、forward 数、备注）与 `--json`；`show` 不打印任何凭据内容。`rm`：`--yes` 或交互确认后 `core.RemoveTunnel` + `SaveConfig`。
   7. 在 `internal/bootstrap/init.go` 注册命令。
-  8. 测试（`tunnel_test.go`，复用 `withTempConfig`/`newTestApp`/`readTestStore`）：A4（`:0` 端口与 `--json` 单行 stdout、ready 走 stderr）、A7 CLI 级（`--address` 缺 `--auth`、`--target` 不存在、重名 add、`--force`、`rm --yes`、`list/show --json`）。
+  8. 命令层会话与信号缝：`tunnel.go` 定义 `var startLocalForward = core.StartLocalForward` 与 `var notifyContext = signal.NotifyContext`（同 `run.go:14 var runRemote`、`login.go:17 var loginRemote` 模式，`serve.go:98` 已有 `signal.NotifyContext` 用法）；`hooks_test.go` 增加 `setStartLocalForwardForTest`/`setNotifyContextForTest`（同 `hooks_test.go:5-44` 现有 helper 风格）。命令层测试必须通过这两个缝注入假 session 与可取消信号，不得在测试中启动真实 SSH 会话。
+  9. 测试（`tunnel_test.go` + `hooks_test.go`，复用 `withTempConfig`/`newTestApp`/`readTestStore`）：A4（用假 session 返回固定端口，断言 ready 走 stderr、`--json` 时 stdout 恰一行且含 `:0` 实际端口）、A6（`TestTunnelForwardStopsOnInterrupt`：注入可取消的 `notifyContext`，断言 `session.Close` 被调用且命令返回 0）、A7 CLI 级（`--address` 缺 `--auth`、`--target` 不存在、重名 add、`--force`、`rm --yes`、`list/show --json`）。
 - 验证: `go test ./internal/command/ -run 'TestTunnel' -count=1 -v`；`go build ./...`
-- 完成标准: 命令组可按 design 0.3 示例执行（本地假 dialer 路径下）；输出约定与信号退出有测试断言；无 stdout 污染。
+- 完成标准: 命令组可按 design 0.4 示例执行（本地假 session 路径下）；输出约定与信号退出有测试断言；无 stdout 污染。
 - 依赖: T1、T2、T3
 
 ### T5 引用完整性：`auth rm` 拒绝、`host rm` 提示
@@ -213,7 +220,7 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 
 - 文件: 无新增（只写进度记录；如需可更新 `docs/TODO.md` 勾选状态）
 - 动作:
-  1. 运行全量验证：`gofmt -l internal cmd`（无输出）、`go build ./...`、`go test ./... -count=1`。
+  1. 运行全量验证：`gofmt -l <本计划改动文件>`（无输出）、`go build ./...`、`go test ./... -count=1`，并按“验证证据规则”逐任务收集 `-v` 证据。
   2. 逐条记录 A1-A8 的验证命令与输出（A1→T1、A2/A3/A5→T3、A4→T3/T4、A6→T3、A7→T1/T2/T4/T5、A8→T2）。
   3. 核对未引入新 Module/依赖（`git status`、`go.mod` 未变更）、未触碰 `web/` 与 `internal/server`。
   4. 生成 A9 人工验证交接说明（真实主机 + 本地客户端一次读写 + Ctrl-C 后端口释放），交给用户执行。
@@ -240,14 +247,14 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 
 | 需求/决策来源 | 任务 | 验证 |
 |---|---|---|
-| design 0.3 §范围（命令组、双目标、多规则、`:0`） | T1,T3,T4 | A1、A4；`go test ./internal/command/ -run TestTunnel` |
+| design 0.4 §范围（命令组、双目标、多规则、`:0`） | T1,T3,T4 | A1、A4；`go test ./internal/command/ -run TestTunnel` |
 | design 决策 5（`local=remote`、无 `-L`） | T1 | A1 表驱动（含拒绝 OpenSSH 冒号式） |
 | design 决策 7（`forwardDialer` 缝、不扩接口） | T3 | `go test ./internal/core/ -run TestStartLocalForward`；`git diff` 不含 `RemoteClient` 接口改动 |
-| design 决策 8/9（双模式、重名 `--force`） | T1,T4 | A7；`TestValidateTunnelProfile`/`TestTunnel` |
+| design 决策 8/9（双模式、重名 `--force`） | T1,T4 | A7；`TestValidateTunnelProfile`/`TestTunnelAdd*` |
 | design 决策 10（tunnels 参与 export/import） | T2 | A8；`TestMergeImported`/`TestConfigExport` |
-| design 决策 11（doctor 仅 warn） | T2 | A7；`TestCheckConfig`；`go test ./internal/server/` |
+| design 决策 11（doctor 仅 warn） | T2 | A7；`TestDoctor*`；`go test ./internal/server/` |
 | design 决策 12（keepalive + `Wait` 观察、不重连） | T3,T4 | A3；`TestForwardLiveness` |
-| design 验收 A2/A5/A6（转发、回滚、Ctrl-C） | T3,T4 | `TestStartLocalForward`、`TestForwardRollback`、`TestForwardClose`、`TestTunnel` |
+| design 验收 A2/A5/A6（转发、回滚、Ctrl-C） | T3,T4 | A2/A5 → `TestStartLocalForward`/`TestForwardRollback`（T3）；A6 → `TestTunnelForwardStopsOnInterrupt`（T4，信号缝）+ `TestForwardClose`（T3，资源释放）；A4 → `TestTunnelForwardJSON`（T4）+ T3 的 `Endpoints()` 断言 |
 | review F1（seam 事实） | T3 | 代码中 `RemoteClient` 接口未变、`remoteDialer` 存在 |
 | review F2（空闲存活缺失） | T3 | A3 证据 |
 | review F3（doctor 门禁耦合） | T2 | tunnel 检查只产出 warn；server 写入测试绿 |
@@ -262,7 +269,7 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 完成 Gate（全部满足才可声明本计划完成）：
 
 1. T1-T7 全部完成，每个任务的验证命令在前一次提交后的 HEAD 上执行通过。
-2. `gofmt -l internal cmd` 无输出；`go build ./...` 与 `go test ./... -count=1` 全绿。
+2. `gofmt -l <本计划改动文件>` 无输出（2 个既有无关偏差不在范围内）；`go build ./...` 与 `go test ./... -count=1` 全绿；每个任务的 `-v` 证据包含预期测试名的 PASS 行。
 3. A1-A8 证据逐条记录在进度中；A9 已交接给用户并注明未执行。
 4. 无新增 Module/依赖；`web/`、`internal/server`、host/auth 既有行为无回归。
 5. 每个任务有独立本地提交；未执行 push/发布/部署。
