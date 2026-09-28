@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # sshc 本地端口转发 实施计划
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.2 / 待人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=按已批准的 design Draft 0.3 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
 
@@ -10,6 +10,7 @@
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Jcode | 初稿：按 design 0.3 拆出隧道配置与解析、持久化/doctor/export-import、转发核心与会话生命周期、CLI 命令组、引用完整性、文档与验收闭环共 7 个任务 |
+| 0.2 | 2026-09-28 | Jcode | 校正任务 owner 文件与验证用例命名：T5 测试归属 `auth_test.go`/`command_test.go`（对齐既有 `TestAuthRemove*`、`TestHostRemove*`），T1 expected symbols 去掉未定义角色的 `ValidateTunnelTarget`；范围、验收与验证要求不变 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -46,7 +47,7 @@
 
 | 文件 | 新增/修改 | 预计符号 |
 |---|---|---|
-| `internal/core/tunnel.go` | 新增 | `TunnelForward`、`TunnelProfile`、`ParseForwardRule`、`NormalizeTunnelProfile`、`ValidateTunnelProfile`、`FindTunnel`、`UpsertTunnel`、`RemoveTunnel`、`TunnelsUsingAuth`、`ResolveTunnelHost`、`ValidateTunnelTarget` |
+| `internal/core/tunnel.go` | 新增 | `TunnelForward`、`TunnelProfile`、`ParseForwardRule`、`NormalizeTunnelProfile`、`ValidateTunnelProfile`、`FindTunnel`、`UpsertTunnel`、`RemoveTunnel`、`TunnelsUsingAuth`、`ResolveTunnelHost` |
 | `internal/core/tunnel_test.go` | 新增 | A1/A7 相关表驱动测试 |
 | `internal/core/forward.go` | 新增 | `ForwardRule`、`ForwardOptions`、`ForwardSession`、`forwardDialer`、`remoteDialer`、`newForwardDialer`、`StartLocalForward`、accept/copy/keepalive 内部函数 |
 | `internal/core/forward_test.go` | 新增 | A2-A6 测试与假 dialer |
@@ -188,12 +189,12 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 
 ### T5 引用完整性：`auth rm` 拒绝、`host rm` 提示
 
-- 文件: `internal/command/auth.go`、`internal/command/host.go`（修改）、`internal/command/command_test.go`（扩展或新增测试）
+- 文件: `internal/command/auth.go`、`internal/command/host.go`（修改）、`internal/command/auth_test.go`、`internal/command/command_test.go`（扩展既有 `TestAuthRemove*`/`TestHostRemove*` 用例）
 - 动作:
   1. `auth rm`：在现有 host 引用检查后追加 `core.TunnelsUsingAuth(config.Tunnels, name)`，非空时返回错误并列出隧道名。
   2. `host rm`：删除前检查 `config.Tunnels` 中以该 host 为 `target` 或 `jump` 的 profile；存在时输出提示（stderr）说明 forward 阶段会报 `host not found`，`--yes` 时继续删除，无 `--yes` 时在交互确认文本中体现该影响。
   3. 测试：删除被隧道引用的 auth profile 被拒并包含隧道名；删除被引用 host 时出现提示但仍可 `--yes` 删除。
-- 验证: `go test ./internal/command/ -run 'TestAuthRemove|TestHostRemove' -count=1 -v`
+- 验证: `go test ./internal/command/ -run 'TestAuthRemove|TestHostRemove' -count=1 -v`（命名需延续既有 `TestAuthRemove*`、`TestHostRemove*` 前缀，保证新增用例进入同一选择器）
 - 完成标准: A7 的引用完整性断言通过；既有 `auth rm`/`host rm` 行为（无隧道引用时）不回归。
 - 依赖: T1、T2
 
