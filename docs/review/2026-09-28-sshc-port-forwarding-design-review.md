@@ -149,3 +149,33 @@ BLOCKED。存在 1 项开放 `CORE_BLOCKING`（F2：连接生命周期缺少空�
 结构化校验：`validate_document.py --kind design docs/design/2026-09-27-sshc-port-forwarding-design.md` 在 0.3 上返回 `{"ok": true, "errors": []}`。
 
 结论口径：0.3 的 changed-scope 复评尚未执行，因此本报告不为 0.3 给出 PASS；0.3 仍需一轮针对性复评（changed/dependent scope）后才能进入实施计划。
+
+## changed-scope 复评与关闭确认（追加于 2026-09-28）
+
+本节只追加证据与处置，不修改上文对 0.2 的发现、severity 与结论。承接上文承诺的"一轮针对性复评"。
+
+### 复评轮（独立子代理 `session_piglet_1790615176421_1998b6dc7c087b10`，候选 `19597c1`，工作树 clean）
+
+- 逐项确认：F1 CONFIRMED；F2（keepalive + `Wait` 观察）CONFIRMED；F3（doctor warn 分级）CONFIRMED；F4（tunnels 进 export/import）CONFIRMED；F5（引用完整性）PARTIALLY_CONFIRMED；F6（target/address 与持久化字段）PARTIALLY_CONFIRMED；F7（A1-A9 可失败且各有 owner）CONFIRMED；schema 与缺失字段兼容 CONFIRMED；回归项（`--ready-timeout`/`-L` 已彻底移除）CONFIRMED。
+- 新发现与结论：
+  - **D-N1 [MEDIUM] CORE_CORRECTIVE**：0.3 第 207/353 行承诺"host 删除或改名后 forward 报错"，但 `internal/core/config_resolve.go:87-91` 在 `auth_ref` 非空且未命中 host 时回落为未登记目标，且 `Store.ResolveHost`（`store.go:135-153`）有模糊匹配回退；承诺缺机制与验收锚点。
+  - **D-N2 [LOW] DEFERRED_ENHANCEMENT**：0.4 补入 `SendKeepalive`/`Wait` 后，名词表 "forward dialer" 未同步。
+  - **D-N3 [LOW] DEFERRED_ENHANCEMENT**：`--forward` 解析段（157 行）与 A1 仍以 `192.168.1.10:15432=…`（非 loopback 本地侧）为可解析示例，与安全章的"拒绝非 loopback 绑定"并存。
+  - 结论原文：**BLOCKED** —— F5 的"host 消失后不静默漂移"缺机制与验收锚点（D-N1），需一次小修订并同步计划 T1.5。
+
+### 处置（设计 0.5/0.6、计划 0.6，提交 `088865c`）
+
+| 发现 | 处置 | 落点 |
+|---|---|---|
+| D-N1 | 已修正 | 设计 0.5：`target` 模式改为"保存时解析并固化规范 host 名；forward 只用精确匹配（`Store.Find` 语义）；禁止模糊回退与 `ResolveEffectiveHostWithAuth` 未登记降级"；A7 增加"重命名/删除后精确匹配报错且不落到未登记目标"验收；计划 0.6 的 T1.5/T1.6/T1.8 同步 |
+| D-N2 | 已修正 | 设计 0.5 名词表 "forward dialer" 补入 keepalive 与连接关闭观察 |
+| D-N3 | 已修正 | 设计 0.6：解析段与 A1 的示例本地侧改为 loopback，并补非 loopback 非 wildcard 拒绝用例 |
+
+### 关闭确认（同一独立子代理，候选 `088865c`）
+
+- D-N1 **CLOSED**（设计 209/333/355 行：保存固化规范名、forward 仅精确匹配、禁模糊回退与未登记降级，A7 有验收锚点）；D-N2 **CLOSED**（45 行含 keepalive/关闭观察）；D-N3 **CLOSED**（159/327 行本地侧改 loopback 并补拒绝用例）；计划 T1.5/T1.6/T1.8 与规则一致。
+- 结论原文：**PASS**（唯一残留为计划中若干 "design 0.5" 版本引用滞后，纯 provenance）。
+
+后续 provenance 修正：计划中指向当前设计的引用统一为 design 0.6（设计输入、T1.2/T1 完成标准/依赖、T4 完成标准与选项表引用、可追溯性行），修订记录 0.6 行改为 "design 0.5/0.6"；该修正为元数据级别，按合同不递增计划版本。
+
+最终口径：设计 Draft 0.6 与计划 Draft 0.6 的 changed/dependent scope 已完成复评并关闭，两侧均无开放 `CORE_BLOCKING`/`CORE_CORRECTIVE`；等待人工计划批准。本报告与确认均不授权实施。
