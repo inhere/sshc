@@ -103,3 +103,35 @@ BLOCKED（advisory）。存在 1 项 `CORE_BLOCKING`（P1：命令层缺少可�
 - 若批准直接由用户吸收本轮发现，请在批准语句中显式说明"接受 advisory 结论并免除 changed-scope 复评"，以保证批准证据可追溯。
 - 实施时优先做 T1/T3 的 seam 与存活测试（P1/P2/P5 的落点），这两处是唯一有 flake 与结构风险的区域。
 - 本报告不授权实施；实施需要单独的当前执行请求。
+
+## 处置记录与 changed-scope 确认（追加于 2026-09-28）
+
+本节只追加证据与处置，不修改上文对 0.3 的发现、severity 与结论。
+
+### 处置（修订计划 0.4 / 设计 0.4，提交 `1186160`）
+
+| 发现 | 处置 | 落点 |
+|---|---|---|
+| P1 | 已修正 | T4 新增命令层 seam `startLocalForward`/`notifyContext` 与 `hooks_test.go` setter；`hooks_test.go` 列入 T4 owner |
+| P2 | 部分修正（残留见下） | A6 归 T4 并具名 `TestTunnelForwardStopsOnInterrupt`；traceability 按 owner 拆分 |
+| P3 | 已修正 | T2 选择器改为 `TestDoctor\|TestTunnel\|TestMergeImported\|TestConfigExport` 并注明既有 `TestDoctor*` 位置 |
+| P4 | 已修正 | T1 新增唯一转换点 `func (p TunnelProfile) ForwardRules() ([]ForwardRule, error)` |
+| P5 | 已修正 | design 0.4 架构段与决策 7 补齐为 `Dial`/`SendKeepalive`/`Wait`/`Close`；计划 T3 注明与 design 0.4 一致 |
+| P6 | 部分修正（残留见下） | 输入章的 baseline 刷新为提交链并注明 advisory 条件；新增 T1 复录要求 |
+| P7 | 已修正 | T4 注明 `--verbose` 只管连接级 `Logf`，环境级沿用 `gcli.IsDebugMode()`/`GCLI_VERBOSE` |
+| P8 | 已修正 | T2 注明就地规范化与 `Hosts` 一致、tunnels 无秘密字段、无需改 crypto 路径 |
+
+### changed-scope 确认评审（独立子代理 `session_pawprint_1790614540343_be3be8b550af6f8e`）
+
+- 候选：HEAD `1186160`，工作树 clean（锁定候选）；基线复核 `go build ./...` OK、`go vet ./...` 无输出、`go test ./... -count=1` 4 包全绿、`gofmt -l internal cmd` 恰为计划声明的 2 个既有偏差。
+- 逐项结论：P1 RESOLVED、P2 PARTIALLY_RESOLVED、P3 RESOLVED、P4 RESOLVED、P5 RESOLVED、P6 PARTIALLY_RESOLVED、P7 RESOLVED、P8 RESOLVED。
+- 新发现 **N1 [LOW]**（disposition: CORE_CORRECTIVE）：design 结论段仍写"当前为 `Draft 0.3`"，与 0.4 状态行不一致；属 0.4 编辑遗漏的版本文本，不改变语义。
+- 结论原文：**PASS** —— 原唯一 `CORE_BLOCKING`（P1）已真正解决，P3/P4/P5/P7/P8 充分修复，0.4 未扩范围、未新增依赖、`host_or_non_offline_action=NOT_APPLICABLE` 恰一次且成立；残余 P2（`plan:224` 仍写 A6→T3）与 P6（`plan:104` 仍写 HEAD 716428c/clean）仅为文本记账级不一致，不产生孤儿验收项、不影响可执行性。该结论不授权实施。
+
+### 残留项闭环（计划 0.5 / 设计元数据修正）
+
+- P2 残留：`docs/plans/...-plan.md` 的 T7 第 2 步改为 "A6→T4（`TestTunnelForwardStopsOnInterrupt`）+ T3（`TestForwardClose`）"（计划 0.5）。
+- P6 残留：前置检查的 `### Workspace baseline` 刷新为提交链 `a78aa21→716428c→7e1f5ee→4e00830→f7a046d→1186160` 与 `go vet` 证据（计划 0.5）。
+- N1：design 结论段版本文本改为 `Draft 0.4`（纯元数据纠正，按合同不递增版本、不新开 review round）。
+
+以上三项均为该轮确认评审已指出的文本级修正，未改变范围、任务合同、验证方式或验收语义；计划 0.5 因此可视为"确认轮发现的闭环修订"，仍需人工计划批准后才可进入实施。

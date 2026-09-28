@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # sshc 本地端口转发 实施计划
 
-> 状态：Draft 0.4 / 待人工计划批准
+> 状态：Draft 0.5 / 待人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=按 design Draft 0.4 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
 
@@ -13,6 +13,7 @@
 | 0.2 | 2026-09-28 | Jcode | 校正任务 owner 文件与验证用例命名：T5 测试归属 `auth_test.go`/`command_test.go`（对齐既有 `TestAuthRemove*`、`TestHostRemove*`），T1 expected symbols 去掉未定义角色的 `ValidateTunnelTarget`；范围、验收与验证要求不变 |
 | 0.3 | 2026-09-28 | Jcode | 按计划自检结果修正验证契约：gofmt 门禁收窄到本计划改动文件并登记 2 个既有无关偏差；新增“验证证据规则”禁止 `-run` 无匹配测试的空洞通过；T4 明确可重复 `--forward` 用 `VarOpt` 并登记命令组别名路由已实测；范围与验收不变 |
 | 0.4 | 2026-09-28 | Jcode | 按 `docs/review/2026-09-28-sshc-port-forwarding-plan-review.md` 的 P1/P2/P3/P4/P5/P6 修正：新增命令层会话缝与信号缝（`hooks_test.go` 模式）、A6 归属与测试名、T2 选择器改为既有 `TestDoctor*`、定义 `TunnelForward`→`ForwardRule` 唯一转换点、与 design 0.4 的缝形态对齐、刷新基线 provenance；另补 2 项 LOW 说明 |
+| 0.5 | 2026-09-28 | Jcode | 按 changed-scope 确认评审（候选 `1186160`）的残留项修正：T7 的 A6 owner 改为 T4 信号测试、前置检查的 Workspace baseline 同步刷新到当前提交链；无范围/验收变化 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -101,7 +102,7 @@
 
 ### Workspace baseline
 
-- Git root：`D:\work\inhere\my-tools-dev\inhere-tools\sshc`（独立仓库；父仓库 `my-tools-dev` 将其视为未跟踪目录，本计划不触碰父仓库）。分支 `main`，HEAD `716428c`，工作树 clean。
+- Git root：`D:\work\inhere\my-tools-dev\inhere-tools\sshc`（独立仓库；父仓库 `my-tools-dev` 将其视为未跟踪目录，本计划不触碰父仓库）。分支 `main`，提交链 `a78aa21`→`716428c`→`7e1f5ee`→`4e00830`→`f7a046d`→`1186160`；`go vet ./...` 无输出，`gofmt -l internal cmd` 仅有第 112 行的 2 个既有偏差。
 - 基线验证已完成：`go build ./...` OK；`go test ./... -count=1` 全绿（4 个包）。Go `1.25.10`。
 - 变更基线：本轮只按第 5 节任务改动 expected paths；出现其他路径改动按 "错误路径即停止" 处理。
 
@@ -221,7 +222,7 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 - 文件: 无新增（只写进度记录；如需可更新 `docs/TODO.md` 勾选状态）
 - 动作:
   1. 运行全量验证：`gofmt -l <本计划改动文件>`（无输出）、`go build ./...`、`go test ./... -count=1`，并按“验证证据规则”逐任务收集 `-v` 证据。
-  2. 逐条记录 A1-A8 的验证命令与输出（A1→T1、A2/A3/A5→T3、A4→T3/T4、A6→T3、A7→T1/T2/T4/T5、A8→T2）。
+  2. 逐条记录 A1-A8 的验证命令与输出（A1→T1、A2/A3/A5→T3、A4→T3/T4、A6→T4（`TestTunnelForwardStopsOnInterrupt`）+ T3（`TestForwardClose`）、A7→T1/T2/T4/T5、A8→T2）。
   3. 核对未引入新 Module/依赖（`git status`、`go.mod` 未变更）、未触碰 `web/` 与 `internal/server`。
   4. 生成 A9 人工验证交接说明（真实主机 + 本地客户端一次读写 + Ctrl-C 后端口释放），交给用户执行。
   5. 按任务粒度提交本地原子提交（每任务或每组 owner 一个提交），提交信息形如 `feat(sshc): add local port forwarding core`。
