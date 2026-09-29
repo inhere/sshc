@@ -327,6 +327,29 @@ func TestForwardSessionCloseReleasesLocalPort(t *testing.T) {
 	_ = rebound.Close()
 }
 
+// TestForwardDialerAdapterDelegatesToRemoteClient pins the seam contract: the
+// real forwardDialer must delegate to *remoteClient instead of duplicating SSH
+// connection logic. SendKeepalive/Wait need a live ssh.Conn and are covered by
+// the A9 manual verification.
+func TestForwardDialerAdapterDelegatesToRemoteClient(t *testing.T) {
+	var dialed []string
+	client := &remoteClient{dial: func(network, addr string) (net.Conn, error) {
+		dialed = append(dialed, network+" "+addr)
+		return nil, errors.New("stub dial")
+	}}
+	dialer := newForwardDialerAdapter(client)
+
+	if _, err := dialer.Dial("tcp", "127.0.0.1:5432"); err == nil {
+		t.Fatal("expected the stub dial error")
+	}
+	if len(dialed) != 1 || dialed[0] != "tcp 127.0.0.1:5432" {
+		t.Fatalf("delegated dials = %v", dialed)
+	}
+	if err := dialer.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
 func assertGoroutinesSettle(t *testing.T, baseline int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

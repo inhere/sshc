@@ -60,6 +60,7 @@
   - [x] 空闲会话 keepalive（30s/10s）与连接断开检测，Ctrl-C 有序关闭 listener/连接/会话
   - [x] `tunnels` 参与 `cfg export/import`；`cfg doctor` 对过期 tunnel 只报 warn；`auth rm`/`host rm` 维护引用一致性
   - [ ] 后续：后台 daemon 与 `forward list/stop`、`ssh -R`/SOCKS、command_proxy 转发、转发审计日志
+  - [ ] A9 真机验证（由用户执行）：对已配置 host 运行 `sshc tunnel forward`，用本地 `psql`/`redis-cli`/`nc` 完成一次读写，Ctrl-C 后确认本地端口已释放
 - [ ] sshc serve v2 还需要思考完善逻辑
   - [ ] 允许通过浏览器 xterm 访问已配置的 hosts，避免直接给出 host 密码
   - [ ] 分享单个 /xterm/{uni-hashid} 主机 xterm.js 访问，免密/token + 时效 + 审计

@@ -75,6 +75,11 @@ func (d remoteForwardDialer) Close() error {
 // newForwardDialerForTest mirrors remoteClientDialForTest for the session seam.
 var newForwardDialerForTest func(host Host) (forwardDialer, error)
 
+// newForwardDialerAdapter wraps a concrete remote client as the forward session seam.
+func newForwardDialerAdapter(client *remoteClient) forwardDialer {
+	return remoteForwardDialer{client: client}
+}
+
 func newForwardDialer(host Host) (forwardDialer, error) {
 	if newForwardDialerForTest != nil {
 		return newForwardDialerForTest(host)
@@ -88,7 +93,7 @@ func newForwardDialer(host Host) (forwardDialer, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("unsupported ssh client type %T", client)
 	}
-	return remoteForwardDialer{client: concrete}, nil
+	return newForwardDialerAdapter(concrete), nil
 }
 
 type forwardSession struct {
