@@ -227,3 +227,64 @@ func TestBackupConfigFile(t *testing.T) {
 		t.Fatalf("backup content = %s", data)
 	}
 }
+
+func tunnelExportFixture(name string) TunnelProfile {
+	return TunnelProfile{
+		Name:     name,
+		Target:   "devhost",
+		Forwards: []TunnelForward{{Local: "15432", Remote: "127.0.0.1:5432"}},
+	}
+}
+
+func TestMergeImportedConfigHandlesTunnels(t *testing.T) {
+	current := Config{
+		Hosts:   []Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Tunnels: []TunnelProfile{tunnelExportFixture("dev-db")},
+	}
+	imported := Config{Tunnels: []TunnelProfile{tunnelExportFixture("dev-db"), tunnelExportFixture("prod")}}
+
+	if _, _, err := MergeImportedConfig(current, imported, ImportMerge); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("merge err = %v, want a tunnel conflict", err)
+	}
+
+	merged, result, err := MergeImportedConfig(current, imported, ImportOverwrite)
+	if err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	if result.TunnelsUpdated != 1 || result.TunnelsAdded != 1 || len(merged.Tunnels) != 2 {
+		t.Fatalf("overwrite result=%+v tunnels=%+v", result, merged.Tunnels)
+	}
+
+	replaced, result, err := MergeImportedConfig(current, imported, ImportReplace)
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if result.TunnelsAdded != 2 || len(replaced.Tunnels) != 2 {
+		t.Fatalf("replace result=%+v tunnels=%+v", result, replaced.Tunnels)
+	}
+	if len(replaced.Hosts) != 0 {
+		t.Fatalf("replace hosts = %+v, want the imported set", replaced.Hosts)
+	}
+}
+
+func TestConfigExportRoundTripKeepsTunnels(t *testing.T) {
+	key, err := GenerateExportKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported := Config{Tunnels: []TunnelProfile{tunnelExportFixture("dev-db")}}
+	data, err := EncryptConfigExport(exported, key, time.Now())
+	if err != nil {
+		t.Fatalf("EncryptConfigExport: %v", err)
+	}
+	imported, err := DecryptConfigExport(data, key)
+	if err != nil {
+		t.Fatalf("DecryptConfigExport: %v", err)
+	}
+	if len(imported.Tunnels) != 1 || imported.Tunnels[0].Name != "dev-db" {
+		t.Fatalf("tunnels = %+v", imported.Tunnels)
+	}
+	if imported.Tunnels[0].Forwards[0].Local != "127.0.0.1:15432" {
+		t.Fatalf("forwards = %+v", imported.Tunnels[0].Forwards)
+	}
+}

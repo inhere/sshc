@@ -106,6 +106,7 @@ type Config struct {
 	Groups       map[string]GroupDefaults `json:"groups,omitempty"`
 	AuthProfiles []AuthProfile            `json:"auth_profiles"`
 	Hosts        []Host                   `json:"hosts"`
+	Tunnels      []TunnelProfile          `json:"tunnels"`
 }
 
 func (s *Store) Upsert(host Host) error {
@@ -598,6 +599,7 @@ func newEmptyConfig() *Config {
 		Version:      ConfigVersion,
 		AuthProfiles: []AuthProfile{},
 		Hosts:        []Host{},
+		Tunnels:      []TunnelProfile{},
 	}
 }
 
@@ -617,6 +619,12 @@ func normalizeConfig(config *Config) {
 	}
 	for i := range config.Hosts {
 		NormalizeHostFields(&config.Hosts[i])
+	}
+	if config.Tunnels == nil {
+		config.Tunnels = []TunnelProfile{}
+	}
+	for i := range config.Tunnels {
+		NormalizeTunnelProfile(&config.Tunnels[i])
 	}
 }
 

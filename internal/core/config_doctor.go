@@ -26,8 +26,42 @@ func CheckConfig(config Config) []DoctorIssue {
 	issues = append(issues, checkGroupDefaults(config)...)
 	issues = append(issues, checkHostKeyPolicy(config)...)
 	issues = append(issues, checkCommandProxyHosts(config)...)
+	issues = append(issues, checkTunnels(config)...)
 	if len(issues) == 0 {
 		return []DoctorIssue{{Level: DoctorOK, Item: "config", Message: "config looks valid"}}
+	}
+	return issues
+}
+
+// checkTunnels reports tunnel problems as warnings only: a stale tunnel must never
+// block unrelated host/group/web/import writes, which all go through CheckConfig.
+func checkTunnels(config Config) []DoctorIssue {
+	var issues []DoctorIssue
+	warn := func(message string) {
+		issues = append(issues, DoctorIssue{Level: DoctorWarn, Item: "tunnels", Message: message})
+	}
+	names := map[string]bool{}
+	store := Store{Hosts: config.Hosts}
+	for _, profile := range config.Tunnels {
+		label := strings.TrimSpace(profile.Name)
+		if label == "" {
+			label = "(unnamed)"
+		}
+		if name := strings.TrimSpace(profile.Name); name != "" {
+			if names[name] {
+				warn(fmt.Sprintf("duplicate tunnel %q", name))
+			}
+			names[name] = true
+		}
+		if err := ValidateTunnelProfile(config, profile); err != nil {
+			warn(fmt.Sprintf("tunnel %q: %v", label, err))
+			continue
+		}
+		if target := strings.TrimSpace(profile.Target); target != "" {
+			if _, ok := store.Find(target); !ok {
+				warn(fmt.Sprintf("tunnel %q target host %q not found", label, target))
+			}
+		}
 	}
 	return issues
 }

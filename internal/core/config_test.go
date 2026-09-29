@@ -587,3 +587,98 @@ func TestLoadStoreIgnoresHostsJSON(t *testing.T) {
 		t.Fatalf("loaded store = %+v", store)
 	}
 }
+
+func TestDoctorReportsTunnelWarnings(t *testing.T) {
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}},
+		Tunnels: []TunnelProfile{
+			{Name: "ok", Target: "devhost", AuthRef: "dev-root", Forwards: []TunnelForward{{Local: "127.0.0.1:15432", Remote: "127.0.0.1:5432"}}},
+			{Name: "ok", Target: "devhost", Forwards: []TunnelForward{{Local: "127.0.0.1:15433", Remote: "127.0.0.1:5432"}}},
+			{Name: "gone", Target: "removed-host", Forwards: []TunnelForward{{Local: "127.0.0.1:15434", Remote: "127.0.0.1:5432"}}},
+			{Name: "stale-auth", Target: "devhost", AuthRef: "missing", Forwards: []TunnelForward{{Local: "127.0.0.1:15435", Remote: "127.0.0.1:5432"}}},
+			{Name: "bad-rule", Target: "devhost", Forwards: []TunnelForward{{Local: "127.0.0.1:15436", Remote: "127.0.0.1"}}},
+		},
+	}
+	issues := CheckConfig(config)
+	if HasDoctorErrors(issues) {
+		t.Fatalf("tunnel problems must stay warnings, got %+v", issues)
+	}
+	var messages []string
+	for _, issue := range issues {
+		if issue.Item == "tunnels" {
+			messages = append(messages, issue.Message)
+		}
+	}
+	joined := strings.Join(messages, "\n")
+	for _, want := range []string{
+		`duplicate tunnel "ok"`,
+		`target host "removed-host" not found`,
+		`auth profile "missing" not found`,
+		"want [host:]port",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("doctor messages = %q, want it to contain %q", joined, want)
+		}
+	}
+	if strings.Contains(joined, `tunnel "ok":`) {
+		t.Fatalf("valid tunnel failed validation: %q", joined)
+	}
+}
+
+func TestConfigTunnelsRoundTrip(t *testing.T) {
+	withTempConfig(t)
+	config := Config{
+		AuthProfiles: []AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}},
+		Tunnels: []TunnelProfile{{
+			Name:     " dev-db ",
+			Target:   " devhost ",
+			AuthRef:  "dev-root",
+			Forwards: []TunnelForward{{Local: "15432", Remote: "5432"}},
+			Remark:   "dev db",
+		}},
+	}
+	if err := SaveConfig(&config); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(loaded.Tunnels) != 1 {
+		t.Fatalf("tunnels = %+v", loaded.Tunnels)
+	}
+	got := loaded.Tunnels[0]
+	if got.Name != "dev-db" || got.Target != "devhost" || got.AuthRef != "dev-root" {
+		t.Fatalf("tunnel = %+v", got)
+	}
+	if got.Forwards[0].Local != "127.0.0.1:15432" || got.Forwards[0].Remote != "127.0.0.1:5432" {
+		t.Fatalf("forwards = %+v", got.Forwards)
+	}
+
+	path, data, err := ReadConfigFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"tunnels"`) || !strings.Contains(string(data), "dev-db") {
+		t.Fatalf("config file %s missing tunnels: %s", path, data)
+	}
+}
+
+func TestLoadConfigWithoutTunnelsField(t *testing.T) {
+	path := withTempConfig(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"version":1,"auth_profiles":[],"hosts":[]}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Tunnels == nil || len(config.Tunnels) != 0 {
+		t.Fatalf("tunnels = %#v, want a non-nil empty slice", config.Tunnels)
+	}
+}

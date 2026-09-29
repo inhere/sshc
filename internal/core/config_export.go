@@ -55,13 +55,15 @@ const (
 )
 
 type ImportResult struct {
-	BackupPath    string
-	HostsAdded    int
-	HostsUpdated  int
-	GroupsAdded   int
-	GroupsUpdated int
-	AuthAdded     int
-	AuthUpdated   int
+	BackupPath     string
+	HostsAdded     int
+	HostsUpdated   int
+	GroupsAdded    int
+	GroupsUpdated  int
+	AuthAdded      int
+	AuthUpdated    int
+	TunnelsAdded   int
+	TunnelsUpdated int
 }
 
 func GenerateExportKey() (string, error) {
@@ -164,9 +166,10 @@ func MergeImportedConfig(current, imported Config, strategy ImportStrategy) (Con
 		return mergeImportedConfig(current, imported, true)
 	case ImportReplace:
 		result := ImportResult{
-			HostsAdded:  len(imported.Hosts),
-			GroupsAdded: len(imported.Groups),
-			AuthAdded:   len(imported.AuthProfiles),
+			HostsAdded:   len(imported.Hosts),
+			GroupsAdded:  len(imported.Groups),
+			AuthAdded:    len(imported.AuthProfiles),
+			TunnelsAdded: len(imported.Tunnels),
 		}
 		normalizeConfig(&imported)
 		return imported, result, nil
@@ -271,6 +274,20 @@ func mergeImportedConfig(current, imported Config, overwrite bool) (Config, Impo
 		merged.Hosts = append(merged.Hosts, host)
 		result.HostsAdded++
 	}
+
+	for _, tunnel := range imported.Tunnels {
+		idx := findTunnelProfileIndex(merged.Tunnels, tunnel.Name)
+		if idx >= 0 {
+			if !overwrite {
+				return Config{}, ImportResult{}, fmt.Errorf("tunnel %q already exists", tunnel.Name)
+			}
+			merged.Tunnels[idx] = tunnel
+			result.TunnelsUpdated++
+			continue
+		}
+		merged.Tunnels = append(merged.Tunnels, tunnel)
+		result.TunnelsAdded++
+	}
 	normalizeConfig(&merged)
 	return merged, result, nil
 }
@@ -355,6 +372,16 @@ func overwriteDefaults(current, imported Defaults) Defaults {
 		current.KnownHostsPath = strings.TrimSpace(imported.KnownHostsPath)
 	}
 	return current
+}
+
+func findTunnelProfileIndex(profiles []TunnelProfile, name string) int {
+	name = strings.TrimSpace(name)
+	for i, profile := range profiles {
+		if strings.TrimSpace(profile.Name) == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func findAuthProfileIndex(profiles []AuthProfile, name string) int {
