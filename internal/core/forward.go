@@ -227,6 +227,12 @@ func (s *forwardSession) Close() error {
 
 func (s *forwardSession) acceptLoop(listener net.Listener, rule ForwardRule) {
 	defer s.wg.Done()
+	// local is the resolved listener address: with a :0 rule the configured port is a
+	// placeholder, so logs and diagnostics must use the real one.
+	local := rule.LocalAddr
+	if addr := listener.Addr(); addr != nil {
+		local = addr.String()
+	}
 	backoff := forwardAcceptBackoffMin
 	for {
 		conn, err := listener.Accept()
@@ -236,27 +242,27 @@ func (s *forwardSession) acceptLoop(listener net.Listener, rule ForwardRule) {
 			}
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Temporary() {
-				s.logf("accept %s failed temporarily: %v (retry in %s)", rule.LocalAddr, err, backoff)
+				s.logf("accept %s failed temporarily: %v (retry in %s)", local, err, backoff)
 				time.Sleep(backoff)
 				if backoff *= 2; backoff > forwardAcceptBackoffMax {
 					backoff = forwardAcceptBackoffMax
 				}
 				continue
 			}
-			s.stop(fmt.Errorf("accept %s: %w", rule.LocalAddr, err), false)
+			s.stop(fmt.Errorf("accept %s: %w", local, err), false)
 			return
 		}
 		backoff = forwardAcceptBackoffMin
 		s.wg.Add(1)
-		go s.handleConn(conn, rule)
+		go s.handleConn(conn, rule, local)
 	}
 }
 
-func (s *forwardSession) handleConn(local net.Conn, rule ForwardRule) {
+func (s *forwardSession) handleConn(local net.Conn, rule ForwardRule, localAddr string) {
 	defer s.wg.Done()
 	remote, err := s.dialer.Dial("tcp", rule.RemoteAddr)
 	if err != nil {
-		s.logf("forward %s -> %s failed: %v", rule.LocalAddr, rule.RemoteAddr, err)
+		s.logf("forward %s -> %s failed: %v", localAddr, rule.RemoteAddr, err)
 		_ = local.Close()
 		return
 	}
@@ -269,7 +275,7 @@ func (s *forwardSession) handleConn(local net.Conn, rule ForwardRule) {
 	}
 
 	started := time.Now()
-	s.logf("forward connected %s -> %s", rule.LocalAddr, rule.RemoteAddr)
+	s.logf("forward connected %s -> %s", localAddr, rule.RemoteAddr)
 	var wg sync.WaitGroup
 	var sent, received int64
 	wg.Add(2)
@@ -285,7 +291,7 @@ func (s *forwardSession) handleConn(local net.Conn, rule ForwardRule) {
 	_ = local.Close()
 	_ = remote.Close()
 	s.logf("forward closed %s -> %s in %s (sent %d bytes, received %d bytes)",
-		rule.LocalAddr, rule.RemoteAddr, time.Since(started).Round(time.Millisecond), sent, received)
+		localAddr, rule.RemoteAddr, time.Since(started).Round(time.Millisecond), sent, received)
 }
 
 // copyAndCloseWrite copies src into dst and half-closes dst when it supports it.

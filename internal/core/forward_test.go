@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"runtime"
@@ -115,10 +116,18 @@ func TestStartLocalForwardForwardsAndHalfCloses(t *testing.T) {
 	dialer.dialFn = func(_, _ string) (net.Conn, error) { return net.Dial("tcp", echoAddr) }
 	defer setForwardDialerForTest(dialer)()
 
+	var logMu sync.Mutex
+	var logLines []string
+	logf := func(format string, args ...any) {
+		logMu.Lock()
+		logLines = append(logLines, fmt.Sprintf(format, args...))
+		logMu.Unlock()
+	}
+
 	session, err := StartLocalForward(forwardTestHost(), []ForwardRule{{
 		LocalAddr:  "127.0.0.1:0",
 		RemoteAddr: "127.0.0.1:6379",
-	}}, ForwardOptions{})
+	}}, ForwardOptions{Logf: logf})
 	if err != nil {
 		t.Fatalf("StartLocalForward: %v", err)
 	}
@@ -158,6 +167,17 @@ func TestStartLocalForwardForwardsAndHalfCloses(t *testing.T) {
 	if got := dialer.dialed(); len(got) != 1 || got[0] != "127.0.0.1:6379" {
 		t.Fatalf("dialed = %v, want the configured remote endpoint", got)
 	}
+
+	logMu.Lock()
+	joinedLogs := strings.Join(logLines, "\n")
+	logMu.Unlock()
+	if want := "forward connected " + endpoints[0] + " -> 127.0.0.1:6379"; !strings.Contains(joinedLogs, want) {
+		t.Fatalf("logs = %q, want it to contain %q", joinedLogs, want)
+	}
+	if strings.Contains(joinedLogs, "127.0.0.1:0") {
+		t.Fatalf("logs = %q, must not log the unresolved :0 placeholder", joinedLogs)
+	}
+
 	if err := session.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
