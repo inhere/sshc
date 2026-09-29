@@ -1,6 +1,11 @@
 package command
 
-import "github.com/inhere/sshc/internal/core"
+import (
+	"context"
+	"os"
+
+	"github.com/inhere/sshc/internal/core"
+)
 
 func setRunRemoteForTest(fn func(core.Host, string, core.RunOptions) ([]byte, error)) func() {
 	old := runRemote
@@ -42,4 +47,16 @@ func setLoginRemoteForTest(fn func(core.Host, core.LoginOptions) error) func() {
 	old := loginRemote
 	loginRemote = fn
 	return func() { loginRemote = old }
+}
+
+func setStartLocalForwardForTest(fn func(core.Host, []core.ForwardRule, core.ForwardOptions) (core.ForwardSession, error)) func() {
+	old := startLocalForward
+	startLocalForward = fn
+	return func() { startLocalForward = old }
+}
+
+func setNotifyContextForTest(fn func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)) func() {
+	old := notifyContext
+	notifyContext = fn
+	return func() { notifyContext = old }
 }

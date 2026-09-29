@@ -698,7 +698,7 @@ func newTestApp() *testApp {
 		}
 		return false
 	})
-	app.Add(NewAddCmd(), NewAuthCmd(), NewCfgCmd(), NewHostCmd(), NewGroupCmd(), NewCheckCmd(), NewRunCmd(), NewBatchRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd(), NewServeCmd())
+	app.Add(NewAddCmd(), NewAuthCmd(), NewCfgCmd(), NewHostCmd(), NewGroupCmd(), NewTunnelCmd(), NewCheckCmd(), NewRunCmd(), NewBatchRunCmd(), NewUploadCmd(), NewDownloadCmd(), NewListCmd(), NewLogCmd(), NewLoginCmd(), NewServeCmd())
 	return ta
 }
 
