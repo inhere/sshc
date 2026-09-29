@@ -60,7 +60,7 @@
   - [x] 空闲会话 keepalive（30s/10s）与连接断开检测，Ctrl-C 有序关闭 listener/连接/会话
   - [x] `tunnels` 参与 `cfg export/import`；`cfg doctor` 对过期 tunnel 只报 warn；`auth rm`/`host rm` 维护引用一致性
   - [ ] 后续：后台 daemon 与 `forward list/stop`、`ssh -R`/SOCKS、command_proxy 转发、转发审计日志
-  - [ ] 已知小缺口（实测确认，跟踪 my-tools-7z5）：`cfg import` 摘要只报 hosts/groups/auth，不报 tunnels_added/updated；实测数据本身已随导出包一起导入（导入后 `tunnel list --json` 可见），仅摘要少报——即评审 P7 延期项
+  - [x] `cfg import` 摘要补齐 `tunnels_added`/`tunnels_updated`（my-tools-7z5，提交 `4c855cd`）：空配置导入实测 `tunnels_added=2 tunnels_updated=0`，`--overwrite` 实测 `tunnels_added=0 tunnels_updated=2`，导入后 `tunnel list` 两条 tunnel 均在册
   - [ ] A9 真机验证（用户执行，跟踪 my-tools-bwp）：已在 cd-testing 实测通过——隧道/协议可达（Redis PING→-NOAUTH、MySQL 握手 5.7.28、Postgres SSLRequest→N）、单会话多规则、连接复用、杀会话后 exit 2 且端口释放、独立控制台里 Ctrl-C → **exit 0 且端口释放**；仅剩用真实凭据做一次业务读写（Redis/MySQL 均需认证）
 - [ ] sshc serve v2 还需要思考完善逻辑
   - [ ] 允许通过浏览器 xterm 访问已配置的 hosts，避免直接给出 host 密码

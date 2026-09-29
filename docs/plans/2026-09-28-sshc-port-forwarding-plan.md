@@ -3,7 +3,7 @@
 
 > 状态：Draft 0.6 / 已批准（2026-09-29 用户批准并授权实施）；T1-T7 已完成，提交 `5c0c238`..`9f8b4f1`
 >
-> 批准与实施记录：用户于 2026-09-29 批准本计划（“批准 plan 0.6，开始实施计划”）；实施按 T1-T7 完成并逐任务本地提交（`5c0c238`..`9f8b4f1`），验收证据见 `docs/TODO.md` 与 beads `my-tools-o7e`（已关闭）；残余项 `my-tools-bwp`（需用户凭据的业务读写）与 `my-tools-7z5`（cfg import 摘要不含 tunnel 计数）。
+> 批准与实施记录：用户于 2026-09-29 批准本计划（“批准 plan 0.6，开始实施计划”）；实施按 T1-T7 完成并逐任务本地提交（`5c0c238`..`9f8b4f1`），验收证据见 `docs/TODO.md` 与 beads `my-tools-o7e`（已关闭）；残余项 `my-tools-bwp`（需用户凭据的业务读写）与 `my-tools-7z5`（cfg import 摘要不含 tunnel 计数，已于提交 `4c855cd` 补齐并实测通过）。
 >
 > thinking_mode=RIGOROUS；core_objective=按 design Draft 0.6 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
 
