@@ -212,7 +212,9 @@ func TestTunnelForwardJSONReadyOutput(t *testing.T) {
 	}))
 
 	var out bytes.Buffer
+	var status bytes.Buffer
 	t.Cleanup(setCommandOutputForTest(&out))
+	t.Cleanup(setStatusOutputForTest(&status))
 
 	if err := app.RunWithArgs([]string{
 		"tunnel", "forward",
@@ -221,6 +223,9 @@ func TestTunnelForwardJSONReadyOutput(t *testing.T) {
 		"--json",
 	}); err != nil {
 		t.Fatalf("tunnel forward --json: %v", err)
+	}
+	if status.String() != "" {
+		t.Fatalf("status = %q, want it empty in --json mode", status.String())
 	}
 
 	if gotHost.Name != "devhost" || gotHost.IP != "10.0.0.8" {
@@ -272,7 +277,9 @@ func TestTunnelForwardWithoutJSONKeepsStdoutClean(t *testing.T) {
 	}))
 
 	var out bytes.Buffer
+	var status bytes.Buffer
 	t.Cleanup(setCommandOutputForTest(&out))
+	t.Cleanup(setStatusOutputForTest(&status))
 	if err := app.RunWithArgs([]string{"tunnel", "forward", "dev-db"}); err == nil {
 		t.Fatal("expected tunnel not found for an unsaved name")
 	}
@@ -286,6 +293,9 @@ func TestTunnelForwardWithoutJSONKeepsStdoutClean(t *testing.T) {
 	}
 	if out.String() != "" {
 		t.Fatalf("stdout = %q, want it empty without --json", out.String())
+	}
+	if !strings.Contains(status.String(), "tunnel ready 127.0.0.1:54322 -> 127.0.0.1:5432") {
+		t.Fatalf("status = %q, want the ready line on the status stream", status.String())
 	}
 	if calls := atomic.LoadInt32(&session.closeCalls); calls != 1 {
 		t.Fatalf("session close calls = %d, want 1", calls)

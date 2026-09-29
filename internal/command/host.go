@@ -629,6 +629,9 @@ func newHostRemoveCmd() *gcli.Command {
 			if idx < 0 {
 				return fmt.Errorf("host %q not found", target)
 			}
+			if used := core.TunnelsUsingHost(config.Tunnels, host.Name); len(used) > 0 {
+				fmt.Fprintf(cmdStatus(c), "warning: tunnel(s) %s reference host %s; forwarding fails until the tunnel is updated\n", strings.Join(used, ", "), core.HostLogName(host))
+			}
 			if !yes {
 				if ok, err := confirmInteractive(fmt.Sprintf("remove host %s?", core.HostLogName(host))); err != nil {
 					return err

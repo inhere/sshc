@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"io"
 	"os"
 
 	"github.com/inhere/sshc/internal/core"
@@ -41,6 +42,12 @@ func setReadInteractivePasswordForTest(fn func(...string) string) func() {
 	old := readInteractivePassword
 	readInteractivePassword = fn
 	return func() { readInteractivePassword = old }
+}
+
+func setStatusOutputForTest(out io.Writer) func() {
+	old := statusOutput
+	statusOutput = out
+	return func() { statusOutput = old }
 }
 
 func setLoginRemoteForTest(fn func(core.Host, core.LoginOptions) error) func() {

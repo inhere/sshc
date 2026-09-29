@@ -525,6 +525,44 @@ func TestHostShowMasksSecrets(t *testing.T) {
 	}
 }
 
+func TestHostRemoveWarnsTunnelReference(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}},
+		Tunnels: []core.TunnelProfile{{
+			Name:     "dev-db",
+			Target:   "devhost",
+			Forwards: []core.TunnelForward{{Local: "127.0.0.1:15432", Remote: "127.0.0.1:5432"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var status bytes.Buffer
+	t.Cleanup(setStatusOutputForTest(&status))
+	app := newTestApp()
+	if err := app.RunWithArgs([]string{"host", "rm", "devhost", "--yes"}); err != nil {
+		t.Fatalf("host rm: %v", err)
+	}
+	if !strings.Contains(status.String(), "tunnel(s) dev-db reference host devhost") {
+		t.Fatalf("warning = %q, want a tunnel reference hint", status.String())
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Hosts) != 0 {
+		t.Fatalf("hosts = %+v, want the host removed", config.Hosts)
+	}
+
+	// The saved tunnel must now fail loudly instead of drifting to another target.
+	freshApp := newTestApp()
+	err = freshApp.RunWithArgs([]string{"tunnel", "forward", "dev-db"})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want a target not found error", err)
+	}
+}
+
 func TestHostRemoveRequiresYesInNonInteractiveTest(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", KeyPath: "~/.ssh/id_rsa", Port: 22}}}); err != nil {

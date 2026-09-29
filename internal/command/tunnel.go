@@ -412,7 +412,7 @@ func tunnelLogger(opts *tunnelFlags) func(string, ...any) {
 		return nil
 	}
 	return func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, "tunnel: "+format+"\n", args...)
+		fmt.Fprintf(statusOutput, "tunnel: "+format+"\n", args...)
 	}
 }
 
@@ -447,7 +447,7 @@ func writeTunnelReady(c *gcli.Command, opts *tunnelFlags, profile core.TunnelPro
 		return nil
 	}
 	for i := range endpoints {
-		fmt.Fprintf(os.Stderr, "tunnel ready %s -> %s\n", endpoints[i], rules[i].RemoteAddr)
+		fmt.Fprintf(cmdStatus(c), "tunnel ready %s -> %s\n", endpoints[i], rules[i].RemoteAddr)
 	}
 	return nil
 }

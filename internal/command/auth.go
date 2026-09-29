@@ -191,6 +191,9 @@ func newAuthRemoveCmd() *gcli.Command {
 			if used := hostsUsingAuth(config.Hosts, name); len(used) > 0 {
 				return fmt.Errorf("auth profile %q is used by host(s): %s", name, strings.Join(used, ", "))
 			}
+			if used := core.TunnelsUsingAuth(config.Tunnels, name); len(used) > 0 {
+				return fmt.Errorf("auth profile %q is used by tunnel(s): %s", name, strings.Join(used, ", "))
+			}
 			if !yes {
 				if ok, err := confirmInteractive(fmt.Sprintf("remove auth profile %s?", name)); err != nil {
 					return err

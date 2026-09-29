@@ -210,6 +210,34 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	}
 }
 
+func TestAuthRemoveRefusedWhenUsedByTunnel(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Tunnels: []core.TunnelProfile{{
+			Name:     "prod-redis",
+			Address:  "192.168.1.20",
+			AuthRef:  "dev-root",
+			Forwards: []core.TunnelForward{{Local: "127.0.0.1:16379", Remote: "127.0.0.1:6379"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := newTestApp()
+	err := app.RunWithArgs([]string{"auth", "rm", "dev-root", "--yes"})
+	if err == nil || !strings.Contains(err.Error(), "used by tunnel(s): prod-redis") {
+		t.Fatalf("err = %v, want a tunnel reference error", err)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.AuthProfiles) != 1 {
+		t.Fatalf("auth profiles = %+v, want the profile kept", config.AuthProfiles)
+	}
+}
+
 func TestAuthRemoveRefusedWhenUsedByHost(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{

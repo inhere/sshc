@@ -18,11 +18,22 @@ const keyPassphraseEnvKey = "SSHC_KEY_PASSPHRASE"
 
 var commandOutput io.Writer = os.Stdout
 
+// statusOutput carries diagnostics that must stay out of stdout (ready lines,
+// warnings, verbose tunnel logs).
+var statusOutput io.Writer = os.Stderr
+
 func cmdOutput(_ *gcli.Command) io.Writer {
 	if commandOutput == nil {
 		return os.Stdout
 	}
 	return commandOutput
+}
+
+func cmdStatus(_ *gcli.Command) io.Writer {
+	if statusOutput == nil {
+		return os.Stderr
+	}
+	return statusOutput
 }
 
 func setCommandOutputForTest(out io.Writer) func() {
