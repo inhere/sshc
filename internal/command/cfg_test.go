@@ -334,6 +334,55 @@ func TestCfgImportMergeAddsEntries(t *testing.T) {
 	}
 }
 
+func TestCfgImportSummaryReportsTunnels(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{
+		AuthProfiles: []core.AuthProfile{{Name: "dev-root", User: "root", KeyPath: "~/.ssh/id_rsa"}},
+		Hosts:        []core.Host{{Name: "devhost", IP: "10.0.0.8", User: "root", AuthRef: "dev-root"}},
+		Tunnels: []core.TunnelProfile{{
+			Name:     "dev-db",
+			Target:   "devhost",
+			Forwards: []core.TunnelForward{{Local: "127.0.0.1:15432", Remote: "127.0.0.1:5432"}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	importedTunnel := func(name, local string) core.TunnelProfile {
+		return core.TunnelProfile{
+			Name:     name,
+			Target:   "devhost",
+			Forwards: []core.TunnelForward{{Local: local, Remote: "127.0.0.1:5432"}},
+		}
+	}
+	file, key := writeConfigExportForTest(t, core.Config{
+		Tunnels: []core.TunnelProfile{importedTunnel("dev-db", "127.0.0.1:15433"), importedTunnel("prod", "127.0.0.1:15434")},
+	})
+	app := newTestApp()
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	// merge must reject the conflicting tunnel name first
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key}); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("merge err = %v, want a tunnel conflict", err)
+	}
+
+	out.Reset()
+	if err := app.RunWithArgs([]string{"cfg", "import", "-f", file, "--key", key, "--overwrite"}); err != nil {
+		t.Fatalf("cfg import --overwrite: %v", err)
+	}
+	summary := out.String()
+	if !strings.Contains(summary, "tunnels_added=1") || !strings.Contains(summary, "tunnels_updated=1") {
+		t.Fatalf("summary = %q, want tunnels_added=1 tunnels_updated=1", summary)
+	}
+	config, err := core.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Tunnels) != 2 {
+		t.Fatalf("tunnels = %+v", config.Tunnels)
+	}
+}
+
 func TestCfgImportMergeRejectsConflicts(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{
