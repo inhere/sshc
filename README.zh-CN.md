@@ -39,6 +39,9 @@ known_hosts 信任辅助，以及可选的本地 Web 管理台。
   - 支持单文件传输 SHA256 校验
 - 在 `~/.config/sshc/logs/` 下按主机保存 JSONL 执行日志
 - 通过 `login/connect` 打开交互式远端 PTY
+- 通过 `tunnel/tun` 把远端 DB/Redis 端口转发到本地 loopback
+  - 支持命名保存的 tunnel profile、host 或未登记地址目标、一次会话多条规则
+  - 空闲会话自动 keepalive，连接断开时立即失败退出
 - 通过 `serve` 启动本地 Web 管理台，管理 host/auth/config/log 并打开浏览器终端
 
 ## 安装
@@ -522,6 +525,40 @@ sshc login lxc-app
 没有时回退到 `xterm-256color`。
 不传目标，或者目标匹配到多个主机时，`sshc` 会打开交互式主机选择器。
 
+### 本地端口转发
+
+```bash
+# 把本机 15432 转发到 devhost 视角的 127.0.0.1:5432
+sshc tunnel add dev-db --target devhost --forward 15432=127.0.0.1:5432
+
+# 一个 SSH 会话承载多个服务
+sshc tunnel add dev-stack --target devhost --forward 15432=5432 --forward 16379=6379
+
+# 未登记地址目标：--address 必须配合 --auth
+sshc tunnel add prod-redis --address 192.168.1.20 --auth dev-root --port 2222 --forward 16379=6379
+
+sshc tunnel list
+sshc tunnel show dev-db
+sshc tunnel forward dev-db
+sshc tun forward --target devhost --forward 15433=127.0.0.1:5432
+sshc tunnel forward dev-db --json
+sshc tunnel rm dev-db --yes
+```
+
+`tunnel forward` 在前台运行：建立本地 listener 后把 `tunnel ready <本地> -> <远端>`
+打印到 stderr（使用 `--json` 时改为向 stdout 输出一行 JSON），并保持附着在当前 SSH
+会话上。Ctrl-C 会依次关闭 listener、活动连接和 SSH 会话。
+
+规则格式为 `local=remote`。只写端口等价于 `127.0.0.1:port`；本地端口写 `0` 由系统
+分配空闲端口；本地侧只允许 loopback 地址（非 loopback 监听尚未实现）。远端地址是
+从 SSH 目标主机视角解析的。
+
+保存的配置位于 `sshc.config.json` 的 `tunnels` 数组。`--target` 模式保存的是规范化
+host 名，因此删除或重命名该 host 后，`tunnel forward` 会以 `host not found` 直接
+报错，而不会静默改用其它目标；`--address` 模式保存原始地址并强制要求 auth profile。
+空闲会话通过 `keepalive@openssh.com` 保活（间隔 30s、等待 10s），传输断开时关闭
+全部资源并以非零退出。`--verbose` 输出每条连接的日志，`--quiet` 抑制诊断信息。
+
 ### Web 管理台
 
 ```bash
@@ -631,11 +668,36 @@ sshc run "testing gpu" -- uptime
       "login_command": "pct enter 101",
       "group": "lxc"
     }
+  ],
+  "tunnels": [
+    {
+      "name": "dev-db",
+      "target": "devhost",
+      "auth_ref": "dev-root",
+      "forwards": [
+        {"local": "127.0.0.1:15432", "remote": "127.0.0.1:5432"}
+      ]
+    },
+    {
+      "name": "prod-redis",
+      "address": "192.168.1.20",
+      "port": 2222,
+      "auth_ref": "dev-root",
+      "forwards": [
+        {"local": "127.0.0.1:16379", "remote": "127.0.0.1:6379"}
+      ]
+    }
   ]
 }
 ```
 
 `logs_path` 可以是绝对路径、`~` 开头的路径，或相对于 `~/.config/sshc` 的路径。
+
+`tunnels` 保存 `tunnel` 命令创建的转发配置。每条记录使用 `target`（已保存 host 名）
+或 `address`（未登记地址，必须同时有 `auth_ref`），可选字段为 `port`/`jump`，并且至少
+要有一条 `forwards` 规则；规则以规范化的 `host:port` 形式保存。这些配置不含任何凭证，
+因此会随 `cfg export/import` 一起迁移；过期的 tunnel 只会让 `cfg doctor` 报 warn，不会
+阻塞其它配置写入。
 
 默认远程执行日志目录：
 

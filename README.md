@@ -43,6 +43,9 @@ orchestration platform. It focuses on the operational gap between ad hoc
   - Verify single-file transfers with SHA256
 - Keep per-host JSONL run logs under `~/.config/sshc/logs/`
 - Open an interactive remote PTY with `login/connect`
+- Forward remote DB/Redis ports to local loopback with `tunnel/tun`
+  - Save named tunnel profiles, host or unregistered-address targets, multiple rules per session
+  - Keep the SSH session alive with keepalives and fail loudly when it drops
 - Start a local Web console with `serve` for host/auth/config/log management and browser terminals
 
 ## Installation
@@ -566,6 +569,44 @@ to the local `TERM` value and falls back to `xterm-256color`.
 When no target is provided, or when a target matches multiple hosts, `sshc`
 opens an interactive host selector.
 
+### Local Port Forwarding
+
+```bash
+# forward local 15432 to 127.0.0.1:5432 as seen from devhost
+sshc tunnel add dev-db --target devhost --forward 15432=127.0.0.1:5432
+
+# one SSH session, several services
+sshc tunnel add dev-stack --target devhost --forward 15432=5432 --forward 16379=6379
+
+# unregistered address target: --address requires --auth
+sshc tunnel add prod-redis --address 192.168.1.20 --auth dev-root --port 2222 --forward 16379=6379
+
+sshc tunnel list
+sshc tunnel show dev-db
+sshc tunnel forward dev-db
+sshc tun forward --target devhost --forward 15433=127.0.0.1:5432
+sshc tunnel forward dev-db --json
+sshc tunnel rm dev-db --yes
+```
+
+`tunnel forward` runs in the foreground: it opens the local listeners, prints
+`tunnel ready <local> -> <remote>` on stderr (or one JSON line on stdout with
+`--json`), and stays attached to the SSH session. Ctrl-C closes the listeners,
+the active connections, and the SSH session.
+
+Rules use `local=remote`. A bare port means `127.0.0.1:port`, local port `0` lets
+the OS pick a free port, and only loopback local endpoints are allowed (the
+non-loopback variant is deliberately not implemented yet). Remote endpoints are
+resolved from the SSH target's point of view.
+
+Saved profiles live in the `tunnels` array of `sshc.config.json`. A `--target`
+profile stores a canonical host name, so removing or renaming that host makes
+`tunnel forward` fail with `host not found` instead of silently using another
+target. `--address` profiles store the raw address and require an auth profile.
+Idle sessions are kept alive with `keepalive@openssh.com` (30s interval, 10s
+wait); when the transport drops, the command closes everything and exits
+non-zero. `--verbose` logs each connection, `--quiet` suppresses diagnostics.
+
 ### Web Console
 
 ```bash
@@ -680,12 +721,39 @@ Example config:
       "login_command": "pct enter 101",
       "group": "lxc"
     }
+  ],
+  "tunnels": [
+    {
+      "name": "dev-db",
+      "target": "devhost",
+      "auth_ref": "dev-root",
+      "forwards": [
+        {"local": "127.0.0.1:15432", "remote": "127.0.0.1:5432"}
+      ]
+    },
+    {
+      "name": "prod-redis",
+      "address": "192.168.1.20",
+      "port": 2222,
+      "auth_ref": "dev-root",
+      "forwards": [
+        {"local": "127.0.0.1:16379", "remote": "127.0.0.1:6379"}
+      ]
+    }
   ]
 }
 ```
 
 `logs_path` can be absolute, start with `~`, or be relative to
 `~/.config/sshc`.
+
+`tunnels` holds the saved `tunnel` profiles. Each entry uses either `target`
+(a saved host name) or `address` (an unregistered address, which requires
+`auth_ref`), plus optional `port`/`jump`, and at least one `forwards` rule.
+Forward rules are stored in canonical `host:port` form. These entries carry no
+secrets, so they are exported and imported with `cfg export/import` like hosts,
+and `cfg doctor` reports stale tunnels as warnings instead of blocking other
+edits.
 
 Default remote run log directory:
 

@@ -52,6 +52,14 @@
   - [x] 查看并管理 config, host, auth 等
   - [x] 通过 xterm.js 连接访问目标主机
   - [ ] 后续增强 command_proxy host 的 Web Terminal 支持
+- [x] 本地端口转发 `tunnel/tun`（docs/design/2026-09-27-sshc-port-forwarding-design.md）
+  - [x] `tunnel add/list/show/rm/forward`，别名 `tun`，默认前台运行
+  - [x] 双目标模式：`--target`（已保存 host，保存时固化为规范 host 名）与 `--address`（未登记地址 + `--auth`）
+  - [x] profile 可保存可选 `port`/`jump`；一个 SSH 会话承载多条 `local=remote` 规则
+  - [x] 本地端口 `0` 由系统分配并在就绪行/`--json` 输出实际端口；只监听 loopback
+  - [x] 空闲会话 keepalive（30s/10s）与连接断开检测，Ctrl-C 有序关闭 listener/连接/会话
+  - [x] `tunnels` 参与 `cfg export/import`；`cfg doctor` 对过期 tunnel 只报 warn；`auth rm`/`host rm` 维护引用一致性
+  - [ ] 后续：后台 daemon 与 `forward list/stop`、`ssh -R`/SOCKS、command_proxy 转发、转发审计日志
 - [ ] sshc serve v2 还需要思考完善逻辑
   - [ ] 允许通过浏览器 xterm 访问已配置的 hosts，避免直接给出 host 密码
   - [ ] 分享单个 /xterm/{uni-hashid} 主机 xterm.js 访问，免密/token + 时效 + 审计
