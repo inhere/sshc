@@ -327,6 +327,43 @@ func TestForwardSessionCloseReleasesLocalPort(t *testing.T) {
 	_ = rebound.Close()
 }
 
+func TestStartLocalForwardAllowsMultipleEphemeralLocalPorts(t *testing.T) {
+	baseline := runtime.NumGoroutine()
+	echoAddr := startEchoServer(t)
+	dialer := newFakeForwardDialer()
+	dialer.dialFn = func(_, _ string) (net.Conn, error) { return net.Dial("tcp", echoAddr) }
+	defer setForwardDialerForTest(dialer)()
+
+	session, err := StartLocalForward(forwardTestHost(), []ForwardRule{
+		{LocalAddr: "127.0.0.1:0", RemoteAddr: "127.0.0.1:6379"},
+		{LocalAddr: "127.0.0.1:0", RemoteAddr: "127.0.0.1:6033"},
+		{LocalAddr: "127.0.0.1:0", RemoteAddr: "127.0.0.1:5432"},
+	}, ForwardOptions{})
+	if err != nil {
+		t.Fatalf("StartLocalForward with three :0 rules: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	endpoints := session.Endpoints()
+	if len(endpoints) != 3 {
+		t.Fatalf("endpoints = %v, want three resolved addresses", endpoints)
+	}
+	unique := map[string]bool{}
+	for _, endpoint := range endpoints {
+		if strings.HasSuffix(endpoint, ":0") {
+			t.Fatalf("endpoint %q was not resolved to a real port", endpoint)
+		}
+		if unique[endpoint] {
+			t.Fatalf("duplicate resolved endpoint %q", endpoint)
+		}
+		unique[endpoint] = true
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	assertGoroutinesSettle(t, baseline)
+}
+
 // TestForwardDialerAdapterDelegatesToRemoteClient pins the seam contract: the
 // real forwardDialer must delegate to *remoteClient instead of duplicating SSH
 // connection logic. SendKeepalive/Wait need a live ssh.Conn and are covered by

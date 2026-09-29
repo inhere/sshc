@@ -179,10 +179,14 @@ func prepareForwardRules(rules []ForwardRule) ([]ForwardRule, error) {
 		if err != nil {
 			return nil, err
 		}
-		if seen[local] {
-			return nil, fmt.Errorf("duplicate local endpoint %q", local)
+		// A local port of 0 lets the OS pick a free port, so several :0 rules are
+		// independent listeners and must not be treated as duplicates.
+		if _, portText, splitErr := net.SplitHostPort(local); splitErr == nil && portText != "0" {
+			if seen[local] {
+				return nil, fmt.Errorf("duplicate local endpoint %q", local)
+			}
+			seen[local] = true
 		}
-		seen[local] = true
 		prepared = append(prepared, ForwardRule{LocalAddr: local, RemoteAddr: remote})
 	}
 	return prepared, nil
