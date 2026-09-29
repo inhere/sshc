@@ -1,7 +1,9 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # sshc 本地端口转发 实施计划
 
-> 状态：Draft 0.6 / 待人工计划批准
+> 状态：Draft 0.6 / 已批准（2026-09-29 用户批准并授权实施）；T1-T7 已完成，提交 `5c0c238`..`9f8b4f1`
+>
+> 批准与实施记录：用户于 2026-09-29 批准本计划（“批准 plan 0.6，开始实施计划”）；实施按 T1-T7 完成并逐任务本地提交（`5c0c238`..`9f8b4f1`），验收证据见 `docs/TODO.md` 与 beads `my-tools-o7e`（已关闭）；残余项 `my-tools-bwp`（需用户凭据的业务读写）与 `my-tools-7z5`（cfg import 摘要不含 tunnel 计数）。
 >
 > thinking_mode=RIGOROUS；core_objective=按 design Draft 0.6 实现 `sshc tunnel/tun` 的本地 TCP 端口转发 v1（host/address 双目标、多规则、前台会话、空闲存活监视、配置与迁移/doctor/引用一致性）；scope_freeze=internal/core、internal/command、internal/bootstrap、README 与 docs/TODO.md 及对应测试；non_goals=远程转发、SOCKS、后台 daemon、Web API、转发审计日志、command_proxy 转发；expansion_policy=DEFER_OR_REQUEST；review budget=一轮计划评审；停止条件=任务文件、动作、验证命令与完成标准可独立执行，且无未决设计歧义时停止。
 
@@ -241,10 +243,10 @@ W5 验收闭环        T7 (A1-A8 证据、A9 交接、完成 Gate)  [依赖 T1-T
 
 ## 人工 Gate
 
-1. 人工计划批准（本文档）：批准后才可进入实施；当前状态为待批准。
-2. 当前执行请求：实施需要单独的当前请求（"开始实施 T1" 之类），计划批准本身不授权 mutation。
+1. 人工计划批准（本文档）：已于 2026-09-29 由用户给出（“批准 plan 0.6，开始实施计划”），本 Gate 已完成。
+2. 当前执行请求：用户在批准同一句里给出了实施授权，T1-T7 已按该授权完成并逐任务本地提交；后续同类变更仍需新的当前请求。
 3. 外部动作 Gate：push、release、deploy、真实主机批量操作、外部消息均未请求；如需执行逐项单独批准。
-4. A9 真实主机验证：由用户执行，不属于 Agent 授权范围；结果回填后计划方可标记完成定义全部达成。
+4. A9 真实主机验证：已在 cd-testing 实测完成（协议可达、单会话多规则、复用、断线 exit 2、独立控制台 Ctrl-C exit 0）；仅剩需真实凭据的业务读写，跟踪 `my-tools-bwp`。
 
 ## 可追溯性
 

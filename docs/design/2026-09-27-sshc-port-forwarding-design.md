@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # sshc 本地端口转发设计
 
-> 状态：Draft 0.6 / 待人工计划批准
+> 状态：Draft 0.6 / 已批准（2026-09-29 用户批准 plan 0.6 并进入实施；本设计由该计划消费）
 >
 > thinking_mode=RIGOROUS；core_objective=让本机客户端通过 sshc 访问远程 SSH 主机可达的 DB、Redis 等 TCP 服务；allowed_scope=CLI、本地端口转发核心、配置解析复用、tunnels 配置集合、cfg export/import 与 doctor 协同、测试和使用文档；non_goals=远程端口转发、SOCKS、Web 控制台、command_proxy 转发、守护进程管理、转发审计日志；expansion_policy=DEFER_OR_REQUEST；review budget=0.2 已消费一轮设计评审，本修订后只做一轮 changed-scope 复评；停止条件=命令契约、连接生命周期（含空闲存活与断开检测）、安全边界和验收证据明确后停止。
 
@@ -399,4 +399,4 @@ A1-A8 是计划必须给出的自动化验收；A9 记为人工验证步骤，�
 
 本设计以 `sshc tunnel/tun` 作为 v1 命令组，支持 `tunnel add/list/show/rm/forward`，将命名 tunnel profile 保存到独立的 `tunnels` 配置集合，并让该集合与 `cfg doctor`、`cfg export/import`、`auth rm`/`host rm` 保持一致的校验和引用语义。`tunnel forward` 复用现有 SSH/auth/jump 连接，经包内 `forwardDialer`（`*remoteClient.Dial`）建立 direct-tcpip channel；本地只写端口时默认绑定 `127.0.0.1`，默认前台运行并拒绝非 loopback 监听；空闲会话通过 keepalive 与连接关闭观察保证失效可见。它覆盖"本地连接远程 DB/Redis"的核心结果，同时把远程转发、SOCKS、后台管理、审计日志和 command_proxy 转发留在后续边界。
 
-当前为 `Draft 0.6`。需要用户确认命令组、持久化字段（`target`/`address`/`port`/`jump`）、export/import 覆盖与覆盖规则后，才能进入实施计划；设计批准本身不授权代码实施、提交、发布或部署。
+当前为 `Draft 0.6`，已获批准（2026-09-29 用户批准 plan 0.6 并进入实施）；命令组、持久化字段（`target`/`address`/`port`/`jump`）、export/import 覆盖与覆盖规则均已按本设计实现（提交 `5c0c238`..`9f8b4f1`）。本条不授权 push、发布或部署。
