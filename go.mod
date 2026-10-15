@@ -7,7 +7,7 @@ require (
 	github.com/gookit/cliui v0.5.1
 	github.com/gookit/gcli/v3 v3.8.3
 	github.com/gookit/goutil v0.8.0
-	github.com/gookit/rux/v2 v2.1.2
+	github.com/gookit/rux/v2 v2.1.3
 	github.com/melbahja/goph v1.5.2
 	github.com/pkg/sftp v1.13.11
 	golang.org/x/crypto v0.54.0
