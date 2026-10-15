@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/gookit/color v1.6.2-0.20260604125953-289d54c4470a // indirect
+	github.com/gookit/color v1.6.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/monoculum/formam v3.5.5+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
