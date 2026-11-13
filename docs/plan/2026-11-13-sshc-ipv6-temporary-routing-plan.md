@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.3.1 -->
 # sshc IPv6 目标与临时 SSH 路由实施计划
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.2 / 待计划复评与人工计划批准
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Suga | 基于已批准 Draft 0.7，拆分 IPv6 解析、路由/身份、命令接线和验收波次 |
+| 0.2 | 2026-11-13 | Suga | 根据独立计划审核补齐 check TCP route、`--port` shared resolver API、zone 提示和 endpoint 反向验收 |
 
 > 仅任务合同、范围、风险、验证、生命周期或其他执行语义变化递增版本；纯 identity/provenance/元数据纠正不升版本。
 
@@ -89,31 +90,31 @@
 ### T01 统一 IPv6/zone/端口目标解析
 
 - 文件: `internal/core/endpoint.go`（新增于现有 core package）；`internal/core/store.go`；`internal/core/batch_run.go`；`internal/core/config_resolve.go`；`internal/command/add.go` 如需要不直接改命令逻辑；`internal/core/resolve_test.go`；`internal/core/batch_run_test.go`；`internal/core/auth_test.go`
-- 动作: 实现单一 target/endpoint parser：接受无内联端口的 `v6%zone` 和带端口的 `[v6%zone]:port`，hostname/IPv4 的明确 `host:port`，拒绝 `v6%zone:port`、空/非法 zone、非法端口和 `--port` 冲突；统一用 `net.JoinHostPort` 生成规范地址。让 `ResolveEffectiveHostWithAuth` 和保存 host 校验调用 parser，临时 `HostOverrides.Port` 只改本次 effective host；保留 `batch_run` 既有语义，若共享 helper 会改变 batch grammar，先拆成 target parser 与 batch policy 两层。
-- 验证: 运行目录 `.`；`go test ./internal/core -run 'Test(Parse|ResolveEffectiveHost|ValidateRaw|Host)'`；新增/调整表驱动用例覆盖 `fe80::1%12`、`[fe80::1%12]:22`、`fe80::1%12:22`、IPv4/hostname、冲突端口、zone 原样保存和未持久化。
+- 动作: 实现单一 target/endpoint parser：接受无内联端口的 `v6%zone` 和带端口的 `[v6%zone]:port`，hostname/IPv4 的明确 `host:port`，拒绝 `v6%zone:port`、空/非法 zone、非法端口和 `--port` 冲突；统一用 `net.JoinHostPort` 生成规范地址。固定 core API 为 `Config.ResolveEffectiveHostWithAuth(target, authRef string, overrides HostOverrides) (EffectiveHost, bool, error)`，命令通过 `HostOverrides{Port: opts.Port}` 传入保存 host、`--auth` 临时目标和内联端口冲突信息；更新 `resolveCommandHostWithAuth` 及所有调用点。临时覆盖只改本次 effective host；保留 `batch_run` 既有语义，若共享 helper 会改变 batch grammar，先拆成 target parser 与 batch policy 两层。
+- 验证: 运行目录 `.`；`go test ./internal/core -run 'Test(Parse|ResolveEffectiveHost|ValidateRaw|Host)'`；新增/调整表驱动用例覆盖 `fe80::1%12`、`[fe80::1%12]:22`、`fe80::1%12:22`、IPv4/hostname、冲突端口、zone 原样保存和未持久化；分别用保存 host、`--auth` 临时目标和内联端口验证 `HostOverrides.Port` 传递及冲突拒绝。
 - 完成标准: 所有三类入口得到相同 `Host.IP/Port`；保存 host 不含端口；非法输入在 resolver 前 fail closed；T01 focused tests 通过。
 - 依赖: 设计 Draft 0.7；无前置代码波次。
 
 ### T02 实现 route、拨号/身份分离和临时转发
 
 - 文件: `internal/core/ssh.go`；`internal/core/ssh_knownhosts.go`；`internal/core/forward.go`；`internal/core/config_resolve.go`；`internal/core/check.go`；`internal/core/ssh_test.go`；`internal/core/auth_test.go`；`internal/core/forward_test.go`；`internal/core/jump_test.go`；`internal/core/tunnel_test.go`
-- 动作: 增加 route/connection options，使 `DialAddress` 与 `IdentityAddress` 独立；直连默认二者相同，via-local 使用 `127.0.0.1:port` 拨号但目标地址参与握手、算法、known_hosts 和 fingerprint；via-jump 只接受已保存且自身无 `Jump` 的 bastion，通过现有 forward session 建立 `127.0.0.1:0` 临时 listener。将 trust/no-prompt 选项同时传给 target 和 bastion；保留变更 key 拒绝。扩展 remote endpoint normalizer 接受规范 `[v6%zone]:port`，不放宽本地 listener 必须 loopback、端口和非法 endpoint 规则。为认证、握手、listener、取消、业务错误定义逆序清理并保留首个错误。
-- 验证: 运行目录 `.`；`go test ./internal/core -run 'Test(SSH|Known|Forward|Jump|Tunnel|Check)'`；新增 seam 断言拨号地址/identity 地址、目标与跳板独立 key callback、nested Jump 拒绝、scoped remote endpoint、未知/变更 key、listener/SSH 资源释放。
+- 动作: 增加 route/connection options，使 `DialAddress` 与 `IdentityAddress` 独立；为 `CheckOptions` 增加 route-aware 预检信息，`checkTCP` 必须拨号 route 的 `DialAddress`，包括 via-local 的既有回环端口和 via-jump 建立后的临时回环 listener，不能因为目标直连不可达而提前失败。直连默认二者相同，via-local 使用 `127.0.0.1:port` 拨号但目标地址参与握手、算法、known_hosts 和 fingerprint；via-jump 只接受已保存且自身无 `Jump` 的 bastion，通过现有 forward session 建立 `127.0.0.1:0` 临时 listener。将 trust/no-prompt 选项同时传给 target 和 bastion；保留变更 key 拒绝。扩展 remote endpoint normalizer 接受规范 `[v6%zone]:port`，并逐项保留/测试普通非法 endpoint、非 loopback 本地 endpoint、端口错误和非规范 `v6%zone:port` 的拒绝。为认证、握手、listener、取消、业务错误定义逆序清理并保留首个错误。
+- 验证: 运行目录 `.`；`go test ./internal/core -run 'Test(SSH|Known|Forward|Jump|Tunnel|Check)'`；新增 seam 断言拨号地址/identity 地址、目标与跳板独立 key callback、nested Jump 拒绝、scoped remote endpoint 正例、非规范 scoped endpoint/普通非法 endpoint/非 loopback 本地 endpoint/非法端口反例、未知/变更 key、资源释放，以及“目标直连 TCP 不可达但 via route 的 DialAddress 可达”预检用例。
 - 完成标准: 所有 route 矩阵在 core 层可观察；回环地址不会进入目标 known_hosts；所有失败路径无 listener/client/channel 泄漏；T02 focused tests 通过。
 - 依赖: T01 parser；不得新增通用 proxy module。
 
 ### T03 接线 check/run/scp 及固定输出/交互契约
 
 - 文件: `internal/command/check.go`；`internal/command/run.go`；`internal/command/upload.go`；`internal/command/util.go`；`internal/core/check.go`；`internal/command/check_test.go`；`internal/command/run_test.go`；`internal/command/upload_dl_test.go`；必要时 `internal/command/command_test.go`
-- 动作: 给 check/run/scp 的 command-local options 增加 `--port`、`--via-local-port`、`--via-jump`、`--trust-new-host`，先做 via/Jump 冲突校验，再调用共享 route resolver；不修改保存 host。check 结果增加固定 `target/address/zone` JSON 字段，表格列固定为 `Name, Target, Addr, Zone, TCP, SSH, Auth, HostKey, Latency, Error`；解析失败保留一行且不把输入作为 printf format。trust 模式 check 强制 `--parallel 1`，并把 no-prompt/trust 传给 jump/target。run 非 script 模式强制 command 首项为 `--`，保留 separator 后以 `--` 开头的命令和 script 例外；scp 复用 route，不把 download 纳入本波次。
-- 验证: 运行目录 `.`；`go test ./internal/command -run 'Test(Check|Run|Upload|Command)'`；新增 JSON/table golden、解析失败行、zone、via 冲突、run separator、script 例外、保存 Jump 冲突和 trust 并发拒绝用例。
+- 动作: 给 check/run/scp 的 command-local options 增加 `--port`、`--via-local-port`、`--via-jump`、`--trust-new-host`；将 `--port` 映射为 `HostOverrides.Port` 传入 T01 固定的 shared resolver API，三命令分别覆盖保存 host、`--auth` 临时目标、内联端口冲突和不修改保存配置。先做 via/Jump 冲突校验，再调用 shared route resolver；不修改保存 host。check 结果增加固定 `target/address/zone` JSON 字段，表格列固定为 `Name, Target, Addr, Zone, TCP, SSH, Auth, HostKey, Latency, Error`；解析失败保留一行且不把输入作为 printf format。trust 模式 check 强制 `--parallel 1`，并把 no-prompt/trust 传给 jump/target。run 非 script 模式强制 command 首项为 `--`，保留 separator 后以 `--` 开头的命令和 script 例外；scp 复用 route，不把 download 纳入本波次。三个命令的帮助和 zone 相关错误必须说明：直连/via-local 的 zone 属于本机接口，via-jump 的 zone 属于跳板机接口。
+- 验证: 运行目录 `.`；`go test ./internal/command -run 'Test(Check|Run|Upload|Command)'`；新增 JSON/table golden、解析失败行、zone、via 冲突、run separator、script 例外、保存 Jump 冲突、trust 并发拒绝、三个命令的 `--port` 传递/内联冲突/不持久化，以及 zone 作用域帮助和错误文本断言。
 - 完成标准: 三个命令都能接受 Draft 0.7 flags 并把 route 传到 core；成功/失败输出字段稳定；既有 command_proxy 和显式 `--jump` 回归通过；T03 focused tests 通过。
 - 依赖: T01、T02；不得在命令 handler 中复制 parser 或 SSH host key 逻辑。
 
 ### T04 真实 CLI 分发、包级回归与真实环境验收
 
 - 文件: `internal/bootstrap/init.go`（仅必要的 gcli command validation wiring）；`internal/bootstrap/run.go`（仅退出码链路需要时）；`cmd/sshc/main.go`（默认不改，仅验证薄入口）；`internal/bootstrap/*_test.go`；`internal/command/*_test.go`；必要时 `docs/README` 使用说明
-- 动作: 对新增命令配置显式启用 gcli v3.8.3 `SetValidateNum(true)`（或等价 API）；通过 `bootstrap.NewApp().Run(args)` 或等价真实 app dispatch 覆盖新 flags、target 位置、run `--`、缺失 separator、separator 后命令以 `--` 开头、script 例外；附加未声明位置参数必须退出码 2 且 handler 不执行。运行 core/command 包级和全量测试。若有用户提供的真实 SSH/IPv6 环境，在不写入 Secret 的前提下验证直连 zone、via-local、via-jump、目标/跳板 host key 与 Ctrl-C 清理；否则记录 `UNVERIFIED_REAL_ENV`。
+- 动作: 对新增命令配置显式启用 gcli v3.8.3 `SetValidateNum(true)`（或等价 API）；通过 `bootstrap.NewApp().Run(args)` 或等价真实 app dispatch 覆盖新 flags、target 位置、run `--`、缺失 separator、separator 后命令以 `--` 开头、script 例外；附加未声明位置参数必须退出码 2 且 handler 不执行。运行 core/command 包级和全量测试。若有用户提供的真实 SSH/IPv6 环境，在不写入 Secret 的前提下验证直连 zone、via-local、via-jump、目标/跳板 host key、check TCP route 和 Ctrl-C 清理；否则记录 `UNVERIFIED_REAL_ENV`。
 - 验证: 运行目录 `.`；`go test ./internal/bootstrap ./internal/command ./internal/core`；随后 `go test ./...`；真实环境命令按用户提供目标单独记录，不把凭据写入命令/仓库。
 - 完成标准: 真实 app dispatch 证明参数边界和退出码；包级/全量测试通过；真实环境验证结果或 `UNVERIFIED_REAL_ENV` 已记录；`cmd/sshc/main.go` 仍无业务逻辑。
 - 依赖: T01–T03；真实环境验证需人工提供目标和认证来源。
@@ -146,5 +147,7 @@
 ## 完成 Gate 与剩余工作
 
 完成前必须满足：T01–T04 完成并各有 focused 证据；`go test ./...` 通过；计划范围内每个 owner 文件已精确提交；真实环境验证已完成或按要求披露 `UNVERIFIED_REAL_ENV`；无未分类 Semantic Amendment/Ownership Conflict；最终 status 与提交路径可核对。
+
+计划 0.2 已闭合独立计划审核提出的 route-aware check TCP、shared resolver `--port` 传递、zone 作用域提示和 endpoint 反向验收；本修订需做 changed-scope 复评后再请求人工计划批准。
 
 计划完成不代表发布、安装或 push。任何后续发布行为需另行获得明确授权。
