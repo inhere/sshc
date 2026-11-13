@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.2.0 -->
 # sshc IPv6 目标与临时 SSH 路由设计
 
-> 状态：Draft 0.5 / 待独立复评与人工计划批准
+> 状态：Draft 0.6 / 待独立复评与人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=让用户以 IPv6 zone 和临时端口安全直接连接 SSH 目标，并可在直连不可达时显式复用已有本地转发或由 sshc 经 SSH host 建立临时转发；allowed_scope=sshc 的 check/run/scp、host add、目标解析、连接与 known_hosts、测试及相关 CLI 帮助；non_goals=通用代理框架、后台转发、修改已保存 host 的临时覆盖结果、静默信任、额外多级跳板；expansion_policy=DEFER_OR_REQUEST；review budget=修正后一次独立双轴复评；停止条件=直接连接优先级、目标解析语法、路由矩阵、主机身份、zone 作用域、资源释放和用户可见验收均明确。暴露度：本机工具档；仅维护者本机构建/私有使用，错误可回退，修改不迁移持久数据、不新增 Secret 处理或出机器动作，不放宽认证拒绝门。
 
@@ -14,6 +14,7 @@
 | 0.3 | 2026-11-13 | Suga | 根据复评修正：把 scoped IPv6 远端 endpoint 校验和跳板 trust 策略传递纳入本轮 owner 范围 |
 | 0.4 | 2026-11-13 | Suga | 根据安全轴复评修正：`--via-jump` 仅接受自身无 `Jump` 的直连 SSH host，拒绝隐式多级跳板 |
 | 0.5 | 2026-11-13 | Suga | 固定 scoped IPv6 endpoint 的规范语法，并定义 check 失败结果的 JSON 与表格字段 |
+| 0.6 | 2026-11-13 | Suga | 补齐 SR2003 CLI 分发契约：声明位置参数、未声明参数退出码与 handler 不执行验收 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -31,9 +32,9 @@
 
 - **默认路径是直接连接**：没有显式 `--via-local-port`/`--via-jump` 时，未设置保存的 `Host.Jump` 就直接连接目标；保存的 `Host.Jump` 仍按既有配置生效。直接 IPv6 可达时不需要任何转发选项。
 - `check/run/scp` 增加 `--port` 临时覆盖；已保存 host、带 `--auth` 的临时地址均适用，端口限 1..65535。位置参数支持 `v6%zone`、`[v6%zone]:port`、IPv4/hostname 的 `host:port`；未加方括号的多冒号值只按 IPv6 地址解析，不推断端口；目标内联端口与 `--port` 同时出现时显式拒绝冲突。
-- `host add --ip fe80::1%12 --port 22` 按原 IP 字段保留 zone；仍拒绝在 `--ip` 写 `[v6%zone]:port`，不增加持久化字段。转发远端 endpoint 同样接受 `v6%zone:port` 的结构化内部表示，并保留 loopback、本地端口及其他 endpoint 拒绝规则。
+- `host add --ip fe80::1%12 --port 22` 按原 IP 字段保留 zone；仍拒绝在 `--ip` 写 `[v6%zone]:port`，不增加持久化字段。转发远端 endpoint 同样接受规范的 `[v6%zone]:port` 结构，并保留 loopback、本地端口及其他 endpoint 拒绝规则。
 - `check` 的结果 schema 固定为：`name`（保存 host 名，无保存名时为原始 target）、`target`（本次选择的原始 target；批量保存 host 使用 host.IP）、`address`（解析成功后的规范 `host:port`，解析失败为空）、`zone`（从 target/host.IP 提取的 zone，无则空）、`group`、`tags`、状态字段和 `error`。表格列固定为 `Name, Target, Addr, Zone, TCP, SSH, Auth, HostKey, Latency, Error`；解析失败仍输出一行，`Target` 保留原始输入，`Addr` 为空，`Zone` 仅在无歧义时输出。
-- CLI grammar 固定为：`run [options] <target> -- <command>`、`scp [options] <target> ...`、`check [options] <target>`；`--port`、`--via-local-port`、`--via-jump`、`--trust-new-host` 绑定到各自命令，不依赖未声明的位置参数。
+- CLI grammar 固定为：`run [options] <target> -- <command>`、`scp [options] <target> ...`、`check [options] <target>`；`--port`、`--via-local-port`、`--via-jump`、`--trust-new-host` 绑定到各自命令，不依赖未声明的位置参数。按 SR2003，新增选项绑定命令自己的 options struct，位置参数先用 `AddArg` 声明；额外未声明位置参数必须由 gcli 以退出码 2 拒绝，且不得执行 handler。`cmd/sshc/main.go` 保持薄入口，仅注入 build info、调用 bootstrap 并以返回码退出；不得把解析/业务逻辑移入入口。
 - `--via-local-port <port>` 使用已有的 `127.0.0.1:<port>`；`--via-jump <saved-host>` 只接受已保存 SSH host，且该 host 自身不得设置 `Jump`，由 sshc 为本次命令建立 `127.0.0.1:0 -> target` 临时转发。两者互斥，且均与显式 `--jump` 互斥；目标保存 `Jump` 也与显式 via 冲突。
 - 路由矩阵固定：无显式 via 且目标无保存 `Jump`=直连；无显式 via 且目标有保存 `Jump`=沿用保存跳板；显式 via 与目标保存 `Jump` 同时存在=拒绝；显式 `--jump` 与保存 `Jump`=覆盖（既有语义），但再与任一 via 同时存在=拒绝。没有 `--no-jump`，避免新增隐式直连语义。
 - `--trust-new-host` 仅允许未知 key 的交互指纹确认；已知 key 变化、非交互、拒绝确认仍失败。`check` 使用该选项时强制 `--parallel 1`；未指定时 check 不交互，且该策略必须同时传递给目标连接和 `--via-jump` 的跳板连接。run/scp 未指定时保留既有 known_hosts 行为，指定时显式启用同一确认回调。
@@ -45,7 +46,7 @@
 - `internal/core/config_resolve.go:77-113` 是临时目标与 `--auth` 解析入口；`internal/core/check.go:50-57,170-175` 已用 `net.JoinHostPort` 输出 `Address`。
 - `internal/core/ssh.go:751-809` 的跳板与直连各有连接入口；`internal/core/ssh_knownhosts.go:64-73,296-348,487-493` 按目标地址选择算法并仅在未知密钥时走指纹确认。
 - `internal/core/forward.go:117-167,205-211` 已实现 `StartLocalForward`、回环端口 0 的监听与资源归属；现有边界见 `docs/design/2026-09-27-sshc-port-forwarding-design.md`，不复制其转发底层设计。
-- 适用 GR110（真实 CLI 分发测试）、SR1204（范围确认）、SR1107（设计/计划/实施 Gate）和 SR1301（认证、校验与密钥不泄漏）。
+- 适用 GR110（真实 CLI 分发测试）、SR2003（gcli 参数声明、options struct、未声明位置参数退出码 2 和入口退出语义）、SR1204（范围确认）、SR1107（设计/计划/实施 Gate）和 SR1301（认证、校验与密钥不泄漏）。
 
 ## 总体方案
 
@@ -79,7 +80,7 @@ internal/command/check.go, run.go, upload.go, add.go: 选项与 CLI 分发
 
 - 只绑定回环，不将用户本地端口开放给局域网；不将路由地址写入 known_hosts 作为目标身份，跳板和目标密钥分开校验。非交互不可借信任选项静默写入；密码、私钥、连接内容不进输出。
 - 不新增持久化 schema；`Host.IP` 原样存储 zone，CLI 覆盖只在本次命令生效。用户原有 known_hosts 中未知密钥经确认后新增条目是唯一持久副作用。
-- 默认直连、保存的 `Jump` 与三个显式路由选项的矩阵必须由真实 CLI 分发测试覆盖；不能只测试 resolver 函数。
+- CLI 分发验收必须通过 `bootstrap.NewApp().Run([]string{...})` 或等价真实 app dispatch：覆盖每个新 option、`run` 的 `--` 命令边界、`scp/check` 的 target 位置，以及每个命令附加未声明位置参数时退出码为 2 且 handler 不执行；同时保持 `cmd/sshc/main.go` 只有装配/退出职责。
 - `IdentityAddress` 与 `DialAddress` 必须在测试 seam 中分别断言；本地转发下 callback、known_hosts 查询和 fingerprint 输出不得出现回环地址。`StartLocalForward` 的远端 endpoint 需要覆盖规范形式 `[fe80::1%12]:5432`、拒绝 `fe80::1%12:5432`，并反向验证普通非法 endpoint、本地非 loopback 和端口错误仍失败。
 - `check` 必须有 JSON/table golden 分发测试，覆盖成功、解析失败和 zone；解析失败时断言 `target` 保留原始输入、`address` 为空、`zone` 只输出无歧义值，且错误文本不出现 `%!(MISSING)`。
 - IPv6 zone 的接口作用域必须分别覆盖本机直连和跳板远端拨号；无法提供真实双机环境时，至少使用目标地址和 callback seam 验证，完成报告披露 `UNVERIFIED_REAL_ENV`。
@@ -100,4 +101,4 @@ internal/command/check.go, run.go, upload.go, add.go: 选项与 CLI 分发
 
 ## 结论与人工计划 Gate
 
-Draft 0.5 已补入 endpoint 唯一语法与 check 输出契约；本修订必须以同一 candidate 重新进行独立复评，不能沿用审核 0.3/0.4 的 candidate 身份。复评无 `CORE_BLOCKING` 后，才能据此起草实施计划。设计批准不授权代码实施。
+Draft 0.6 已补入 SR2003 的 CLI 分发和入口契约；本修订必须以同一 candidate 重新进行 changed-scope 独立复评，不能沿用旧 candidate 的结论。复评无 `CORE_BLOCKING` 后，才能据此起草实施计划。设计批准不授权代码实施。
