@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.2.0 -->
 # sshc IPv6 目标与临时 SSH 路由设计
 
-> 状态：Draft 0.3 / 待独立复评与人工计划批准
+> 状态：Draft 0.4 / 待独立复评与人工计划批准
 >
 > thinking_mode=RIGOROUS；core_objective=让用户以 IPv6 zone 和临时端口安全直接连接 SSH 目标，并可在直连不可达时显式复用已有本地转发或由 sshc 经 SSH host 建立临时转发；allowed_scope=sshc 的 check/run/scp、host add、目标解析、连接与 known_hosts、测试及相关 CLI 帮助；non_goals=通用代理框架、后台转发、修改已保存 host 的临时覆盖结果、静默信任、额外多级跳板；expansion_policy=DEFER_OR_REQUEST；review budget=修正后一次独立双轴复评；停止条件=直接连接优先级、目标解析语法、路由矩阵、主机身份、zone 作用域、资源释放和用户可见验收均明确。暴露度：本机工具档；仅维护者本机构建/私有使用，错误可回退，修改不迁移持久数据、不新增 Secret 处理或出机器动作，不放宽认证拒绝门。
 
@@ -12,6 +12,7 @@
 | 0.1 | 2026-11-13 | Suga | 初稿：IPv6 zone、临时端口、已有/内建本地转发与新主机密钥确认 |
 | 0.2 | 2026-11-13 | Suga | 根据独立功能审核修正：直接 IPv6 连接为默认路径，补齐 CLI grammar、路由矩阵、zone 作用域、host key 身份和生命周期约束 |
 | 0.3 | 2026-11-13 | Suga | 根据复评修正：把 scoped IPv6 远端 endpoint 校验和跳板 trust 策略传递纳入本轮 owner 范围 |
+| 0.4 | 2026-11-13 | Suga | 根据安全轴复评修正：`--via-jump` 仅接受自身无 `Jump` 的直连 SSH host，拒绝隐式多级跳板 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -32,7 +33,7 @@
 - `host add --ip fe80::1%12 --port 22` 按原 IP 字段保留 zone；仍拒绝在 `--ip` 写 `[v6%zone]:port`，不增加持久化字段。转发远端 endpoint 同样接受 `v6%zone:port` 的结构化内部表示，并保留 loopback、本地端口及其他 endpoint 拒绝规则。
 - `check` 的 `Addr`/JSON `address` 输出规范化 host:port，并增加 `zone` 字段；解析失败也返回包含原始 target、可解析地址（若有）和 zone（若有）的结果，不把 `%` 作为格式串。
 - CLI grammar 固定为：`run [options] <target> -- <command>`、`scp [options] <target> ...`、`check [options] <target>`；`--port`、`--via-local-port`、`--via-jump`、`--trust-new-host` 绑定到各自命令，不依赖未声明的位置参数。
-- `--via-local-port <port>` 使用已有的 `127.0.0.1:<port>`；`--via-jump <saved-host>` 只接受已保存 SSH host，并由 sshc 为本次命令建立 `127.0.0.1:0 -> target` 临时转发。两者互斥，且均与显式 `--jump` 互斥。
+- `--via-local-port <port>` 使用已有的 `127.0.0.1:<port>`；`--via-jump <saved-host>` 只接受已保存 SSH host，且该 host 自身不得设置 `Jump`，由 sshc 为本次命令建立 `127.0.0.1:0 -> target` 临时转发。两者互斥，且均与显式 `--jump` 互斥；目标保存 `Jump` 也与显式 via 冲突。
 - 路由矩阵固定：无显式 via 且目标无保存 `Jump`=直连；无显式 via 且目标有保存 `Jump`=沿用保存跳板；显式 via 与目标保存 `Jump` 同时存在=拒绝；显式 `--jump` 与保存 `Jump`=覆盖（既有语义），但再与任一 via 同时存在=拒绝。没有 `--no-jump`，避免新增隐式直连语义。
 - `--trust-new-host` 仅允许未知 key 的交互指纹确认；已知 key 变化、非交互、拒绝确认仍失败。`check` 使用该选项时强制 `--parallel 1`；未指定时 check 不交互，且该策略必须同时传递给目标连接和 `--via-jump` 的跳板连接。run/scp 未指定时保留既有 known_hosts 行为，指定时显式启用同一确认回调。
 - 不新增 `--jump-addr`/`--proxy-target`：本轮内建转发的上游由已保存 SSH host 确定；需要未保存跳板或非 SSH TCP 代理时另行设计。
@@ -70,7 +71,7 @@ internal/command/check.go, run.go, upload.go, add.go: 选项与 CLI 分发
 - `sshc run --auth ops --port 2222 'fe80::3b3c:ca9b:837c:e55a%12' -- hostname` → 无 via 时直接从本机拨号；地址为 `[fe80::3b3c:ca9b:837c:e55a%12]:2222`，zone `12` 是本机接口。
 - `sshc run --auth ops '[fe80::1%12]:2222' -- id` → 方括号明确提供内联端口；再传 `--port` 时报冲突。
 - `sshc run --via-local-port 10022 host -- id` → TCP 连接 `127.0.0.1:10022`，SSH 主机身份仍为保存的 `host.IP:host.Port`；若 `host` 有保存 `Jump`，直接拒绝该组合。
-- `sshc run --via-jump bastion host -- id` → `bastion` 必须是已保存 SSH host；先验证 bastion，再启动 `127.0.0.1:0 -> host` 临时转发，通过本地 listener 建立目标 SSH 握手；目标 zone 必须在 bastion 上有效。操作结束时按“目标 client、forward listener、bastion client”顺序关闭全部资源。`scp/check` 共用相同路由矩阵。
+- `sshc run --via-jump bastion host -- id` → `bastion` 必须是已保存且自身无 `Jump` 的 SSH host；先验证 bastion，再启动 `127.0.0.1:0 -> host` 临时转发，通过本地 listener 建立目标 SSH 握手；目标 zone 必须在 bastion 上有效。若 bastion 自身配置了 `Jump`，命令在建立连接前拒绝，避免隐式多级跳板。操作结束时按“目标 client、forward listener、bastion client”顺序关闭全部资源。`scp/check` 共用相同路由矩阵。
 - `sshc check --trust-new-host --hosts a,b --parallel 1` → 依次显示目标地址、zone 和指纹并确认；`--parallel >1` 直接报错，默认不交互。
 
 ## 安全、数据、运维与回滚
@@ -80,14 +81,14 @@ internal/command/check.go, run.go, upload.go, add.go: 选项与 CLI 分发
 - 默认直连、保存的 `Jump` 与三个显式路由选项的矩阵必须由真实 CLI 分发测试覆盖；不能只测试 resolver 函数。
 - `IdentityAddress` 与 `DialAddress` 必须在测试 seam 中分别断言；本地转发下 callback、known_hosts 查询和 fingerprint 输出不得出现回环地址。`StartLocalForward` 的远端 endpoint 需要覆盖带 zone 的 IPv6，并反向验证普通非法 endpoint、本地非 loopback 和端口错误仍失败。
 - IPv6 zone 的接口作用域必须分别覆盖本机直连和跳板远端拨号；无法提供真实双机环境时，至少使用目标地址和 callback seam 验证，完成报告披露 `UNVERIFIED_REAL_ENV`。
-- `check` 的 no-prompt/trust 选项必须覆盖目标未知 key、跳板未知 key、目标变更 key、跳板变更 key、非交互和并发拒绝。
+- `--via-jump` 的验收必须覆盖：直连 bastion 成功、bastion 自身带 `Jump` 时在拨号前拒绝、bastion 未知/变更 key、目标未知/变更 key，以及所有失败路径的资源释放；不得通过测试多级跳板来扩大本轮范围。
 - 回滚只需回退代码；已确认写入的 known_hosts 条目不自动删除，避免误删其他可信记录。
 
 ## 决策
 
 1. **直接 IPv6 连接是默认路径。** 只要本机有到目标的路由，用户无需指定 via；zone 使用本机接口。
 2. **显式路由才改变拨号位置。** `--via-local-port` 和 `--via-jump` 互斥，且不与目标保存 `Jump` 或 `--jump` 混用；拒绝优先于静默覆盖。
-3. **`--via-jump` 跟已保存 SSH host。** 它不是普通 TCP 代理，也不接受未登记跳板地址；跳板的认证和 host key 独立解析。
+3. **`--via-jump` 跟已保存且直连的 SSH host。** 它不是普通 TCP 代理，也不接受未登记跳板地址；via host 自身带 `Jump` 时拒绝，避免本轮外的隐式多级跳板；跳板的认证和 host key 独立解析。
 4. **目标身份和拨号地址必须分离。** 任何路由不能改变目标 known_hosts 身份；zone 的有效接口由实际发起目标 TCP 连接的一端决定。
 5. **信任选项只为交互确认新密钥。** 绝不作为 `insecure` 或 `--force` 的别名。
 
@@ -97,4 +98,4 @@ internal/command/check.go, run.go, upload.go, add.go: 选项与 CLI 分发
 
 ## 结论与人工计划 Gate
 
-Draft 0.3 已补入复评发现的两个 owner 边界：scoped IPv6 远端转发 endpoint 必须复用统一解析器，且 check 的 trust/no-prompt 连接策略必须覆盖跳板和目标。请再次进行独立双轴复评；复评无 `CORE_BLOCKING` 后，才能据此起草实施计划。设计批准不授权代码实施。
+Draft 0.4 已补入安全轴发现的多级路由边界：`--via-jump` 的 saved host 必须自身无 `Jump`，否则在连接前拒绝。请再次进行独立 changed-scope 复评；复评无 `CORE_BLOCKING` 后，才能据此起草实施计划。设计批准不授权代码实施。
