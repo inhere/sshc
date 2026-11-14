@@ -62,6 +62,10 @@ Notes:
 			c.StrOpt(&opts.CWD, "cwd", "", "", "remote working directory")
 			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
+			c.IntOpt(&opts.Port, "port", "", 0, "temporary ssh port override")
+			c.IntOpt(&opts.ViaLocalPort, "via-local-port", "", 0, "use an existing local loopback forward port")
+			c.StrOpt(&opts.ViaJump, "via-jump", "", "", "create a temporary forward through a saved SSH host")
+			c.BoolOpt(&opts.TrustNewHost, "trust-new-host", "", false, "interactively confirm an unknown host key")
 			c.BoolOpt(&opts.Sudo, "sudo", "", false, "run remote command with sudo")
 			c.StrOpt(&opts.SudoUser, "sudo-user", "", "", "run remote command as user via sudo")
 			c.StrOpt(&opts.Script, "script", "", "", "local shell script to upload and run")
@@ -72,7 +76,16 @@ Notes:
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			target := strings.TrimSpace(c.Arg("target").String())
-			command := strings.TrimSpace(strings.Join(remoteCommandArgs(c.Arg("command").Strings()), " "))
+			rawCommandArgs := c.Arg("command").Strings()
+			if strings.TrimSpace(opts.Script) == "" {
+				if len(rawCommandArgs) == 0 {
+					return errors.New("remote command or --script is required")
+				}
+				if rawCommandArgs[0] != "--" {
+					return errors.New("remote command must be placed after --")
+				}
+			}
+			command := strings.TrimSpace(strings.Join(remoteCommandArgs(rawCommandArgs), " "))
 			if command == "" && strings.TrimSpace(opts.Script) == "" {
 				return errors.New("remote command or --script is required")
 			}
@@ -84,10 +97,19 @@ Notes:
 			if err != nil {
 				return err
 			}
-			host, err := resolveCommandHostWithAuth(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump})
+			host, err := resolveCommandHostWithOverrides(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump}, core.HostOverrides{Port: opts.Port})
 			if err != nil {
 				return err
 			}
+			host, route, err := resolveCommandRoute(host, opts.ViaLocalPort, opts.ViaJump, opts.Jump, false, opts.TrustNewHost)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := route.Close(); closeErr != nil {
+					fmt.Fprintf(cmdStatus(c), "sshc: close route: %v\n", closeErr)
+				}
+			}()
 			if err := applyHostRunDefaults(&runOptions, host); err != nil {
 				return err
 			}
@@ -171,6 +193,10 @@ type runFlagOptions struct {
 	CWD              string
 	Jump             string
 	AuthRef          string
+	Port             int
+	ViaLocalPort     int
+	ViaJump          string
+	TrustNewHost     bool
 	Sudo             bool
 	SudoUser         string
 	Script           string

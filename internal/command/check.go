@@ -14,14 +14,18 @@ import (
 )
 
 type checkOptions struct {
-	Hosts    string
-	Group    string
-	Tag      string
-	All      bool
-	Parallel int
-	JSON     bool
-	Timeout  string
-	AuthRef  string
+	Hosts        string
+	Group        string
+	Tag          string
+	All          bool
+	Parallel     int
+	JSON         bool
+	Timeout      string
+	AuthRef      string
+	Port         int
+	ViaLocalPort int
+	ViaJump      string
+	TrustNewHost bool
 }
 
 func NewCheckCmd() *gcli.Command {
@@ -51,11 +55,18 @@ Notes:
 			c.BoolOpt(&opts.JSON, "json", "", false, "output check results as json")
 			c.StrOpt(&opts.Timeout, "timeout", "", "", "connect timeout, eg: 5s or bare seconds")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
+			c.IntOpt(&opts.Port, "port", "", 0, "temporary ssh port override")
+			c.IntOpt(&opts.ViaLocalPort, "via-local-port", "", 0, "use an existing local loopback forward port")
+			c.StrOpt(&opts.ViaJump, "via-jump", "", "", "create a temporary forward through a saved SSH host")
+			c.BoolOpt(&opts.TrustNewHost, "trust-new-host", "", false, "interactively confirm an unknown host key")
 			c.AddArg("target", "host ip or name", false)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			if opts.Parallel < 1 {
 				return errors.New("--parallel must be greater than 0")
+			}
+			if opts.TrustNewHost && opts.Parallel != 1 {
+				return errors.New("--trust-new-host requires --parallel 1")
 			}
 			timeout, err := parseCheckTimeout(opts.Timeout)
 			if err != nil {
@@ -67,9 +78,23 @@ Notes:
 			}
 			hosts, err := resolveCheckHosts(*config, strings.TrimSpace(c.Arg("target").String()), *opts)
 			if err != nil {
+				if strings.Contains(err.Error(), "exactly one of") {
+					return err
+				}
+				result := checkResolutionFailure(strings.TrimSpace(c.Arg("target").String()), *opts, err)
+				if opts.JSON {
+					if writeErr := writeCheckJSON(c, []core.CheckResult{result}); writeErr != nil {
+						return writeErr
+					}
+				} else {
+					fmt.Fprint(cmdOutput(c), buildCheckTable([]core.CheckResult{result}))
+				}
+				return errors.New("check failed")
+			}
+			results, err := runHostChecks(hosts, core.CheckOptions{Timeout: timeout}, opts.Parallel, *opts)
+			if err != nil {
 				return err
 			}
-			results := runHostChecks(hosts, core.CheckOptions{Timeout: timeout}, opts.Parallel)
 			if opts.JSON {
 				if err := writeCheckJSON(c, results); err != nil {
 					return err
@@ -112,7 +137,7 @@ func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]
 	switch {
 	case target != "":
 		if strings.TrimSpace(opts.AuthRef) != "" {
-			effective, _, err := config.ResolveEffectiveHostWithAuth(target, opts.AuthRef, core.HostOverrides{})
+			effective, _, err := config.ResolveEffectiveHostWithAuth(target, opts.AuthRef, core.HostOverrides{Port: opts.Port})
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +150,7 @@ func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]
 		if !ok {
 			return nil, fmt.Errorf("host %q not found", target)
 		}
-		return effectiveCheckHosts(config, []core.Host{host})
+		return effectiveCheckHosts(config, []core.Host{host}, core.HostOverrides{Port: opts.Port})
 	case strings.TrimSpace(opts.Hosts) != "":
 		var hosts []core.Host
 		for _, target := range strings.Split(opts.Hosts, ",") {
@@ -142,23 +167,48 @@ func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]
 			}
 			hosts = append(hosts, host)
 		}
-		return effectiveCheckHosts(config, hosts)
+		return effectiveCheckHosts(config, hosts, core.HostOverrides{Port: opts.Port})
 	case strings.TrimSpace(opts.Group) != "":
-		return effectiveCheckHosts(config, filterHosts(config.Hosts, opts.Group, "", ""))
+		return effectiveCheckHosts(config, filterHosts(config.Hosts, opts.Group, "", ""), core.HostOverrides{Port: opts.Port})
 	case strings.TrimSpace(opts.Tag) != "":
-		return effectiveCheckHosts(config, filterHosts(config.Hosts, "", opts.Tag, ""))
+		return effectiveCheckHosts(config, filterHosts(config.Hosts, "", opts.Tag, ""), core.HostOverrides{Port: opts.Port})
 	default:
-		return effectiveCheckHosts(config, config.Hosts)
+		return effectiveCheckHosts(config, config.Hosts, core.HostOverrides{Port: opts.Port})
 	}
 }
 
-func effectiveCheckHosts(config core.Config, hosts []core.Host) ([]core.Host, error) {
+func checkResolutionFailure(target string, opts checkOptions, err error) core.CheckResult {
+	if target == "" {
+		switch {
+		case strings.TrimSpace(opts.Hosts) != "":
+			target = opts.Hosts
+		case strings.TrimSpace(opts.Group) != "":
+			target = opts.Group
+		case strings.TrimSpace(opts.Tag) != "":
+			target = opts.Tag
+		case opts.All:
+			target = "--all"
+		}
+	}
+	return core.CheckResult{
+		Name:    target,
+		Target:  target,
+		Zone:    core.TargetZone(target),
+		TCP:     core.CheckStatusSkipped,
+		SSH:     core.CheckStatusSkipped,
+		Auth:    core.CheckStatusSkipped,
+		HostKey: core.CheckStatusSkipped,
+		Error:   err.Error(),
+	}
+}
+
+func effectiveCheckHosts(config core.Config, hosts []core.Host, overrides core.HostOverrides) ([]core.Host, error) {
 	if len(hosts) == 0 {
 		return nil, errors.New("no hosts found")
 	}
 	effective := make([]core.Host, 0, len(hosts))
 	for _, host := range hosts {
-		resolved, _, err := config.EffectiveHost(host, core.HostOverrides{})
+		resolved, _, err := config.EffectiveHost(host, overrides)
 		if err != nil {
 			return nil, err
 		}
@@ -167,11 +217,39 @@ func effectiveCheckHosts(config core.Config, hosts []core.Host) ([]core.Host, er
 	return effective, nil
 }
 
-func runHostChecks(hosts []core.Host, opts core.CheckOptions, parallel int) []core.CheckResult {
+func runHostChecks(hosts []core.Host, opts core.CheckOptions, parallel int, routeOpts checkOptions) (results []core.CheckResult, err error) {
 	if parallel > len(hosts) {
 		parallel = len(hosts)
 	}
-	results := make([]core.CheckResult, len(hosts))
+	routedHosts := make([]core.Host, len(hosts))
+	checkOpts := make([]core.CheckOptions, len(hosts))
+	routes := make([]*commandRoute, len(hosts))
+	for i, host := range hosts {
+		routed, route, err := resolveCommandRoute(host, routeOpts.ViaLocalPort, routeOpts.ViaJump, "", true, routeOpts.TrustNewHost)
+		if err != nil {
+			for j := i - 1; j >= 0; j-- {
+				if closeErr := routes[j].Close(); closeErr != nil {
+					return nil, fmt.Errorf("%w; route cleanup: %v", err, closeErr)
+				}
+			}
+			return nil, err
+		}
+		routedHosts[i] = routed
+		checkOpts[i] = opts
+		checkOpts[i].DialAddress = routed.DialAddress
+		checkOpts[i].NoHostKeyPrompt = true
+		checkOpts[i].TrustNewHost = routeOpts.TrustNewHost
+		routes[i] = route
+	}
+	defer func() {
+		for i := len(routes) - 1; i >= 0; i-- {
+			if closeErr := routes[i].Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}
+	}()
+
+	results = make([]core.CheckResult, len(hosts))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for i := 0; i < parallel; i++ {
@@ -179,7 +257,7 @@ func runHostChecks(hosts []core.Host, opts core.CheckOptions, parallel int) []co
 		go func() {
 			defer wg.Done()
 			for idx := range jobs {
-				results[idx] = core.CheckHost(hosts[idx], opts)
+				results[idx] = core.CheckHost(routedHosts[idx], checkOpts[idx])
 			}
 		}()
 	}
@@ -188,7 +266,7 @@ func runHostChecks(hosts []core.Host, opts core.CheckOptions, parallel int) []co
 	}
 	close(jobs)
 	wg.Wait()
-	return results
+	return results, nil
 }
 
 func buildCheckTable(results []core.CheckResult) string {
@@ -196,9 +274,9 @@ func buildCheckTable(results []core.CheckResult) string {
 		return ""
 	}
 	tb := table.New("", table.WithBorderFlags(table.BorderDefault), table.WithOverflowFlag(table.OverflowWrap))
-	tb.SetHeads("Name", "Group", "Tags", "Addr", "TCP", "SSH", "Auth", "HostKey", "Latency", "Error")
+	tb.SetHeads("Name", "Target", "Addr", "Zone", "TCP", "SSH", "Auth", "HostKey", "Latency", "Error")
 	for _, result := range results {
-		tb.AddRow(result.Name, result.Group, strings.Join(result.Tags, ","), result.Address, result.TCP, result.SSH, result.Auth, result.HostKey, checkLatencyLabel(result.LatencyMS), checkErrorLabel(result.Error))
+		tb.AddRow(result.Name, result.Target, result.Address, result.Zone, result.TCP, result.SSH, result.Auth, result.HostKey, checkLatencyLabel(result.LatencyMS), checkErrorLabel(result.Error))
 	}
 	return tb.String()
 }

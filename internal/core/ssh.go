@@ -740,6 +740,15 @@ type sshClientOptions struct {
 }
 
 func newSSHClientWithOptions(host Host, opts sshClientOptions) (RemoteClient, error) {
+	if strings.TrimSpace(opts.DialAddress) == "" {
+		opts.DialAddress = strings.TrimSpace(host.DialAddress)
+	}
+	if host.NoHostKeyPrompt {
+		opts.NoHostKeyPrompt = true
+	}
+	if host.TrustNewHost {
+		opts.TrustNewHost = true
+	}
 	if strings.TrimSpace(host.Jump) == "" {
 		return newDirectSSHClient(host, opts)
 	}

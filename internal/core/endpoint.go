@@ -118,6 +118,18 @@ func parseSSHPort(value string) (int, error) {
 	return port, nil
 }
 
+func TargetZone(value string) string {
+	return hostZone(value)
+}
+
+func hostZone(value string) string {
+	parsed, err := parseHostTarget(value)
+	if err != nil {
+		return ""
+	}
+	return parsed.Zone
+}
+
 func validateRawTarget(value string) error {
 	parsed, err := parseHostTarget(value)
 	if err != nil {

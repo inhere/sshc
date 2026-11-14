@@ -51,11 +51,15 @@ func resolveCommandHostWithOptions(target string, opts core.ResolveConnectionOpt
 }
 
 func resolveCommandHostWithAuth(target, authRef string, opts core.ResolveConnectionOptions) (core.Host, error) {
+	return resolveCommandHostWithOverrides(target, authRef, opts, core.HostOverrides{})
+}
+
+func resolveCommandHostWithOverrides(target, authRef string, opts core.ResolveConnectionOptions, overrides core.HostOverrides) (core.Host, error) {
 	config, err := core.LoadConfigWithSSHConfig()
 	if err != nil {
 		return core.Host{}, err
 	}
-	effective, ok, err := config.ResolveEffectiveHostWithAuth(target, authRef, core.HostOverrides{})
+	effective, ok, err := config.ResolveEffectiveHostWithAuth(target, authRef, overrides)
 	if err != nil {
 		return core.Host{}, err
 	}

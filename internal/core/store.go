@@ -57,6 +57,11 @@ type Host struct {
 	RemoteScriptDir string `json:"remote_script_dir,omitempty"`
 	HostKeyCheck    string `json:"host_key_check,omitempty"`
 	KnownHostsPath  string `json:"known_hosts_path,omitempty"`
+
+	// Runtime-only connection route options. They are never persisted.
+	DialAddress     string `json:"-"`
+	NoHostKeyPrompt bool   `json:"-"`
+	TrustNewHost    bool   `json:"-"`
 }
 
 type Store struct {

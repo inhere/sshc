@@ -60,6 +60,9 @@ func (h EffectiveHost) ToHost() Host {
 	host.RemoteScriptDir = strings.TrimSpace(h.RemoteScriptDir)
 	host.HostKeyCheck = strings.TrimSpace(h.HostKeyCheck)
 	host.KnownHostsPath = strings.TrimSpace(h.KnownHostsPath)
+	host.DialAddress = strings.TrimSpace(h.DialAddress)
+	host.NoHostKeyPrompt = h.NoHostKeyPrompt
+	host.TrustNewHost = h.TrustNewHost
 	return host
 }
 

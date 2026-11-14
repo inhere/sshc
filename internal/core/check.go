@@ -23,9 +23,11 @@ type CheckOptions struct {
 
 type CheckResult struct {
 	Name         string   `json:"name"`
+	Target       string   `json:"target"`
 	Group        string   `json:"group"`
 	Tags         []string `json:"tags,omitempty"`
 	Address      string   `json:"address"`
+	Zone         string   `json:"zone,omitempty"`
 	TCP          string   `json:"tcp"`
 	SSH          string   `json:"ssh"`
 	Auth         string   `json:"auth"`
@@ -54,9 +56,11 @@ func CheckHost(host Host, opts CheckOptions) CheckResult {
 	started := time.Now()
 	result := CheckResult{
 		Name:    HostLogName(host),
+		Target:  strings.TrimSpace(host.IP),
 		Group:   HostGroupName(host),
 		Tags:    NormalizeTagList(host.Tags),
 		Address: checkAddress(host),
+		Zone:    hostZone(host.IP),
 		TCP:     CheckStatusSkipped,
 		SSH:     CheckStatusSkipped,
 		Auth:    CheckStatusSkipped,

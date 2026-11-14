@@ -50,6 +50,10 @@ Path rules:
 			c.VarOpt(&opts.Maps, "map", "", "upload mapping local=remote, repeatable")
 			c.StrOpt(&opts.Jump, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&opts.AuthRef, "auth", "", "", "auth profile for target")
+			c.IntOpt(&opts.Port, "port", "", 0, "temporary ssh port override")
+			c.IntOpt(&opts.ViaLocalPort, "via-local-port", "", 0, "use an existing local loopback forward port")
+			c.StrOpt(&opts.ViaJump, "via-jump", "", "", "create a temporary forward through a saved SSH host")
+			c.BoolOpt(&opts.TrustNewHost, "trust-new-host", "", false, "interactively confirm an unknown host key")
 			c.BoolOpt(&opts.SHA256, "sha256", "", false, "verify file transfer with sha256")
 			c.BoolOpt(&opts.RemoveDir, "remove-dir", "", false, "remove remote directory before directory upload")
 			c.AddArg("target", "host ip or name", true)
@@ -61,10 +65,19 @@ Path rules:
 				return err
 			}
 
-			host, err := resolveCommandHostWithAuth(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump})
+			host, err := resolveCommandHostWithOverrides(target, opts.AuthRef, core.ResolveConnectionOptions{Jump: opts.Jump}, core.HostOverrides{Port: opts.Port})
 			if err != nil {
 				return err
 			}
+			host, route, err := resolveCommandRoute(host, opts.ViaLocalPort, opts.ViaJump, opts.Jump, false, opts.TrustNewHost)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := route.Close(); closeErr != nil {
+					fmt.Fprintf(cmdStatus(c), "sshc: close route: %v\n", closeErr)
+				}
+			}()
 			if err := core.RejectCommandProxyTransfer(host); err != nil {
 				return err
 			}
@@ -164,13 +177,17 @@ func (p *transferProgress) FinishLine() {
 }
 
 type uploadFlagOptions struct {
-	LocalPaths gcli.Strings
-	RemotePath string
-	Maps       gcli.Strings
-	Jump       string
-	AuthRef    string
-	SHA256     bool
-	RemoveDir  bool
+	LocalPaths   gcli.Strings
+	RemotePath   string
+	Maps         gcli.Strings
+	Jump         string
+	AuthRef      string
+	Port         int
+	ViaLocalPort int
+	ViaJump      string
+	TrustNewHost bool
+	SHA256       bool
+	RemoveDir    bool
 }
 
 func buildUploadJobs(opts uploadFlagOptions) ([]core.TransferJob, error) {

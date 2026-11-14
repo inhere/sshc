@@ -37,6 +37,23 @@ func TestCheckCommandRejectsMultipleSources(t *testing.T) {
 	}
 }
 
+func TestCheckCommandResolutionFailureKeepsTarget(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+	err := newTestApp().RunWithArgs([]string{"check", "--auth", "ops", "--json", "fe80::1%12:2222"})
+	if err == nil || !strings.Contains(err.Error(), "check failed") {
+		t.Fatalf("err = %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, `"target": "fe80::1%12:2222"`) || !strings.Contains(output, `"address": ""`) {
+		t.Fatalf("output = %q", output)
+	}
+}
+
 func TestCheckCommandFromTargetJSON(t *testing.T) {
 	withTempConfig(t)
 	if err := saveCheckCommandHosts(); err != nil {
