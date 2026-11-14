@@ -55,7 +55,7 @@ func resolveCommandHostWithAuth(target, authRef string, opts core.ResolveConnect
 	if err != nil {
 		return core.Host{}, err
 	}
-	effective, ok, err := config.ResolveEffectiveHostWithAuth(target, authRef)
+	effective, ok, err := config.ResolveEffectiveHostWithAuth(target, authRef, core.HostOverrides{})
 	if err != nil {
 		return core.Host{}, err
 	}

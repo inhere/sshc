@@ -112,7 +112,7 @@ func resolveCheckHosts(config core.Config, target string, opts checkOptions) ([]
 	switch {
 	case target != "":
 		if strings.TrimSpace(opts.AuthRef) != "" {
-			effective, _, err := config.ResolveEffectiveHostWithAuth(target, opts.AuthRef)
+			effective, _, err := config.ResolveEffectiveHostWithAuth(target, opts.AuthRef, core.HostOverrides{})
 			if err != nil {
 				return nil, err
 			}

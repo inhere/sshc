@@ -74,9 +74,9 @@ func (c Config) ResolveEffectiveHost(target string, overrides HostOverrides) (Ef
 
 // ResolveEffectiveHostWithAuth applies an explicit credential profile to a saved
 // host or an unregistered address without changing the stored configuration.
-func (c Config) ResolveEffectiveHostWithAuth(target, authRef string) (EffectiveHost, bool, error) {
+func (c Config) ResolveEffectiveHostWithAuth(target, authRef string, overrides HostOverrides) (EffectiveHost, bool, error) {
 	if strings.TrimSpace(authRef) == "" {
-		return c.ResolveEffectiveHost(target, HostOverrides{})
+		return c.ResolveEffectiveHost(target, overrides)
 	}
 	store := storeFromConfig(c)
 	host, ok, err := store.ResolveHost(target)
@@ -84,10 +84,14 @@ func (c Config) ResolveEffectiveHostWithAuth(target, authRef string) (EffectiveH
 		return EffectiveHost{}, false, err
 	}
 	if !ok {
-		if err := validateRawBatchTarget(strings.TrimSpace(target)); err != nil {
-			return EffectiveHost{}, false, err
+		parsed, parseErr := parseHostTarget(strings.TrimSpace(target))
+		if parseErr != nil {
+			return EffectiveHost{}, false, fmt.Errorf("invalid raw host target %q: %w", target, parseErr)
 		}
-		host = Host{Name: target, IP: target}
+		if parsed.HasPort && overrides.Port > 0 {
+			return EffectiveHost{}, false, fmt.Errorf("target %q includes port %d; do not also specify --port", target, parsed.Port)
+		}
+		host = Host{Name: target, IP: parsed.Host, Port: parsed.Port}
 	}
 	if IsCommandProxyHost(host) {
 		return EffectiveHost{}, false, fmt.Errorf("--auth is not supported for command_proxy host %q", HostLogName(host))
@@ -96,7 +100,7 @@ func (c Config) ResolveEffectiveHostWithAuth(target, authRef string) (EffectiveH
 	host.User, host.Password, host.PasswordEnc = "", "", ""
 	host.KeyPath, host.KeyData, host.KeyDataEnc = "", "", ""
 	host.KeyPassphrase, host.KeyPassphraseEnc = "", ""
-	effective, ok, err := c.EffectiveHost(host, HostOverrides{})
+	effective, ok, err := c.EffectiveHost(host, overrides)
 	if err != nil {
 		return EffectiveHost{}, false, err
 	}

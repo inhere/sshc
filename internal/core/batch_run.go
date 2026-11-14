@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -183,20 +182,14 @@ func resolveRawBatchHost(config Config, source BatchHostSource, target string) (
 }
 
 func validateRawBatchTarget(target string) error {
-	if target == "" {
+	if strings.TrimSpace(target) == "" {
 		return errors.New("raw host target is required")
 	}
 	if strings.ContainsAny(target, " \t\r\n") {
 		return fmt.Errorf("invalid raw host target %q", target)
 	}
-	if strings.Contains(target, ":") {
-		return fmt.Errorf("raw host target %q should not include port, use --port", target)
-	}
-	if ip := net.ParseIP(target); ip != nil {
-		return nil
-	}
-	if !isValidRawHostname(target) {
-		return fmt.Errorf("invalid raw host target %q", target)
+	if err := validateRawTarget(target); err != nil {
+		return fmt.Errorf("invalid raw host target %q: %w", target, err)
 	}
 	return nil
 }

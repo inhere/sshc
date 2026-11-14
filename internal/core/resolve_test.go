@@ -72,7 +72,7 @@ func TestStoreResolveHostRejectsMultiplePartialMatches(t *testing.T) {
 
 func TestResolveEffectiveHostWithAuthUsesRawAddressAndDoesNotPersist(t *testing.T) {
 	config := Config{AuthProfiles: []AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}
-	host, ok, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "ops")
+	host, ok, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "ops", HostOverrides{})
 	if err != nil || !ok {
 		t.Fatalf("resolve: host=%+v ok=%v err=%v", host, ok, err)
 	}
@@ -82,11 +82,26 @@ func TestResolveEffectiveHostWithAuthUsesRawAddressAndDoesNotPersist(t *testing.
 	if len(config.Hosts) != 0 {
 		t.Fatalf("raw target was persisted: %+v", config.Hosts)
 	}
-	if _, _, err := config.ResolveEffectiveHostWithAuth("192.0.2.10:22", "ops"); err == nil {
-		t.Fatal("expected host:port rejection")
+	host, ok, err = config.ResolveEffectiveHostWithAuth("192.0.2.10:22", "ops", HostOverrides{})
+	if err != nil || !ok || host.IP != "192.0.2.10" || host.Port != 22 {
+		t.Fatalf("inline port resolve: host=%+v ok=%v err=%v", host, ok, err)
 	}
-	if _, _, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "missing"); err == nil {
+	if _, _, err := config.ResolveEffectiveHostWithAuth("192.0.2.10", "missing", HostOverrides{}); err == nil {
 		t.Fatal("expected missing auth profile error")
+	}
+}
+
+func TestResolveEffectiveHostWithAuthAcceptsIPv6ZoneAndPortOverride(t *testing.T) {
+	config := Config{AuthProfiles: []AuthProfile{{Name: "ops", User: "root", Password: "secret"}}}
+	host, ok, err := config.ResolveEffectiveHostWithAuth("fe80::1%12", "ops", HostOverrides{Port: 2222})
+	if err != nil || !ok {
+		t.Fatalf("resolve: host=%+v ok=%v err=%v", host, ok, err)
+	}
+	if host.IP != "fe80::1%12" || host.Port != 2222 {
+		t.Fatalf("host=%+v", host)
+	}
+	if _, _, err := config.ResolveEffectiveHostWithAuth("[fe80::1%12]:2222", "ops", HostOverrides{Port: 2200}); err == nil {
+		t.Fatal("expected inline port conflict")
 	}
 }
 
@@ -96,7 +111,7 @@ func TestResolveEffectiveHostWithAuthOverridesSavedCredentials(t *testing.T) {
 		Groups:       map[string]GroupDefaults{"team": {User: "group-user", KeyPath: "~/.ssh/group"}},
 		Hosts:        []Host{{Name: "saved", IP: "192.0.2.11", User: "old", Password: "old-secret", Port: 2222, Jump: "bastion", Group: "team"}},
 	}
-	host, ok, err := config.ResolveEffectiveHostWithAuth("saved", "ops")
+	host, ok, err := config.ResolveEffectiveHostWithAuth("saved", "ops", HostOverrides{})
 	if err != nil || !ok {
 		t.Fatalf("resolve: host=%+v ok=%v err=%v", host, ok, err)
 	}

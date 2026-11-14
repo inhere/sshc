@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -231,9 +232,12 @@ func validateHost(host Host) error {
 	if host.Port < 1 || host.Port > 65535 {
 		return fmt.Errorf("invalid ssh port %d", host.Port)
 	}
-	if strings.Contains(host.IP, ":") {
+	if strings.Contains(host.IP, ":") || strings.Contains(host.IP, "%") {
 		if _, _, err := net.SplitHostPort(host.IP); err == nil {
 			return errors.New("ip should not include port, use --port")
+		}
+		if _, err := netip.ParseAddr(host.IP); err != nil {
+			return fmt.Errorf("invalid ip %q", host.IP)
 		}
 	}
 	return nil

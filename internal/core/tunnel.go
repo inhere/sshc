@@ -202,7 +202,7 @@ func ResolveTunnelHost(cfg Config, profile TunnelProfile) (Host, error) {
 		return Host{}, fmt.Errorf("tunnel %q uses an address target, --auth is required", label)
 	}
 
-	effective, _, err := cfg.ResolveEffectiveHostWithAuth(resolved, authRef)
+	effective, _, err := cfg.ResolveEffectiveHostWithAuth(resolved, authRef, HostOverrides{})
 	if err != nil {
 		return Host{}, fmt.Errorf("tunnel %q: %w", label, err)
 	}
