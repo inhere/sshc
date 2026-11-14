@@ -48,3 +48,16 @@ func TestValidateRawTargetRejectsInlinePort(t *testing.T) {
 		t.Fatal("expected inline port rejection")
 	}
 }
+
+func TestNormalizeForwardRemoteAddrAcceptsScopedIPv6(t *testing.T) {
+	got, err := normalizeForwardRemoteAddr("[fe80::1%12]:5432")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "[fe80::1%12]:5432" {
+		t.Fatalf("got %q", got)
+	}
+	if _, err := normalizeForwardRemoteAddr("fe80::1%12:5432"); err == nil {
+		t.Fatal("expected unbracketed scoped endpoint rejection")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,10 +27,12 @@ type ForwardRule struct {
 
 // ForwardOptions tunes the forward session.
 type ForwardOptions struct {
-	ConnectTimeout time.Duration
-	KeepaliveEvery time.Duration
-	KeepaliveWait  time.Duration
-	Logf           func(format string, args ...any)
+	ConnectTimeout  time.Duration
+	KeepaliveEvery  time.Duration
+	KeepaliveWait   time.Duration
+	NoHostKeyPrompt bool
+	TrustNewHost    bool
+	Logf            func(format string, args ...any)
 }
 
 // ForwardSession is a running local forward: one SSH session plus its listeners.
@@ -74,6 +77,7 @@ func (d remoteForwardDialer) Close() error {
 
 // newForwardDialerForTest mirrors remoteClientDialForTest for the session seam.
 var newForwardDialerForTest func(host Host) (forwardDialer, error)
+var newForwardDialerWithOptionsForTest func(host Host, opts sshClientOptions) (forwardDialer, error)
 
 // newForwardDialerAdapter wraps a concrete remote client as the forward session seam.
 func newForwardDialerAdapter(client *remoteClient) forwardDialer {
@@ -81,10 +85,17 @@ func newForwardDialerAdapter(client *remoteClient) forwardDialer {
 }
 
 func newForwardDialer(host Host) (forwardDialer, error) {
-	if newForwardDialerForTest != nil {
+	return newForwardDialerWithOptions(host, sshClientOptions{})
+}
+
+func newForwardDialerWithOptions(host Host, opts sshClientOptions) (forwardDialer, error) {
+	if newForwardDialerWithOptionsForTest != nil {
+		return newForwardDialerWithOptionsForTest(host, opts)
+	}
+	if opts == (sshClientOptions{}) && newForwardDialerForTest != nil {
 		return newForwardDialerForTest(host)
 	}
-	client, err := newSSHClient(host)
+	client, err := newSSHClientWithOptions(host, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +140,10 @@ func StartLocalForward(host Host, rules []ForwardRule, opts ForwardOptions) (For
 		host.ConnectTimeout = opts.ConnectTimeout.String()
 	}
 
-	dialer, err := newForwardDialer(host)
+	dialer, err := newForwardDialerWithOptions(host, sshClientOptions{
+		NoHostKeyPrompt: opts.NoHostKeyPrompt,
+		TrustNewHost:    opts.TrustNewHost,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +514,10 @@ func validateForwardEndpointHost(host string) error {
 	if strings.EqualFold(host, "localhost") {
 		return nil
 	}
-	if ip := net.ParseIP(host); ip != nil {
+	if addr, err := netip.ParseAddr(host); err == nil && addr.IsValid() {
+		if err := validateTargetZone(addr.Zone()); err != nil {
+			return err
+		}
 		return nil
 	}
 	if !isValidRawHostname(host) {

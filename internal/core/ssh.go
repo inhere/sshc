@@ -734,7 +734,9 @@ func newSSHClient(host Host) (RemoteClient, error) {
 }
 
 type sshClientOptions struct {
+	DialAddress     string
 	NoHostKeyPrompt bool
+	TrustNewHost    bool
 }
 
 func newSSHClientWithOptions(host Host, opts sshClientOptions) (RemoteClient, error) {
@@ -804,22 +806,50 @@ func newDirectSSHClient(host Host, opts sshClientOptions) (*remoteClient, error)
 	if err != nil {
 		return nil, err
 	}
-	address := knownHostAddress(host)
-	client, err := newSSHDial("tcp", address, config)
+	identityAddress := knownHostAddress(host)
+	dialAddress := strings.TrimSpace(opts.DialAddress)
+	if dialAddress == "" {
+		client, err := newSSHDial("tcp", identityAddress, config)
+		if err != nil {
+			return nil, err
+		}
+		clientConfig := gophConfig(host, goph.Auth(config.Auth), config.Timeout, config.HostKeyCallback)
+		clientConfig.BannerCallback = config.BannerCallback
+		return &remoteClient{
+			Client: &goph.Client{Client: client, Config: clientConfig},
+			closeAll: func() error {
+				if client == nil || client.Conn == nil {
+					return nil
+				}
+				return client.Close()
+			},
+			dial: client.Dial,
+		}, nil
+	}
+
+	timeout := config.Timeout
+	if timeout <= 0 {
+		timeout = 20 * time.Second
+	}
+	rawConn, err := net.DialTimeout("tcp", dialAddress, timeout)
 	if err != nil {
 		return nil, err
 	}
+	sshConn, chans, reqs, err := newSSHClientConn(rawConn, identityAddress, config)
+	if err != nil {
+		_ = rawConn.Close()
+		return nil, err
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
 	clientConfig := gophConfig(host, goph.Auth(config.Auth), config.Timeout, config.HostKeyCallback)
 	clientConfig.BannerCallback = config.BannerCallback
+	gophClient := &goph.Client{Client: client, Config: clientConfig}
 	return &remoteClient{
-		Client: &goph.Client{Client: client, Config: clientConfig},
+		Client: gophClient,
 		closeAll: func() error {
-			if client == nil || client.Conn == nil {
-				return nil
-			}
-			return client.Close()
+			return gophClient.Close()
 		},
-		dial: client.Dial,
+		dial: gophClient.Dial,
 	}, nil
 }
 
@@ -898,7 +928,7 @@ func hostKeyCallback(host Host, opts ...sshClientOptions) (ssh.HostKeyCallback, 
 		if err != nil {
 			return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
 		}
-		if option.NoHostKeyPrompt {
+		if option.NoHostKeyPrompt && !option.TrustNewHost {
 			return callback, nil
 		}
 		return trustOnUnknownHostKeyCallback(path, callback), nil

@@ -15,7 +15,10 @@ const (
 )
 
 type CheckOptions struct {
-	Timeout time.Duration
+	Timeout         time.Duration
+	DialAddress     string
+	NoHostKeyPrompt bool
+	TrustNewHost    bool
 }
 
 type CheckResult struct {
@@ -85,7 +88,7 @@ func CheckHost(host Host, opts CheckOptions) CheckResult {
 	if timeout <= 0 {
 		timeout = checkTimeout(host)
 	}
-	if err := checkTCP(host, timeout); err != nil {
+	if err := checkTCP(host, opts.DialAddress, timeout); err != nil {
 		result.TCP = CheckStatusFail
 		result.Error = err.Error()
 		result.LatencyMS = SinceMS(started)
@@ -101,11 +104,25 @@ func CheckHost(host Host, opts CheckOptions) CheckResult {
 	}
 	result.HostKey = CheckStatusOK
 
-	if err := checkSSHConnect(host); err != nil {
+	var sshErr error
+	if opts.DialAddress != "" || opts.TrustNewHost {
+		client, err := newSSHClientWithOptions(host, sshClientOptions{
+			DialAddress:     opts.DialAddress,
+			NoHostKeyPrompt: opts.NoHostKeyPrompt,
+			TrustNewHost:    opts.TrustNewHost,
+		})
+		if err == nil {
+			err = client.Close()
+		}
+		sshErr = err
+	} else {
+		sshErr = checkSSHConnect(host)
+	}
+	if sshErr != nil {
 		result.SSH = CheckStatusFail
 		result.Auth = CheckStatusFail
-		result.HostKey = checkHostKeyStatusFromError(err, result.HostKey)
-		result.Error = err.Error()
+		result.HostKey = checkHostKeyStatusFromError(sshErr, result.HostKey)
+		result.Error = sshErr.Error()
 		result.LatencyMS = SinceMS(started)
 		return result
 	}
@@ -115,11 +132,15 @@ func CheckHost(host Host, opts CheckOptions) CheckResult {
 	return result
 }
 
-func checkTCP(host Host, timeout time.Duration) error {
-	if strings.TrimSpace(host.Jump) != "" {
+func checkTCP(host Host, dialAddress string, timeout time.Duration) error {
+	if strings.TrimSpace(dialAddress) == "" && strings.TrimSpace(host.Jump) != "" {
 		return nil
 	}
-	conn, err := checkTCPDial("tcp", checkAddress(host), timeout)
+	address := dialAddress
+	if strings.TrimSpace(address) == "" {
+		address = checkAddress(host)
+	}
+	conn, err := checkTCPDial("tcp", address, timeout)
 	if err != nil {
 		return err
 	}
