@@ -28,6 +28,14 @@ func TestCheckWithAuthResolvesUnregisteredIP(t *testing.T) {
 	}
 }
 
+func TestCheckCommandRejectsExtraArgument(t *testing.T) {
+	withTempConfig(t)
+	err := newTestApp().RunWithArgs([]string{"check", "devhost", "extra"})
+	if err == nil || !strings.Contains(err.Error(), "too many arguments") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestCheckCommandRejectsMultipleSources(t *testing.T) {
 	withTempConfig(t)
 	app := newTestApp()

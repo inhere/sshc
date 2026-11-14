@@ -47,6 +47,7 @@ Notes:
   - command_proxy targets check local configuration only; their via host should be checked separately.
 `),
 		Config: func(c *gcli.Command) {
+			c.SetValidateNum(true)
 			c.StrOpt(&opts.Hosts, "hosts", "", "", "comma-separated host names or IPs")
 			c.StrOpt(&opts.Group, "group", "", "", "filter by host group")
 			c.StrOpt(&opts.Tag, "tag", "", "", "filter by comma-separated host tags")

@@ -33,3 +33,12 @@ func TestRunInitializesRuntimeLogger(t *testing.T) {
 		t.Fatalf("runtime log = %s", text)
 	}
 }
+
+func TestNewAppRejectsExtraCheckArgumentThroughRealDispatch(t *testing.T) {
+	t.Setenv(core.ConfigEnvKey, "")
+	t.Setenv(core.ConfigDirEnvKey, t.TempDir())
+	code := NewApp().Run([]string{"check", "target", "extra"})
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+}

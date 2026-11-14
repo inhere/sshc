@@ -45,6 +45,7 @@ Path rules:
   - command_proxy hosts are not supported for upload yet.
 `),
 		Config: func(c *gcli.Command) {
+			c.SetValidateNum(true)
 			c.VarOpt(&opts.LocalPaths, "local", "l", "local file or directory path, repeatable")
 			c.StrOpt(&opts.RemotePath, "remote", "r", "", "remote file or directory path")
 			c.VarOpt(&opts.Maps, "map", "", "upload mapping local=remote, repeatable")

@@ -54,6 +54,7 @@ Notes:
   - command_proxy hosts support command execution through via hosts, but not --script yet.
 `),
 		Config: func(c *gcli.Command) {
+			c.SetValidateNum(true)
 			c.StrOpt(&opts.Timeout, "timeout", "", "", "command timeout, eg: 30s, 2m, or bare seconds")
 			c.StrOpt(&opts.KillAfter, "kill-after", "", "", "force kill delay after timeout, eg: 30s or bare seconds")
 			c.VarOpt(&opts.Env, "env", "e", "environment variable k=v, repeatable")
