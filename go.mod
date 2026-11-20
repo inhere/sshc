@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/gookit/cliui v0.5.4
-	github.com/gookit/gcli/v3 v3.8.3
+	github.com/gookit/gcli/v3 v3.8.6
 	github.com/gookit/goutil v0.9.0
 	github.com/gookit/rux/v2 v2.1.4
 	github.com/melbahja/goph v1.5.2
