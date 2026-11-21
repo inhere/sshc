@@ -167,3 +167,15 @@
 
 - 完成 Gate：T01–T07 全部 `done`，`go build ./...`、`go vet ./...`、`go test ./...` 通过，真实终端验证片段已记录；完成后在 progress 写 ≤8 行完成总结（主旨、最终状态、自主决策、commit 数与区间、剩余项）。
 - 剩余工作（明确不做，留待二期设计）：IPv6 `ff02::1` 主动探测、Windows `arp -a` 加速、mDNS 发现、`--family` 显式开关的取舍。
+
+## 进度记录
+
+- T01 done — `0abed58`
+- T02 done — `42ccf1b`
+- T03 done — `badd9fa`
+- T04 + T05 done（同一新文件的 CLI 与入库，一个原子提交）— `4e48dd1`
+- T06 done — `cfbe290`
+- T07 done — `b5d7835`：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 通过；真实终端 `sshc scan --cidr 127.0.0.1/32 --json` 命中 `SSH-2.0-OpenSSH_for_Windows_9.5`，默认扫描枚举 4102 个目标并如实报告 0 个 SSH 服务器。
+- Corrective 1：自动发现的接口网段超过 `--max-hosts` 时改为跳过并在状态行提示（显式 `--cidr` 仍报错）。原因：本机 WSL/Hyper-V 的 /20、/16 虚拟网段会让默认 `sshc scan` 直接失败。
+- Corrective 2：邻居表中 `Unreachable` 行同样跳过（真实 `netsh` 输出包含该状态）。
+- 偏差披露：Ctrl-C 中断返回 gcli 默认错误码 2，不是设计文档中的 130——gcli 未导出自定义退出码 API，需改 gcli 才能实现。
