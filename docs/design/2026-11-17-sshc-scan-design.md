@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.2.0 -->
 # sshc scan 局域网 SSH 目标发现设计
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.1 / 已批准（2026-11-17，用户原话：批准 Draft 0.1，进入实施计划）/ 实施计划见 `docs/plan/2026-11-17-sshc-scan-plan.md`
 >
 > thinking_mode=RIGOROUS；core_objective=让用户一条命令发现直连小交换机上的 IPv4/IPv6 SSH 服务器，并把结果一键纳入 sshc 主机配置；allowed_scope=新增 `sshc scan`（别名 `discover`）命令、IPv4 子网枚举、IPv6 邻居缓存读取、私有网段守卫、TCP+SSH banner 探测、表格/JSON 输出、`--save` 入库及对应测试与帮助；non_goals=全端口扫描、漏洞或 OS 指纹识别、非私网/公网目标、自动写入凭据、IPv6 主动组播探测（二期）；expansion_policy=DEFER_OR_REQUEST；review budget=本机工具档一轮合并轴评审；停止条件=发现来源、地址/zone 规范、守卫边界、banner 判定、入库命名与冲突策略、退出码与验收均明确。暴露度：本机工具档；仅维护者本机运行、只做本链路探测与本地配置追加，错误可由删掉新增 host 回退，不迁移数据、不新增 Secret、不做出机器动作。
 

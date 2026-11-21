@@ -323,6 +323,27 @@ connectivity, SSH handshake, and authentication. For `command_proxy` hosts it
 checks local proxy configuration; check the `via` host separately for SSH
 reachability.
 
+### Discover Hosts
+
+```bash
+sshc scan
+sshc scan --cidr 192.168.1.0/24
+sshc scan --interface 12 --timeout 300ms --parallel 64
+sshc scan --json
+sshc scan --save --group sw1
+```
+
+`sshc scan` (alias `discover`) looks for SSH servers on directly connected
+networks. Without `--cidr` it enumerates the local IPv4 interface networks and
+reads the system IPv6 neighbor cache; a target counts as SSH only when it answers
+with an `SSH-` identification line, and the banner is shown next to the address.
+`--force` is required for networks that are not private, link-local or loopback,
+and `--max-hosts` (default 4096) bounds one run. IPv6 discovery reads the
+neighbor cache only: use `--cidr` or prime it with `ping6 ff02::1%<if>`. With
+`--save --group <name>` the results are appended as hosts (name, IP, port and
+group only, no credentials), so `sshc run lan-192-168-1-20 -- hostname` works
+afterwards.
+
 ### Run Commands
 
 ```bash

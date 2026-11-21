@@ -293,6 +293,24 @@ sshc check --json --tag app
 SSH handshake 和认证。`command_proxy` 主机只检查本地代理配置；它的 `via`
 主机连通性请单独检查。
 
+### 发现主机
+
+```bash
+sshc scan
+sshc scan --cidr 192.168.1.0/24
+sshc scan --interface 12 --timeout 300ms --parallel 64
+sshc scan --json
+sshc scan --save --group sw1
+```
+
+`sshc scan`（别名 `discover`）用于发现直连网络上的 SSH 服务器。不带 `--cidr`
+时枚举本机 IPv4 接口网段并读取系统 IPv6 邻居缓存；只有返回 `SSH-` 首行的目标才
+计为 SSH 服务器，并在地址旁展示 banner。非私网、非链路本地且非回环的网段需要
+`--force`，单次探测数量由 `--max-hosts`（默认 4096）限制。IPv6 一期只读邻居缓存：
+用 `--cidr` 指定，或先用 `ping6 ff02::1%<if>` 预热。配合 `--save --group <name>`
+可把结果追加为主机（仅名称、IP、端口和分组，不写凭据），之后即可
+`sshc run lan-192-168-1-20 -- hostname`。
+
 ### 执行远程命令
 
 ```bash
