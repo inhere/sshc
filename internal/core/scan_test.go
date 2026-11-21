@@ -39,6 +39,33 @@ func TestBuildScanTargets(t *testing.T) {
 		is.Contains(err.Error(), "--max-hosts")
 	})
 
+	t.Run("oversized local networks are skipped, not fatal", func(t *testing.T) {
+		is := assert.New(t)
+
+		big := []net.Interface{{Index: 3, Name: "wsl"}}
+		prefixes, err := localScanPrefixesFrom(
+			func() ([]net.Interface, error) { return big, nil },
+			func(net.Interface) ([]net.Addr, error) {
+				_, ipNet, err := net.ParseCIDR("192.168.240.1/20")
+				if err != nil {
+					return nil, err
+				}
+				ipNet.IP = net.ParseIP("192.168.240.1").To4()
+				return []net.Addr{ipNet}, nil
+			},
+			nil,
+		)
+		is.NoErr(err)
+		is.Len(prefixes, 1)
+
+		targets, statuses, err := buildTargetsFromPrefixes(prefixes, 256, false)
+		is.NoErr(err)
+		is.Len(targets, 0)
+		is.Len(statuses, 1)
+		is.Contains(statuses[0].Detail, "skipped 1 network(s)")
+		is.Contains(statuses[0].Detail, "192.168.240.0/20")
+	})
+
 	t.Run("public cidr needs force", func(t *testing.T) {
 		is := assert.New(t)
 

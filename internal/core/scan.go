@@ -90,12 +90,29 @@ func BuildScanTargets(cidrs []string, interfaces []string, opts ScanOptions) ([]
 		prefixes = local
 	}
 
+	targets, statuses, err := buildTargetsFromPrefixes(prefixes, maxHosts, len(cidrs) > 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return targets, statuses, nil
+}
+
+// buildTargetsFromPrefixes expands the prefixes under the host budget. Explicit
+// --cidr input fails when over budget; auto-discovered interface networks are
+// skipped so one huge virtual subnet cannot break the run.
+func buildTargetsFromPrefixes(prefixes []scanPrefix, maxHosts int, explicit bool) ([]ScanTarget, []ScanSourceStatus, error) {
 	targets := make([]ScanTarget, 0, maxHosts)
 	seen := make(map[string]struct{}, maxHosts)
+	var skipped []string
 	for _, p := range prefixes {
 		batch, err := enumScanPrefix(p, maxHosts-len(targets))
 		if err != nil {
-			return nil, nil, err
+			if explicit {
+				return nil, nil, err
+			}
+			// A directly connected switch is often next to a huge virtual subnet.
+			skipped = append(skipped, p.prefix.String())
+			continue
 		}
 		for _, target := range batch {
 			key := target.Address + "%" + target.Zone
@@ -107,7 +124,11 @@ func BuildScanTargets(cidrs []string, interfaces []string, opts ScanOptions) ([]
 		}
 	}
 
-	statuses := []ScanSourceStatus{{Source: ScanSourceCIDR, Available: true, Detail: fmt.Sprintf("%d target(s)", len(targets))}}
+	detail := fmt.Sprintf("%d target(s)", len(targets))
+	if len(skipped) > 0 {
+		detail += fmt.Sprintf("; skipped %d network(s) over --max-hosts %d: %s", len(skipped), maxHosts, strings.Join(skipped, ", "))
+	}
+	statuses := []ScanSourceStatus{{Source: ScanSourceCIDR, Available: true, Detail: detail}}
 	return targets, statuses, nil
 }
 
@@ -165,7 +186,7 @@ func enumScanPrefix(p scanPrefix, budget int) ([]ScanTarget, error) {
 
 	count := 1 << uint(hostBits)
 	if count > budget {
-		return nil, fmt.Errorf("scan range %s has %d hosts, more than --max-hosts %d; narrow it with --cidr", p.prefix, count, budget)
+		return nil, fmt.Errorf("scan range %s has %d hosts, more than the remaining --max-hosts budget %d; narrow it with --cidr", p.prefix, count, budget)
 	}
 
 	skipEdges := first.Is4() && p.prefix.Bits() <= 30

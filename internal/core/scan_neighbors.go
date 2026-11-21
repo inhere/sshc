@@ -116,7 +116,7 @@ func neighborDev(fields []string) (dev, name string) {
 func neighborStateFailed(fields []string) bool {
 	for _, field := range fields[1:] {
 		switch strings.ToLower(field) {
-		case "incomplete", "failed":
+		case "incomplete", "failed", "unreachable":
 			return true
 		}
 	}

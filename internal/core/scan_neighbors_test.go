@@ -13,6 +13,7 @@ Internet Address                              Physical Address   Type
 --------------------------------------------  -----------------  -----------
 fe80::1c2b:3cff:fe4d:5e6f                     00-11-22-33-44-55  Reachable
 fe80::abcd:1                                   00-11-22-33-44-66  Stale
+fe80::dead:2                                  00-11-22-33-44-99  Unreachable
 ff02::1:2                                     33-33-00-01-00-02  Permanent
 ::1                                          00-11-22-33-44-77  Unreachable
 
@@ -35,7 +36,7 @@ func TestParseNeighborTable(t *testing.T) {
 		is := assert.New(t)
 
 		targets := parseNeighborTable(windowsNeighborSample)
-		// ff02::1:2 is multicast, ::1 is loopback.
+		// ff02::1:2 is multicast, ::1 is loopback, fe80::dead:2 is unreachable.
 		is.Len(targets, 2)
 		is.Eq("fe80::1c2b:3cff:fe4d:5e6f", targets[0].Address)
 		is.Eq("12", targets[0].Zone)

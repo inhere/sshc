@@ -143,8 +143,11 @@ func runScan(c *gcli.Command, opts scanOptions) error {
 	} else {
 		writeScanTable(c, results)
 		for _, status := range statuses {
-			if !status.Available {
+			switch {
+			case !status.Available:
 				fmt.Fprintf(cmdStatus(c), "sshc: %s source unavailable: %s\n", status.Source, status.Detail)
+			case strings.Contains(status.Detail, "skipped"):
+				fmt.Fprintf(cmdStatus(c), "sshc: %s source: %s\n", status.Source, status.Detail)
 			}
 		}
 		fmt.Fprintf(cmdStatus(c), "sshc: %d ssh server(s) of %d target(s)\n", len(results), len(targets))
