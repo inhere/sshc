@@ -52,12 +52,14 @@ Notes:
 
 func newAuthAddCmd() *gcli.Command {
 	opts := struct {
-		User           string
-		PasswordPrompt bool
-		KeyPath        string
-		EmbedKey       bool
-		KeyPassphrase  keyPassphraseFlag
-		Remark         string
+		User             string
+		PasswordPrompt   bool
+		PasswordCmd      string
+		KeyPath          string
+		EmbedKey         bool
+		KeyPassphrase    keyPassphraseFlag
+		KeyPassphraseCmd string
+		Remark           string
 	}{}
 	return &gcli.Command{
 		Name: "add",
@@ -65,9 +67,11 @@ func newAuthAddCmd() *gcli.Command {
 		Config: func(c *gcli.Command) {
 			c.StrOpt(&opts.User, "user", "u", "", "ssh username")
 			c.BoolOpt(&opts.PasswordPrompt, "password", "p", false, "prompt for hidden password")
+			c.StrOpt(&opts.PasswordCmd, "password-cmd", "", "", "command whose output is the password")
 			c.StrOpt(&opts.KeyPath, "key", "", "", "ssh private key path")
 			c.BoolOpt(&opts.EmbedKey, "embed-key", "", false, "store encrypted private key content in config")
 			c.VarOpt(&opts.KeyPassphrase, "key-passphrase", "", "key passphrase source: input, clip, or env")
+			c.StrOpt(&opts.KeyPassphraseCmd, "key-passphrase-cmd", "", "", "command whose output is the key passphrase")
 			c.StrOpt(&opts.Remark, "remark", "", "", "auth profile remark")
 			c.AddArg("name", "auth profile name", true)
 		},
@@ -82,10 +86,18 @@ func newAuthAddCmd() *gcli.Command {
 				return errors.New("-p/--password does not accept an inline value")
 			}
 			profile := core.AuthProfile{
-				Name:   name,
-				User:   strings.TrimSpace(opts.User),
-				Remark: strings.TrimSpace(opts.Remark),
+				Name:        name,
+				User:        strings.TrimSpace(opts.User),
+				PasswordCmd: strings.TrimSpace(opts.PasswordCmd),
+				Remark:      strings.TrimSpace(opts.Remark),
 			}
+			if opts.PasswordPrompt && profile.PasswordCmd != "" {
+				return errors.New("-p/--password and --password-cmd cannot be used together")
+			}
+			if opts.KeyPassphrase.SetFlag && strings.TrimSpace(opts.KeyPassphraseCmd) != "" {
+				return errors.New("--key-passphrase and --key-passphrase-cmd cannot be used together")
+			}
+			profile.KeyPassphraseCmd = strings.TrimSpace(opts.KeyPassphraseCmd)
 			keyPath, err := normalizeKeyPathForSave(opts.KeyPath)
 			if err != nil {
 				return err
@@ -226,6 +238,17 @@ func validateAuthProfile(profile core.AuthProfile) error {
 	if !authProfileHasPassword(profile) && !authProfileHasKey(profile) {
 		return errors.New("password or key is required")
 	}
+	if strings.TrimSpace(profile.PasswordCmd) != "" && (profile.Password != "" || profile.PasswordEnc != "") {
+		return errors.New("password and password_cmd cannot both be set")
+	}
+	if strings.TrimSpace(profile.KeyPassphraseCmd) != "" {
+		if !authProfileHasKey(profile) {
+			return errors.New("--key-passphrase-cmd requires --key")
+		}
+		if profile.KeyPassphrase != "" || profile.KeyPassphraseEnc != "" {
+			return errors.New("key_passphrase and key_passphrase_cmd cannot both be set")
+		}
+	}
 	return nil
 }
 
@@ -302,7 +325,7 @@ func authProfileHasKey(profile core.AuthProfile) bool {
 }
 
 func authProfileHasPassword(profile core.AuthProfile) bool {
-	return profile.Password != "" || profile.PasswordEnc != ""
+	return profile.Password != "" || profile.PasswordEnc != "" || strings.TrimSpace(profile.PasswordCmd) != ""
 }
 
 func loadRawAuthProfile(name string) (core.AuthProfile, bool, error) {

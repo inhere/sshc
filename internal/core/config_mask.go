@@ -60,6 +60,13 @@ func AuthLabel(host Host) string {
 	}
 	hasKey := hasKeyAuth(host)
 	hasPassword := host.Password != "" || host.PasswordEnc != ""
+	if !hasPassword && strings.TrimSpace(host.PasswordCmd) != "" {
+		// A command-based source is shown as such, never with its command text.
+		if hasKey {
+			return "key+cmd"
+		}
+		return "cmd"
+	}
 	switch {
 	case hasKey && hasPassword:
 		return "key+password"

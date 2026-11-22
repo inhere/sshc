@@ -26,6 +26,7 @@ type checkOptions struct {
 	ViaLocalPort int
 	ViaJump      string
 	TrustNewHost bool
+	NoSecretCmd  bool
 }
 
 func NewCheckCmd() *gcli.Command {
@@ -60,6 +61,7 @@ Notes:
 			c.IntOpt(&opts.ViaLocalPort, "via-local-port", "", 0, "use an existing local loopback forward port")
 			c.StrOpt(&opts.ViaJump, "via-jump", "", "", "create a temporary forward through a saved SSH host")
 			c.BoolOpt(&opts.TrustNewHost, "trust-new-host", "", false, "interactively confirm an unknown host key")
+			c.BoolOpt(&opts.NoSecretCmd, "no-secret-cmd", "", false, "do not run command-based secret sources")
 			c.AddArg("target", "host ip or name", false)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
@@ -92,7 +94,7 @@ Notes:
 				}
 				return errors.New("check failed")
 			}
-			results, err := runHostChecks(hosts, core.CheckOptions{Timeout: timeout}, opts.Parallel, *opts)
+			results, err := runHostChecks(hosts, core.CheckOptions{Timeout: timeout, NoSecretCmd: opts.NoSecretCmd}, opts.Parallel, *opts)
 			if err != nil {
 				return err
 			}
@@ -298,6 +300,9 @@ func checkErrorLabel(value string) string {
 
 func checkHasFailures(results []core.CheckResult) bool {
 	for _, result := range results {
+		if result.Error == "secret command skipped" {
+			continue
+		}
 		if strings.TrimSpace(result.Error) != "" || result.TCP == core.CheckStatusFail || result.SSH == core.CheckStatusFail || result.Auth == core.CheckStatusFail || result.HostKey == core.CheckStatusFail {
 			return true
 		}

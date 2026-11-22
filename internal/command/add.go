@@ -17,25 +17,27 @@ import (
 )
 
 var addOpts = struct {
-	Interactive   bool
-	FromClipboard bool
-	IP            string
-	Name          string
-	User          string
-	Password      string
-	KeyPath       string
-	EmbedKey      bool
-	KeyPassphrase keyPassphraseFlag
-	Remark        string
-	Group         string
-	Tags          string
-	Port          int
-	AuthRef       string
-	Jump          string
-	Backend       string
-	Via           string
-	RunTemplate   string
-	LoginCommand  string
+	Interactive      bool
+	FromClipboard    bool
+	IP               string
+	Name             string
+	User             string
+	Password         string
+	PasswordCmd      string
+	KeyPath          string
+	EmbedKey         bool
+	KeyPassphrase    keyPassphraseFlag
+	KeyPassphraseCmd string
+	Remark           string
+	Group            string
+	Tags             string
+	Port             int
+	AuthRef          string
+	Jump             string
+	Backend          string
+	Via              string
+	RunTemplate      string
+	LoginCommand     string
 }{Port: core.DefaultSSHPort}
 
 func NewAddCmd() *gcli.Command {
@@ -81,9 +83,11 @@ Notes:
 			c.StrOpt(&addOpts.Name, "name", "", "", "host alias")
 			c.StrOpt(&addOpts.User, "user", "u", "", "ssh username")
 			c.StrOpt(&addOpts.Password, "password", "p", "", "ssh password")
+			c.StrOpt(&addOpts.PasswordCmd, "password-cmd", "", "", "command whose output is the password")
 			c.StrOpt(&addOpts.KeyPath, "key", "", "", "ssh private key path")
 			c.BoolOpt(&addOpts.EmbedKey, "embed-key", "", false, "store encrypted private key content in config")
 			c.VarOpt(&addOpts.KeyPassphrase, "key-passphrase", "", "key passphrase source: input, clip, or env")
+			c.StrOpt(&addOpts.KeyPassphraseCmd, "key-passphrase-cmd", "", "", "command whose output is the key passphrase")
 			c.StrOpt(&addOpts.AuthRef, "auth", "", "", "auth profile name")
 			c.StrOpt(&addOpts.Jump, "jump", "", "", "jump host name or ip")
 			c.StrOpt(&addOpts.Backend, "backend", "", "", "host backend: ssh or command_proxy")
@@ -119,6 +123,15 @@ Notes:
 			if addOpts.Interactive && addOpts.FromClipboard {
 				return fmt.Errorf("--interactive and --from-clipboard cannot be used together")
 			}
+			if strings.TrimSpace(addOpts.Password) != "" && strings.TrimSpace(addOpts.PasswordCmd) != "" {
+				return fmt.Errorf("-p/--password and --password-cmd cannot be used together")
+			}
+			if addOpts.KeyPassphrase.SetFlag && strings.TrimSpace(addOpts.KeyPassphraseCmd) != "" {
+				return fmt.Errorf("--key-passphrase and --key-passphrase-cmd cannot be used together")
+			}
+			if strings.TrimSpace(addOpts.KeyPassphraseCmd) != "" && strings.TrimSpace(addOpts.KeyPath) == "" {
+				return fmt.Errorf("--key-passphrase-cmd requires --key")
+			}
 
 			var (
 				host core.Host
@@ -140,6 +153,7 @@ Notes:
 			if host.KeyPath, err = normalizeKeyPathForSave(host.KeyPath); err != nil {
 				return err
 			}
+			host.KeyPassphraseCmd = strings.TrimSpace(addOpts.KeyPassphraseCmd)
 			if err := applyHostKeyOptions(&host, addOpts.EmbedKey, addOpts.KeyPassphrase); err != nil {
 				return err
 			}
@@ -174,9 +188,11 @@ func resetAddOptions() {
 	addOpts.Name = ""
 	addOpts.User = ""
 	addOpts.Password = ""
+	addOpts.PasswordCmd = ""
 	addOpts.KeyPath = ""
 	addOpts.EmbedKey = false
 	addOpts.KeyPassphrase = keyPassphraseFlag{}
+	addOpts.KeyPassphraseCmd = ""
 	addOpts.Remark = ""
 	addOpts.Group = core.DefaultGroup
 	addOpts.Tags = ""
@@ -200,6 +216,7 @@ func buildHostFromAddOptions() (core.Host, error) {
 		IP:           strings.TrimSpace(addOpts.IP),
 		User:         strings.TrimSpace(addOpts.User),
 		Password:     addOpts.Password,
+		PasswordCmd:  strings.TrimSpace(addOpts.PasswordCmd),
 		KeyPath:      strings.TrimSpace(addOpts.KeyPath),
 		AuthRef:      strings.TrimSpace(addOpts.AuthRef),
 		Jump:         strings.TrimSpace(addOpts.Jump),
