@@ -165,3 +165,12 @@
 
 - 完成 Gate：T01–T07 全部 done，`go build ./...`、`go vet ./...`、`go test ./...` 通过，真实样例输出已记录；完成后在 progress 写 ≤8 行完成总结。
 - 剩余工作：`key_cmd`、跨进程缓存、内置 gopass/sops 适配（均需另行设计）。
+
+## 进度记录
+
+- T01 done — `3dcd0f2`（Host/AuthProfile 新字段、值/命令互斥、profile 覆盖与 doctor 校验）
+- T02 done — `c190c57`（`secret_cmd*.go`：shell 选择、单行裁剪、进程内按命令缓存、失败不缓存）
+- T03 done — `3efd11e`（连接前解析、`CheckOptions.NoSecretCmd`、失败即停）
+- T04 + T05 done — `c48a6be`（`--password-cmd`/`--key-passphrase-cmd`、互斥校验、`check --no-secret-cmd`、`list` 显示 `cmd`）
+- T06 done — `1dffa1d`（README 两份 + 设计批准留痕）
+- T07 done：`go build/vet/test ./... -count=1` 通过；真实本机 `127.0.0.1:22` 验证——写入 `password_cmd` 后 `check` 执行命令并进入 SSH 认证（错误为 `ssh: unexpected message type 51 (expected 60)`，即服务端返回认证失败），`check --no-secret-cmd` 输出 `auth: "-"`、`error: "secret command skipped"` 且退出码 0；配置文件仅有 `password_cmd`，无解析后的秘密。
