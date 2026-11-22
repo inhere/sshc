@@ -179,3 +179,4 @@
 - Corrective 1：自动发现的接口网段超过 `--max-hosts` 时改为跳过并在状态行提示（显式 `--cidr` 仍报错）。原因：本机 WSL/Hyper-V 的 /20、/16 虚拟网段会让默认 `sshc scan` 直接失败。
 - Corrective 2：邻居表中 `Unreachable` 行同样跳过（真实 `netsh` 输出包含该状态）。
 - 偏差披露：Ctrl-C 中断返回 gcli 默认错误码 2，不是设计文档中的 130——gcli 未导出自定义退出码 API，需改 gcli 才能实现。
+- 偏差已解决：gcli v3.8.7 导出 `NewExitError` 后，`sshc scan` 被中断改为返回退出码 130（`01ddbe4`，依赖升级 `cdbcc4a`）。
