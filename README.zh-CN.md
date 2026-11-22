@@ -176,6 +176,25 @@ sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```
 
+### 命令型秘密来源
+
+秘密可以留在 gopass/sops 里，sshc 只存“取值的命令”，连接时再执行：
+
+```bash
+sshc auth add ops -u root --password-cmd 'gopass show -on ssh/ops'
+sshc add --ip 10.0.0.8 --name dev -u root --key ~/.ssh/id_ed25519 --key-passphrase-cmd 'sops -d secrets.yaml'
+sshc check dev --no-secret-cmd   # 本次 check 不执行取值命令
+```
+
+- `password_cmd` / `key_passphrase_cmd` 与存储的 `password` / `key_passphrase` 互斥，同时配置会被拒绝。
+- 每次 sshc 调用执行一次命令，取 **stdout** 作为秘密：裁剪结尾换行，空输出或多行输出失败，
+  非零退出或超时（默认 10s，可用 `SSHC_SECRET_CMD_TIMEOUT`）失败；同一次运行内按命令缓存，
+  所以共享的 auth profile 在 `check --all` 中也只执行一次。
+- shell：unix 用 `/bin/sh -c`；Windows 按 `pwsh` → `powershell` → `cmd` 取第一个可用的
+  （`-NoProfile -Command` / `/C`）。
+- 命令就是以你的用户权限执行代码：只放在自己的配置里，不要在命令里内嵌秘密；解析出的秘密
+  不会写入配置或 `sshc log`。
+
 ### 管理主机
 
 ```bash

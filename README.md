@@ -201,6 +201,27 @@ sshc host add --ip 192.168.1.10 --name devhost --auth dev-root
 sshc host add --ip 10.0.0.8 --name inner-db --auth dev-root --jump bastion
 ```
 
+### Commands as Secret Sources
+
+Keep the secret in gopass/sops instead of sshc: store the command, sshc runs it when connecting.
+
+```bash
+sshc auth add ops -u root --password-cmd 'gopass show -on ssh/ops'
+sshc add --ip 10.0.0.8 --name dev -u root --key ~/.ssh/id_ed25519 --key-passphrase-cmd 'sops -d secrets.yaml'
+sshc check dev --no-secret-cmd   # skip the command for one check run
+```
+
+- `password_cmd` / `key_passphrase_cmd` replace the stored `password` / `key_passphrase`; setting
+  both a value and a command is rejected.
+- The command runs once per sshc invocation and its **stdout** is the secret: trailing newlines are
+  trimmed, empty or multi-line output fails, a non-zero exit or timeout (default 10s,
+  `SSHC_SECRET_CMD_TIMEOUT`) fails. The result is cached per command inside one run, so a shared
+  auth profile runs it once even for `check --all`.
+- Shell: `/bin/sh -c` on unix; on Windows the first available of `pwsh`, `powershell`, `cmd`
+  (`-NoProfile -Command` / `/C`).
+- The command is code execution with your user rights: keep it in your own config, never inline a
+  secret in it, and note the resolved secret is never written to the config or `sshc log`.
+
 ### Manage Hosts
 
 ```bash

@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.2.0 -->
 # sshc 外部密钥来源（命令取值）设计
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.2 / 已批准（2026-11-22，用户原话：批准 Draft 0.2，进入实施计划）/ 实施计划见 `docs/plan/2026-11-22-sshc-external-secret-sources-plan.md`
 >
 > thinking_mode=RIGOROUS；core_objective=允许 sshc 只保存“获取密码/私钥口令的命令”（如 gopass、sops），连接时执行命令取值，配置里不再存放明文或加密后的秘密；allowed_scope=Host/AuthProfile 新增命令型秘密来源字段、运行时解析与校验、连接入口接线、`host add`/`auth add` 录入方式、README 与测试；non_goals=通用 secret 管理、内置 gopass/sops 集成、跨进程秘密缓存、远程/跳板侧取值、密钥文件内容命令化（`key_cmd` 二期）、任何 secret 落盘加密格式变更；expansion_policy=DEFER_OR_REQUEST；review budget=本机工具档一轮合并轴评审；停止条件=字段名与优先级、执行时机与失败语义、输出裁剪规则、安全边界与验收均明确。暴露度：本机工具档；仅在维护者本机以当前用户权限执行配置中的命令，错误可回退（删除字段即恢复原行为），不新增 Secret 备份或出机器动作。
 
