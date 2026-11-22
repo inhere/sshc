@@ -143,6 +143,18 @@ func TestScanCmd(t *testing.T) {
 		}
 	})
 
+	t.Run("cancelled scan exits with 130", func(t *testing.T) {
+		is := assert.New(t)
+		stubScan(t, nil)
+		scanProbeSSH = func(context.Context, []core.ScanTarget, int, time.Duration, int, core.ScanDialFunc) ([]core.ScanResult, error) {
+			return nil, context.Canceled
+		}
+		defer setCommandOutputForTest(new(bytes.Buffer))()
+
+		code := newScanTestApp().Run([]string{"scan", "--parallel", "1"})
+		is.Eq(130, code)
+	})
+
 	t.Run("alias discover dispatches the same command", func(t *testing.T) {
 		is := assert.New(t)
 		calls := stubScan(t, nil)

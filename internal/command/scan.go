@@ -21,6 +21,7 @@ const (
 	maxScanTimeout      = 10 * time.Second
 	defaultScanParallel = 128
 	maxScanParallel     = 1024
+	scanInterruptedCode = 130
 )
 
 // Replacable for tests: the command never touches the network on its own.
@@ -162,6 +163,11 @@ func runScan(c *gcli.Command, opts scanOptions) error {
 	}
 
 	if probeErr != nil {
+		// An interrupted scan still prints what it found; 130 is the usual
+		// "killed by SIGINT" exit code.
+		if errors.Is(probeErr, context.Canceled) {
+			return gcli.NewExitError(scanInterruptedCode, errors.New("scan interrupted"))
+		}
 		return fmt.Errorf("scan interrupted: %w", probeErr)
 	}
 	return nil
