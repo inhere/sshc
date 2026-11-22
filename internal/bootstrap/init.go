@@ -41,6 +41,7 @@ func NewApp() *gcli.App {
 		command.NewTunnelCmd(),
 		command.NewCheckCmd(),
 		command.NewRunCmd(),
+		command.NewScanCmd(),
 		command.NewBatchRunCmd(),
 		command.NewUploadCmd(),
 		command.NewDownloadCmd(),

@@ -19,7 +19,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        go_version: [1.25, stable]
+        # x/term v0.48 and x/sys v0.50 require go >= 1.26, so 1.25 is no longer
+        # a supported build target.
+        go_version: [1.26, stable]
         os: [ubuntu-latest, windows-latest]
 
     steps:
@@ -37,7 +39,9 @@ jobs:
 
       - name: Run staticcheck
         uses: reviewdog/action-staticcheck@v1
-        if: ${{ github.event_name == 'pull_request' }}
+        # The action downloads a linux staticcheck binary, which cannot run on a
+        # windows runner ("Exec format error").
+        if: ${{ github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' }}
         with:
           github_token: ${{ secrets.github_token }}
           reporter: github-pr-check
