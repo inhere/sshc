@@ -737,6 +737,9 @@ type sshClientOptions struct {
 	DialAddress     string
 	NoHostKeyPrompt bool
 	TrustNewHost    bool
+	// NoSecretCmd skips command-based secret sources (used by check
+	// --no-secret-cmd).
+	NoSecretCmd bool
 }
 
 func newSSHClientWithOptions(host Host, opts sshClientOptions) (RemoteClient, error) {
@@ -748,6 +751,13 @@ func newSSHClientWithOptions(host Host, opts sshClientOptions) (RemoteClient, er
 	}
 	if host.TrustNewHost {
 		opts.TrustNewHost = true
+	}
+	if !opts.NoSecretCmd {
+		resolved, err := ResolveHostSecrets(host)
+		if err != nil {
+			return nil, err
+		}
+		host = resolved
 	}
 	if strings.TrimSpace(host.Jump) == "" {
 		return newDirectSSHClient(host, opts)

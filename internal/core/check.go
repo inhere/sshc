@@ -19,6 +19,9 @@ type CheckOptions struct {
 	DialAddress     string
 	NoHostKeyPrompt bool
 	TrustNewHost    bool
+	// NoSecretCmd skips command-based secret sources: the auth step is reported
+	// as skipped instead of running the command.
+	NoSecretCmd bool
 }
 
 type CheckResult struct {
@@ -108,12 +111,20 @@ func CheckHost(host Host, opts CheckOptions) CheckResult {
 	}
 	result.HostKey = CheckStatusOK
 
+	if opts.NoSecretCmd && hasSecretCommand(host) {
+		result.Auth = CheckStatusSkipped
+		result.Error = "secret command skipped"
+		result.LatencyMS = SinceMS(started)
+		return result
+	}
+
 	var sshErr error
-	if opts.DialAddress != "" || opts.TrustNewHost {
+	if opts.DialAddress != "" || opts.TrustNewHost || opts.NoSecretCmd {
 		client, err := newSSHClientWithOptions(host, sshClientOptions{
 			DialAddress:     opts.DialAddress,
 			NoHostKeyPrompt: opts.NoHostKeyPrompt,
 			TrustNewHost:    opts.TrustNewHost,
+			NoSecretCmd:     opts.NoSecretCmd,
 		})
 		if err == nil {
 			err = client.Close()

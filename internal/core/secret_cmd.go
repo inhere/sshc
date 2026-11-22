@@ -82,6 +82,11 @@ func ResolveHostSecrets(host Host) (Host, error) {
 	return host, nil
 }
 
+// hasSecretCommand reports whether the host uses a command-based secret.
+func hasSecretCommand(host Host) bool {
+	return strings.TrimSpace(host.PasswordCmd) != "" || strings.TrimSpace(host.KeyPassphraseCmd) != ""
+}
+
 // resetSecretCmdCacheForTest clears the process cache between test cases.
 func resetSecretCmdCacheForTest() {
 	secretCmdResults.mu.Lock()

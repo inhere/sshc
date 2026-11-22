@@ -1,7 +1,10 @@
 package core
 
 import (
+	"errors"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 )
@@ -100,6 +103,50 @@ func TestCheckConfigSecretSourceConflicts(t *testing.T) {
 	is.Len(messages, 2)
 	is.Contains(messages[0], "password and password_cmd cannot both be set")
 	is.Contains(messages[1], "password and password_cmd cannot both be set")
+}
+
+func TestCheckHostNoSecretCmd(t *testing.T) {
+	t.Run("command source is skipped", func(t *testing.T) {
+		is := assert.New(t)
+
+		oldDial := checkTCPDial
+		oldConnect := checkSSHConnect
+		t.Cleanup(func() { checkTCPDial, checkSSHConnect = oldDial, oldConnect })
+
+		connects := 0
+		checkTCPDial = func(string, string, time.Duration) (net.Conn, error) {
+			client, server := net.Pipe()
+			_ = server.Close()
+			return client, nil
+		}
+		checkSSHConnect = func(Host) error {
+			connects++
+			return nil
+		}
+
+		host := Host{Name: "dev", IP: "10.0.0.8", User: "root", Port: 22, PasswordCmd: "gopass show ssh/dev", HostKeyCheck: HostKeyCheckInsecure}
+		result := CheckHost(host, CheckOptions{NoSecretCmd: true, Timeout: time.Second})
+		is.Eq(CheckStatusSkipped, result.Auth)
+		is.Eq("secret command skipped", result.Error)
+		is.Eq(0, connects)
+	})
+
+	t.Run("failed secret command surfaces before dialing", func(t *testing.T) {
+		is := assert.New(t)
+		fakeSecretCmd(t, "", errors.New("secret command failed: exit status 1"))
+
+		_, err := newSSHClientWithOptions(Host{
+			Name:         "dev",
+			IP:           "127.0.0.1",
+			User:         "root",
+			Port:         65022,
+			HostKeyCheck: HostKeyCheckInsecure,
+			PasswordCmd:  "gopass show ssh/dev",
+		}, sshClientOptions{})
+		is.Err(err)
+		is.Contains(err.Error(), "password_cmd")
+		is.Contains(err.Error(), "secret command failed")
+	})
 }
 
 func TestApplyAuthProfileSecretCommands(t *testing.T) {
