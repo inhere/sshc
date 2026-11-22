@@ -26,6 +26,7 @@ func CheckConfig(config Config) []DoctorIssue {
 	issues = append(issues, checkGroupDefaults(config)...)
 	issues = append(issues, checkHostKeyPolicy(config)...)
 	issues = append(issues, checkCommandProxyHosts(config)...)
+	issues = append(issues, checkSecretSourceConflicts(config)...)
 	issues = append(issues, checkTunnels(config)...)
 	if len(issues) == 0 {
 		return []DoctorIssue{{Level: DoctorOK, Item: "config", Message: "config looks valid"}}
@@ -61,6 +62,32 @@ func checkTunnels(config Config) []DoctorIssue {
 			if _, ok := store.Find(target); !ok {
 				warn(fmt.Sprintf("tunnel %q target host %q not found", label, target))
 			}
+		}
+	}
+	return issues
+}
+
+// checkSecretSourceConflicts reports a stored secret combined with a command
+// source for the same secret, in hosts and in auth profiles.
+func checkSecretSourceConflicts(config Config) []DoctorIssue {
+	var issues []DoctorIssue
+	errorf := func(item, format string, args ...any) {
+		issues = append(issues, DoctorIssue{Level: DoctorError, Item: item, Message: fmt.Sprintf(format, args...)})
+	}
+	for _, host := range config.Hosts {
+		if err := validateSecretSourceConflict(host.Password, host.PasswordEnc, host.PasswordCmd, "password"); err != nil {
+			errorf("hosts", "host %q: %v", HostLogName(host), err)
+		}
+		if err := validateSecretSourceConflict(host.KeyPassphrase, host.KeyPassphraseEnc, host.KeyPassphraseCmd, "key_passphrase"); err != nil {
+			errorf("hosts", "host %q: %v", HostLogName(host), err)
+		}
+	}
+	for _, profile := range config.AuthProfiles {
+		if err := validateSecretSourceConflict(profile.Password, profile.PasswordEnc, profile.PasswordCmd, "password"); err != nil {
+			errorf("auth", "profile %q: %v", profile.Name, err)
+		}
+		if err := validateSecretSourceConflict(profile.KeyPassphrase, profile.KeyPassphraseEnc, profile.KeyPassphraseCmd, "key_passphrase"); err != nil {
+			errorf("auth", "profile %q: %v", profile.Name, err)
 		}
 	}
 	return issues

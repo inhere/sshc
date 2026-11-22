@@ -283,9 +283,15 @@ func applyAuthProfile(host *EffectiveHost, profile AuthProfile) {
 	}
 	if profile.Password != "" {
 		host.Password = profile.Password
+		host.PasswordCmd = ""
 	}
 	if profile.PasswordEnc != "" {
 		host.PasswordEnc = profile.PasswordEnc
+		host.PasswordCmd = ""
+	}
+	if value := strings.TrimSpace(profile.PasswordCmd); value != "" {
+		host.PasswordCmd = value
+		host.Password, host.PasswordEnc = "", ""
 	}
 	if value := strings.TrimSpace(profile.KeyPath); value != "" {
 		host.KeyPath = value
@@ -298,9 +304,15 @@ func applyAuthProfile(host *EffectiveHost, profile AuthProfile) {
 	}
 	if profile.KeyPassphrase != "" {
 		host.KeyPassphrase = profile.KeyPassphrase
+		host.KeyPassphraseCmd = ""
 	}
 	if profile.KeyPassphraseEnc != "" {
 		host.KeyPassphraseEnc = profile.KeyPassphraseEnc
+		host.KeyPassphraseCmd = ""
+	}
+	if value := strings.TrimSpace(profile.KeyPassphraseCmd); value != "" {
+		host.KeyPassphraseCmd = value
+		host.KeyPassphrase, host.KeyPassphraseEnc = "", ""
 	}
 }
 
@@ -457,6 +469,12 @@ func validateEffectiveHost(host EffectiveHost) error {
 	}
 	if !hasPasswordAuth(host.Host) && !hasKeyAuth(host.Host) {
 		return fmt.Errorf("password or key_path is required for host %q", HostLogName(host.Host))
+	}
+	if err := validateSecretSourceConflict(host.Password, host.PasswordEnc, host.PasswordCmd, "password"); err != nil {
+		return fmt.Errorf("host %q: %w", HostLogName(host.Host), err)
+	}
+	if err := validateSecretSourceConflict(host.KeyPassphrase, host.KeyPassphraseEnc, host.KeyPassphraseCmd, "key_passphrase"); err != nil {
+		return fmt.Errorf("host %q: %w", HostLogName(host.Host), err)
 	}
 	if host.Port < 1 || host.Port > 65535 {
 		return fmt.Errorf("invalid ssh port %d", host.Port)

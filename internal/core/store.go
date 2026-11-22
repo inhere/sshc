@@ -31,26 +31,32 @@ const (
 var userHomeDir = os.UserHomeDir
 
 type Host struct {
-	Name             string   `json:"name"`
-	IP               string   `json:"ip"`
-	AuthRef          string   `json:"auth_ref,omitempty"`
-	User             string   `json:"user"`
-	Password         string   `json:"password,omitempty"`
-	PasswordEnc      string   `json:"password_enc,omitempty"`
-	KeyPath          string   `json:"key_path,omitempty"`
-	KeyData          string   `json:"key_data,omitempty"`
-	KeyDataEnc       string   `json:"key_data_enc,omitempty"`
-	KeyPassphrase    string   `json:"key_passphrase,omitempty"`
-	KeyPassphraseEnc string   `json:"key_passphrase_enc,omitempty"`
-	Remark           string   `json:"remark,omitempty"`
-	Group            string   `json:"group,omitempty"`
-	Tags             []string `json:"tags,omitempty"`
-	Port             int      `json:"port,omitempty"`
-	Jump             string   `json:"jump,omitempty"`
-	Backend          string   `json:"backend,omitempty"`
-	Via              string   `json:"via,omitempty"`
-	RunTemplate      string   `json:"run_template,omitempty"`
-	LoginCommand     string   `json:"login_command,omitempty"`
+	Name             string `json:"name"`
+	IP               string `json:"ip"`
+	AuthRef          string `json:"auth_ref,omitempty"`
+	User             string `json:"user"`
+	Password         string `json:"password,omitempty"`
+	PasswordEnc      string `json:"password_enc,omitempty"`
+	KeyPath          string `json:"key_path,omitempty"`
+	KeyData          string `json:"key_data,omitempty"`
+	KeyDataEnc       string `json:"key_data_enc,omitempty"`
+	KeyPassphrase    string `json:"key_passphrase,omitempty"`
+	KeyPassphraseEnc string `json:"key_passphrase_enc,omitempty"`
+
+	// Command-based secret sources: the command runs at connection time and its
+	// stdout provides the secret, so no secret is stored in the config.
+	PasswordCmd      string `json:"password_cmd,omitempty"`
+	KeyPassphraseCmd string `json:"key_passphrase_cmd,omitempty"`
+
+	Remark       string   `json:"remark,omitempty"`
+	Group        string   `json:"group,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	Port         int      `json:"port,omitempty"`
+	Jump         string   `json:"jump,omitempty"`
+	Backend      string   `json:"backend,omitempty"`
+	Via          string   `json:"via,omitempty"`
+	RunTemplate  string   `json:"run_template,omitempty"`
+	LoginCommand string   `json:"login_command,omitempty"`
 
 	ConnectTimeout  string `json:"connect_timeout,omitempty"`
 	RunTimeout      string `json:"run_timeout,omitempty"`
@@ -97,11 +103,13 @@ type AuthProfile struct {
 	User             string `json:"user,omitempty"`
 	Password         string `json:"password,omitempty"`
 	PasswordEnc      string `json:"password_enc,omitempty"`
+	PasswordCmd      string `json:"password_cmd,omitempty"`
 	KeyPath          string `json:"key_path,omitempty"`
 	KeyData          string `json:"key_data,omitempty"`
 	KeyDataEnc       string `json:"key_data_enc,omitempty"`
 	KeyPassphrase    string `json:"key_passphrase,omitempty"`
 	KeyPassphraseEnc string `json:"key_passphrase_enc,omitempty"`
+	KeyPassphraseCmd string `json:"key_passphrase_cmd,omitempty"`
 	Remark           string `json:"remark,omitempty"`
 }
 
@@ -234,6 +242,12 @@ func validateHost(host Host) error {
 	if strings.TrimSpace(host.AuthRef) == "" && !hasPasswordAuth(host) && !hasKeyAuth(host) {
 		return errors.New("password or key_path is required")
 	}
+	if err := validateSecretSourceConflict(host.Password, host.PasswordEnc, host.PasswordCmd, "password"); err != nil {
+		return err
+	}
+	if err := validateSecretSourceConflict(host.KeyPassphrase, host.KeyPassphraseEnc, host.KeyPassphraseCmd, "key_passphrase"); err != nil {
+		return err
+	}
 	if host.Port < 1 || host.Port > 65535 {
 		return fmt.Errorf("invalid ssh port %d", host.Port)
 	}
@@ -298,16 +312,29 @@ func NormalizeHostFields(host *Host) {
 	host.RemoteScriptDir = strings.TrimSpace(host.RemoteScriptDir)
 	host.HostKeyCheck = strings.TrimSpace(host.HostKeyCheck)
 	host.KnownHostsPath = strings.TrimSpace(host.KnownHostsPath)
+	host.PasswordCmd = strings.TrimSpace(host.PasswordCmd)
+	host.KeyPassphraseCmd = strings.TrimSpace(host.KeyPassphraseCmd)
 }
 
 func hasPasswordAuth(host Host) bool {
-	return host.Password != "" || host.PasswordEnc != ""
+	return host.Password != "" || host.PasswordEnc != "" || strings.TrimSpace(host.PasswordCmd) != ""
 }
 
 func hasKeyAuth(host Host) bool {
 	return strings.TrimSpace(host.KeyPath) != "" ||
 		host.KeyData != "" ||
 		host.KeyDataEnc != ""
+}
+
+// validateSecretSourceConflict refuses a stored secret (plain or encrypted) and
+// a command-based source for the same secret: the config must name exactly one
+// of them.
+func validateSecretSourceConflict(value, enc, command, field string) error {
+	stored := strings.TrimSpace(value) != "" || strings.TrimSpace(enc) != ""
+	if stored && strings.TrimSpace(command) != "" {
+		return fmt.Errorf("%s and %s_cmd cannot both be set", field, field)
+	}
+	return nil
 }
 
 func NormalizeTags(value string) []string {
