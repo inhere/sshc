@@ -64,6 +64,19 @@ func (f fakeKeepaliveClient) SendRequest(name string, wantReply bool, payload []
 	return f.send(name, wantReply, payload)
 }
 
+func TestNormalizeLoginWaitErrorTreatsMissingExitStatusAsCleanClose(t *testing.T) {
+	if err := normalizeLoginWaitError(&ssh.ExitMissingError{}); err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+}
+
+func TestNormalizeLoginWaitErrorPreservesOtherErrors(t *testing.T) {
+	errWant := errors.New("connection lost")
+	if err := normalizeLoginWaitError(errWant); !errors.Is(err, errWant) {
+		t.Fatalf("err = %v, want %v", err, errWant)
+	}
+}
+
 func TestSessionKeepaliveClosesBlockedSession(t *testing.T) {
 	requested := make(chan struct{})
 	closed := make(chan struct{})

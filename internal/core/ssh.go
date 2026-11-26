@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -208,7 +209,18 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 			_ = client.Close()
 		}
 	}()
-	return session.Wait()
+	return normalizeLoginWaitError(session.Wait())
+}
+
+func normalizeLoginWaitError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var missingExitStatus *ssh.ExitMissingError
+	if errors.As(err, &missingExitStatus) {
+		return nil
+	}
+	return err
 }
 
 type sessionInputWriter struct {
