@@ -63,6 +63,7 @@ type LoginOptions struct {
 type RemoteClient interface {
 	Run(string) ([]byte, error)
 	RunContext(context.Context, string) ([]byte, error)
+	SendRequest(string, bool, []byte) (bool, []byte, error)
 	NewSession() (*ssh.Session, error)
 	NewSftp(...sftp.ClientOption) (*sftp.Client, error)
 	Close() error
@@ -184,8 +185,7 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	stopResize := startPTYResizeLoop(fd, session)
 	defer stopResize()
 	stopKeepalive := startSessionKeepalive(func() error {
-		_, err := session.SendRequest("keepalive@openssh.com", true, nil)
-		return err
+		return sendSSHKeepalive(client)
 	}, client.Close, defaultKeepaliveEvery, defaultKeepaliveWait)
 	defer stopKeepalive()
 
@@ -235,6 +235,13 @@ func (writer sessionInputWriter) Write(data []byte) (int, error) {
 		_ = writer.abort()
 		return 0, fmt.Errorf("ssh session input write timed out after %s", writer.timeout)
 	}
+}
+
+func sendSSHKeepalive(client interface {
+	SendRequest(string, bool, []byte) (bool, []byte, error)
+}) error {
+	_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+	return err
 }
 
 func startSessionKeepalive(send, closeClient func() error, interval, timeout time.Duration) func() {

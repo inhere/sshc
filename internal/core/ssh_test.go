@@ -33,6 +33,37 @@ func TestSessionInputWriterTimesOutBlockedWrite(t *testing.T) {
 	assert.Err(t, err)
 }
 
+func TestSendSSHKeepaliveUsesGlobalRequest(t *testing.T) {
+	var gotName string
+	var gotWantReply bool
+	var gotPayload []byte
+	errWant := errors.New("keepalive failed")
+	client := fakeKeepaliveClient{
+		send: func(name string, wantReply bool, payload []byte) (bool, []byte, error) {
+			gotName = name
+			gotWantReply = wantReply
+			gotPayload = payload
+			return false, nil, errWant
+		},
+	}
+
+	err := sendSSHKeepalive(client)
+	if !errors.Is(err, errWant) {
+		t.Fatalf("err = %v, want %v", err, errWant)
+	}
+	if gotName != "keepalive@openssh.com" || !gotWantReply || gotPayload != nil {
+		t.Fatalf("request = name %q, wantReply %t, payload %#v", gotName, gotWantReply, gotPayload)
+	}
+}
+
+type fakeKeepaliveClient struct {
+	send func(string, bool, []byte) (bool, []byte, error)
+}
+
+func (f fakeKeepaliveClient) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
+	return f.send(name, wantReply, payload)
+}
+
 func TestSessionKeepaliveClosesBlockedSession(t *testing.T) {
 	requested := make(chan struct{})
 	closed := make(chan struct{})

@@ -122,6 +122,10 @@ func (f *fakeRemoteClient) RunContext(_ context.Context, command string) ([]byte
 	return f.Run(command)
 }
 
+func (f *fakeRemoteClient) SendRequest(string, bool, []byte) (bool, []byte, error) {
+	return true, nil, nil
+}
+
 func (f *fakeRemoteClient) NewSession() (*ssh.Session, error) {
 	return nil, nil
 }
