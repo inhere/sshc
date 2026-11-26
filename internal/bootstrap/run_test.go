@@ -34,6 +34,29 @@ func TestRunInitializesRuntimeLogger(t *testing.T) {
 	}
 }
 
+func TestRunUsesPendingExitCode(t *testing.T) {
+	t.Setenv(core.ConfigEnvKey, "")
+	t.Setenv(core.ConfigDirEnvKey, t.TempDir())
+	SetBuildInfo("test-version", "test-hash", "")
+	t.Cleanup(func() { core.TakeExitCode() })
+
+	core.SetExitCode(130)
+	if code := Run([]string{"cfg", "path"}); code != 130 {
+		t.Fatalf("exit code = %d, want 130", code)
+	}
+}
+
+func TestRunKeepsCommandErrorCodeOverPendingExitCode(t *testing.T) {
+	t.Setenv(core.ConfigEnvKey, "")
+	t.Setenv(core.ConfigDirEnvKey, t.TempDir())
+	t.Cleanup(func() { core.TakeExitCode() })
+
+	core.SetExitCode(130)
+	if code := Run([]string{"check", "target", "extra"}); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+}
+
 func TestNewAppRejectsExtraCheckArgumentThroughRealDispatch(t *testing.T) {
 	t.Setenv(core.ConfigEnvKey, "")
 	t.Setenv(core.ConfigDirEnvKey, t.TempDir())

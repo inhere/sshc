@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -82,6 +83,12 @@ Notes:
 			})
 			if err == nil && logErr != nil {
 				return logErr
+			}
+			// Like ssh: the remote shell status becomes our exit code, silently.
+			var remoteExit *core.RemoteExitError
+			if errors.As(err, &remoteExit) {
+				core.SetExitCode(remoteExit.Status)
+				return nil
 			}
 			return err
 		},

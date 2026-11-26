@@ -77,6 +77,51 @@ func TestNormalizeLoginWaitErrorPreservesOtherErrors(t *testing.T) {
 	}
 }
 
+func TestNormalizeLoginWaitErrorMapsRemoteExitStatus(t *testing.T) {
+	t.Run("exit status becomes remote exit error", func(t *testing.T) {
+		status := uint32(130)
+		client := dialTestSSHClient(t, startSessionExitServer(t, &status))
+
+		err := runTestSSHCommand(t, client, "exit 130")
+		var remoteExit *RemoteExitError
+		if !errors.As(normalizeLoginWaitError(err), &remoteExit) {
+			t.Fatalf("err = %v, want RemoteExitError", err)
+		}
+		if remoteExit.Status != 130 {
+			t.Fatalf("status = %d, want 130", remoteExit.Status)
+		}
+	})
+
+	t.Run("close without exit status stays silent", func(t *testing.T) {
+		client := dialTestSSHClient(t, startSessionExitServer(t, nil))
+
+		err := runTestSSHCommand(t, client, "exit 0")
+		var missingExitStatus *ssh.ExitMissingError
+		if !errors.As(err, &missingExitStatus) {
+			t.Fatalf("err = %v, want ExitMissingError", err)
+		}
+		if got := normalizeLoginWaitError(err); got != nil {
+			t.Fatalf("err = %v, want nil", got)
+		}
+	})
+}
+
+func TestPendingExitCodeRoundTrip(t *testing.T) {
+	TakeExitCode()
+	defer TakeExitCode()
+
+	if got := TakeExitCode(); got != 0 {
+		t.Fatalf("initial exit code = %d, want 0", got)
+	}
+	SetExitCode(130)
+	if got := TakeExitCode(); got != 130 {
+		t.Fatalf("exit code = %d, want 130", got)
+	}
+	if got := TakeExitCode(); got != 0 {
+		t.Fatalf("exit code after take = %d, want 0", got)
+	}
+}
+
 func TestSessionKeepaliveClosesBlockedSession(t *testing.T) {
 	requested := make(chan struct{})
 	closed := make(chan struct{})
@@ -101,6 +146,99 @@ func receiveWithin(ch <-chan struct{}, timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+// startSessionExitServer serves one session channel per connection and answers
+// exec/shell with the given exit status; a nil status closes the channel without
+// one, the way some network devices do.
+func startSessionExitServer(t *testing.T, status *uint32) string {
+	t.Helper()
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := &ssh.ServerConfig{NoClientAuth: true}
+	config.AddHostKey(signer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go serveSessionExit(conn, config, status)
+		}
+	}()
+	return listener.Addr().String()
+}
+
+func serveSessionExit(conn net.Conn, config *ssh.ServerConfig, status *uint32) {
+	serverConn, channels, requests, err := ssh.NewServerConn(conn, config)
+	if err != nil {
+		_ = conn.Close()
+		return
+	}
+	defer serverConn.Close()
+	go ssh.DiscardRequests(requests)
+
+	for newChannel := range channels {
+		if newChannel.ChannelType() != "session" {
+			_ = newChannel.Reject(ssh.UnknownChannelType, "only session channels")
+			continue
+		}
+		channel, channelReqs, err := newChannel.Accept()
+		if err != nil {
+			continue
+		}
+		go func() {
+			defer channel.Close()
+			for request := range channelReqs {
+				if request.Type != "exec" && request.Type != "shell" {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				_ = request.Reply(true, nil)
+				if status != nil {
+					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{*status}))
+				}
+				return
+			}
+		}()
+	}
+}
+
+func runTestSSHCommand(t *testing.T, client *ssh.Client, command string) error {
+	t.Helper()
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	return session.Run(command)
+}
+
+func dialTestSSHClient(t *testing.T, addr string) *ssh.Client {
+	t.Helper()
+	client, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
+		User:            "tester",
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }
 
 func TestRemoteClientCloseCallsCloseAll(t *testing.T) {

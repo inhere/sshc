@@ -111,6 +111,27 @@ func TestLoginSelectsHostWhenTargetMatchesMultiple(t *testing.T) {
 	}
 }
 
+func TestLoginMirrorsRemoteShellExitStatus(t *testing.T) {
+	saveJumpCommandHosts(t)
+	core.TakeExitCode()
+	t.Cleanup(func() { core.TakeExitCode() })
+	t.Cleanup(setLoginRemoteForTest(func(core.Host, core.LoginOptions) error {
+		return &core.RemoteExitError{Status: 130}
+	}))
+	var out bytes.Buffer
+	t.Cleanup(setCommandOutputForTest(&out))
+
+	if err := newTestApp().RunWithArgs([]string{"login", "inner-db"}); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if code := core.TakeExitCode(); code != 130 {
+		t.Fatalf("exit code = %d, want 130", code)
+	}
+	if strings.Contains(out.String(), "ERROR") {
+		t.Fatalf("output = %q, want no error message", out.String())
+	}
+}
+
 func TestLoginCommandProxyPassesHostAndWritesLog(t *testing.T) {
 	withTempConfig(t)
 	if err := core.SaveConfig(&core.Config{Hosts: []core.Host{

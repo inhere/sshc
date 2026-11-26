@@ -24,6 +24,9 @@ func Run(args []string) int {
 	)
 
 	code := NewApp().Run(args)
+	if code == 0 {
+		code = core.TakeExitCode()
+	}
 	attrs := []slog.Attr{
 		slog.String("command", core.RuntimeCommandName(args)),
 		slog.Int("exit_code", code),

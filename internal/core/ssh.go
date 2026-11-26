@@ -212,6 +212,19 @@ func loginWithClient(client RemoteClient, command string, opts LoginOptions) err
 	return normalizeLoginWaitError(session.Wait())
 }
 
+// RemoteExitError reports the exit status of the remote shell so the CLI can end
+// with that status instead of printing a failure, the way ssh does.
+type RemoteExitError struct {
+	Status int
+}
+
+func (e *RemoteExitError) Error() string {
+	return fmt.Sprintf("remote shell exited with status %d", e.Status)
+}
+
+// normalizeLoginWaitError maps how an interactive session ended onto what ssh
+// itself reports: a close without exit status stays silent, and a remote shell
+// exit status is carried by RemoteExitError.
 func normalizeLoginWaitError(err error) error {
 	if err == nil {
 		return nil
@@ -219,6 +232,10 @@ func normalizeLoginWaitError(err error) error {
 	var missingExitStatus *ssh.ExitMissingError
 	if errors.As(err, &missingExitStatus) {
 		return nil
+	}
+	var exitErr *ssh.ExitError
+	if errors.As(err, &exitErr) {
+		return &RemoteExitError{Status: exitErr.ExitStatus()}
 	}
 	return err
 }
