@@ -30,6 +30,7 @@ Examples:
   sshc auth add deploy-key -u deploy --key ~/.ssh/id_ed25519 --key-passphrase=env
   sshc auth show dev-root
   sshc auth show dev-root --raw
+  sshc auth show dev-root --reveal
   sshc auth rm dev-root --yes
 
 Notes:
@@ -38,6 +39,9 @@ Notes:
   - --key-passphrase reads a private key passphrase from hidden input by default.
   - --key-passphrase=clip reads it from clipboard; --key-passphrase=env reads ${SSHC_KEY_PASSPHRASE}.
   - Passwords are encrypted before writing sshc.config.json.
+  - auth show masks secrets by default; --raw prints the stored value
+    (encrypted when it was saved encrypted), --reveal prints the decrypted
+    secret, so keep its output out of logs and screenshots.
   - auth rm refuses profiles still referenced by any host.
 `),
 	}
@@ -148,15 +152,20 @@ func newAuthListCmd() *gcli.Command {
 
 func newAuthShowCmd() *gcli.Command {
 	var raw bool
+	var reveal bool
 	return &gcli.Command{
 		Name: "show",
 		Desc: "show credential profile",
 		Config: func(c *gcli.Command) {
 			c.BoolOpt(&raw, "raw", "", false, "show raw profile from config file")
+			c.BoolOpt(&reveal, "reveal", "", false, "show decrypted secret values")
 			c.AddArg("name", "auth profile name", true)
 		},
 		Func: func(c *gcli.Command, _ []string) error {
 			name := strings.TrimSpace(c.Arg("name").String())
+			if raw && reveal {
+				return errors.New("--raw and --reveal cannot be used together")
+			}
 			if raw {
 				profile, ok, err := loadRawAuthProfile(name)
 				if err != nil {
@@ -175,6 +184,10 @@ func newAuthShowCmd() *gcli.Command {
 			profile, ok := config.FindAuthProfile(name)
 			if !ok {
 				return fmt.Errorf("auth profile %q not found", name)
+			}
+			if reveal {
+				// LoadConfig already decrypted the stored secrets of this profile.
+				return writeJSON(c, profile)
 			}
 			return writeJSON(c, core.MaskAuthProfile(profile))
 		},

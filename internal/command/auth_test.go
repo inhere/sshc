@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/inhere/sshc/internal/core"
+
+	"github.com/gookit/goutil/x/assert"
 )
 
 func TestAuthAddPasswordProfile(t *testing.T) {
@@ -208,6 +210,59 @@ func TestAuthListAndShowMaskSecrets(t *testing.T) {
 	if strings.Contains(out.String(), "secret") || strings.Contains(out.String(), "key-data") || !strings.Contains(out.String(), `"password_enc": "***"`) || !strings.Contains(out.String(), `"key_data_enc": "***"`) || !strings.Contains(out.String(), `"key_passphrase_enc": "***"`) || !strings.Contains(out.String(), `"remark": "shared root login"`) {
 		t.Fatalf("show output = %q", out.String())
 	}
+}
+
+func TestAuthShowRevealPrintsDecryptedSecrets(t *testing.T) {
+	withTempConfig(t)
+	if err := core.SaveConfig(&core.Config{AuthProfiles: []core.AuthProfile{{
+		Name:     "dev-root",
+		User:     "root",
+		Password: "secret",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// gcli keeps bound option values between runs of the same command, so each
+	// case dispatches through a fresh app instance.
+	runAuthShow := func(t *testing.T, args ...string) (string, error) {
+		t.Helper()
+		var buf bytes.Buffer
+		t.Cleanup(setCommandOutputForTest(&buf))
+		err := newTestApp().RunWithArgs(append([]string{"auth", "show", "dev-root"}, args...))
+		return buf.String(), err
+	}
+
+	t.Run("raw keeps the encrypted value", func(t *testing.T) {
+		is := assert.New(t)
+		text, err := runAuthShow(t, "--raw")
+		is.NoErr(err)
+
+		is.False(strings.Contains(text, `"password": "secret"`))
+		is.Contains(text, `"password_enc": "v1:`)
+	})
+
+	t.Run("reveal prints the decrypted password", func(t *testing.T) {
+		is := assert.New(t)
+		text, err := runAuthShow(t, "--reveal")
+		is.NoErr(err)
+
+		is.Contains(text, `"password": "secret"`)
+	})
+
+	t.Run("default output stays masked", func(t *testing.T) {
+		is := assert.New(t)
+		text, err := runAuthShow(t)
+		is.NoErr(err)
+
+		is.False(strings.Contains(text, `"secret"`))
+	})
+
+	t.Run("raw and reveal conflict", func(t *testing.T) {
+		is := assert.New(t)
+		_, err := runAuthShow(t, "--raw", "--reveal")
+		is.Err(err)
+		is.Contains(err.Error(), "cannot be used together")
+	})
 }
 
 func TestAuthRemoveRefusedWhenUsedByTunnel(t *testing.T) {
